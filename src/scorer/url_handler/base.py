@@ -1,7 +1,6 @@
 # src/scorer/url_handler/base.py (or wherever classify_url lives)
 
 from urllib.parse import urlparse
-import re
 
 # Common hosts (lowercase, no scheme)
 _CODE_HOSTS = (
@@ -29,20 +28,23 @@ _STORAGE_HOSTS = (
 
 # File extensions that strongly suggest "this is data"
 _DATA_EXTS = (
-    ".zip",".tar",".tar.gz",".tgz",".7z",
-    ".csv",".tsv",".jsonl",".json",".parquet",".feather",
-    ".xlsx",".xls",".npz",".npy",".h5",".hdf5",".mat",
-    ".wav",".flac",".mp3",".jpg",".jpeg",".png",".tiff"
+    ".zip", ".tar", ".tar.gz", ".tgz", ".7z",
+    ".csv", ".tsv", ".jsonl", ".json", ".parquet", ".feather",
+    ".xlsx", ".xls", ".npz", ".npy", ".h5", ".hdf5", ".mat",
+    ".wav", ".flac", ".mp3", ".jpg", ".jpeg", ".png", ".tiff"
 )
 
 # File extensions that look like code sources (when not on code hosts)
-_CODE_EXTS = (".py",".ipynb",".c",".cpp",".h",".hpp",".java",".js",".ts",".m",".go",".rb",".rs",".php",".scala",".kt",".sh")
+_CODE_EXTS = (".py", ".ipynb", ".c", ".cpp", ".h", ".hpp", ".java", ".js", 
+              ".ts", ".m", ".go", ".rb", ".rs", ".php", ".scala", ".kt", ".sh")
+
 
 # Extra model hosts (besides HF)
 _MODEL_HOSTS = (
     "tfhub.dev",          # TensorFlow Hub
     "modelscope.cn",      # Alibaba ModelScope
 )
+
 
 # Fast helpers
 def _endswith_any(s: str, suffixes: tuple[str, ...]) -> bool:
@@ -111,7 +113,8 @@ def classify_url(url: str) -> str:
         return "code"
 
     # 7) Path keywords that imply datasets
-    if any(seg in path_l for seg in ("/dataset", "/datasets", "/data/", "/download", "/files", "/record", "/records")):
+    if any(seg in path_l for seg in ("/dataset", "/datasets", "/data/", 
+                                     "/download", "/files", "/record", "/records")):
         return "dataset"
 
     # 8) Fallback: treat as dataset (per Piazza: datasets can be any external link)
