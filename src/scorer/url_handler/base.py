@@ -1,53 +1,111 @@
 # src/scorer/url_handler/base.py (or wherever classify_url lives)
 
 from urllib.parse import urlparse
-import re
 
 # Common hosts (lowercase, no scheme)
 _CODE_HOSTS = (
-    "github.com", "gitlab.com", "bitbucket.org", "sourceforge.net",
-    "codeberg.org", "gitee.com", "dev.azure.com", "azure.microsoft.com",
+    "github.com",
+    "gitlab.com",
+    "bitbucket.org",
+    "sourceforge.net",
+    "codeberg.org",
+    "gitee.com",
+    "dev.azure.com",
+    "azure.microsoft.com",
     "visualstudio.com",
 )
 
 # Places datasets commonly live
 _DATASET_HOSTS = (
-    "huggingface.co", "kaggle.com", "zenodo.org", "figshare.com",
-    "osf.io", "openml.org", "archive.ics.uci.edu", "data.mendeley.com",
-    "dataverse.org", "doi.org", "data.gov", "data.gov.uk",
+    "huggingface.co",
+    "kaggle.com",
+    "zenodo.org",
+    "figshare.com",
+    "osf.io",
+    "openml.org",
+    "archive.ics.uci.edu",
+    "data.mendeley.com",
+    "dataverse.org",
+    "doi.org",
+    "data.gov",
+    "data.gov.uk",
 )
 
 # Direct-file/CDN/object-store links that are usually datasets
 _STORAGE_HOSTS = (
-    "s3.amazonaws.com",        # also covers bucket.s3.amazonaws.com
+    "s3.amazonaws.com",  # also covers bucket.s3.amazonaws.com
     "storage.googleapis.com",  # GCS
-    "blob.core.windows.net",   # Azure Blob
-    "drive.google.com",        # Google Drive
-    "dropbox.com", "dl.dropboxusercontent.com",
-    "onedrive.live.com", "1drv.ms",
+    "blob.core.windows.net",  # Azure Blob
+    "drive.google.com",  # Google Drive
+    "dropbox.com",
+    "dl.dropboxusercontent.com",
+    "onedrive.live.com",
+    "1drv.ms",
 )
 
 # File extensions that strongly suggest "this is data"
 _DATA_EXTS = (
-    ".zip",".tar",".tar.gz",".tgz",".7z",
-    ".csv",".tsv",".jsonl",".json",".parquet",".feather",
-    ".xlsx",".xls",".npz",".npy",".h5",".hdf5",".mat",
-    ".wav",".flac",".mp3",".jpg",".jpeg",".png",".tiff"
+    ".zip",
+    ".tar",
+    ".tar.gz",
+    ".tgz",
+    ".7z",
+    ".csv",
+    ".tsv",
+    ".jsonl",
+    ".json",
+    ".parquet",
+    ".feather",
+    ".xlsx",
+    ".xls",
+    ".npz",
+    ".npy",
+    ".h5",
+    ".hdf5",
+    ".mat",
+    ".wav",
+    ".flac",
+    ".mp3",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tiff",
 )
 
 # File extensions that look like code sources (when not on code hosts)
-_CODE_EXTS = (".py",".ipynb",".c",".cpp",".h",".hpp",".java",".js",".ts",".m",".go",".rb",".rs",".php",".scala",".kt",".sh")
+_CODE_EXTS = (
+    ".py",
+    ".ipynb",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".java",
+    ".js",
+    ".ts",
+    ".m",
+    ".go",
+    ".rb",
+    ".rs",
+    ".php",
+    ".scala",
+    ".kt",
+    ".sh",
+)
+
 
 # Extra model hosts (besides HF)
 _MODEL_HOSTS = (
-    "tfhub.dev",          # TensorFlow Hub
-    "modelscope.cn",      # Alibaba ModelScope
+    "tfhub.dev",  # TensorFlow Hub
+    "modelscope.cn",  # Alibaba ModelScope
 )
+
 
 # Fast helpers
 def _endswith_any(s: str, suffixes: tuple[str, ...]) -> bool:
     s = s.lower()
     return any(s.endswith(sfx) for sfx in suffixes)
+
 
 def classify_url(url: str) -> str:
     """
@@ -75,7 +133,7 @@ def classify_url(url: str) -> str:
         return "unknown"
 
     host = (u.netloc or "").lower()
-    path = (u.path or "")
+    path = u.path or ""
     path_l = path.lower()
 
     # 1) Clear code hosts
@@ -111,7 +169,18 @@ def classify_url(url: str) -> str:
         return "code"
 
     # 7) Path keywords that imply datasets
-    if any(seg in path_l for seg in ("/dataset", "/datasets", "/data/", "/download", "/files", "/record", "/records")):
+    if any(
+        seg in path_l
+        for seg in (
+            "/dataset",
+            "/datasets",
+            "/data/",
+            "/download",
+            "/files",
+            "/record",
+            "/records",
+        )
+    ):
         return "dataset"
 
     # 8) Fallback: treat as dataset (per Piazza: datasets can be any external link)

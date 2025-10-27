@@ -1,0 +1,27 @@
+# Docker Compose for the scoring tool
+version: '3.8'
+
+services:
+  scorer:
+    build: .
+    container_name: scorer-tool
+    volumes:
+      # Mount current directory for development
+      - .:/app
+      # Mount logs directory to persist logs
+      - ./logs:/app/logs
+    environment:
+      # Environment variables from .env file
+      - HF_TOKEN=${HF_TOKEN}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GEN_AI_STUDIO_API_KEY=${GEN_AI_STUDIO_API_KEY}
+      - GENAI_BASE_URL=${GENAI_BASE_URL}
+      - GENAI_PATH=${GENAI_PATH}
+      - GENAI_MODEL=${GENAI_MODEL}
+      - SCORER_MAX_WORKERS=${SCORER_MAX_WORKERS:-4}
+    # Override default command for interactive use
+    command: bash
+    # Keep container running
+    tty: true
+    stdin_open: true
+    working_dir: /app

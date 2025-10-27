@@ -1,20 +1,20 @@
 ........................................................................ [ 87%]
 ..........                                                               [100%]
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.14-final-0 _______________
 
----------- coverage: platform linux, python 3.10.12-final-0 ----------
 Name                                       Stmts   Miss  Cover
 --------------------------------------------------------------
 src/scorer/metrics/__init__.py                 0      0   100%
 src/scorer/metrics/base.py                    19      3    84%
 src/scorer/metrics/busfactor.py              183     40    78%
-src/scorer/metrics/code_quality.py           163     26    84%
+src/scorer/metrics/code_quality.py           162     26    84%
 src/scorer/metrics/dataset_and_code.py        60     13    78%
 src/scorer/metrics/dataset_quality.py         46      3    93%
 src/scorer/metrics/license.py                 60      7    88%
 src/scorer/metrics/performance_claims.py      83     10    88%
-src/scorer/metrics/rampup.py                 220     53    76%
-src/scorer/metrics/size.py                   113     10    91%
+src/scorer/metrics/rampup.py                 218     52    76%
+src/scorer/metrics/size.py                   117      8    93%
 --------------------------------------------------------------
-TOTAL                                        947    165    83%
-
-82 passed, 2 warnings in 7.09s
+TOTAL                                        948    162    83%
+82 passed in 57.48s
