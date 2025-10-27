@@ -1,0 +1,23 @@
+# Docker ignore file
+.git
+.github
+*.md
+.env
+.env.example
+.gitignore
+.pre-commit-config.yaml
+.flake8
+.coverage
+logs/*.log
+pytest.out
+pytest-report.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.DS_Store
+Dockerfile
+docker-compose.yml
+.dockerignore
