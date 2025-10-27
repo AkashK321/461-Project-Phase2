@@ -35,7 +35,7 @@ _DATA_EXTS = (
 )
 
 # File extensions that look like code sources (when not on code hosts)
-_CODE_EXTS = (".py", ".ipynb", ".c", ".cpp", ".h", ".hpp", ".java", ".js", 
+_CODE_EXTS = (".py", ".ipynb", ".c", ".cpp", ".h", ".hpp", ".java", ".js",
               ".ts", ".m", ".go", ".rb", ".rs", ".php", ".scala", ".kt", ".sh")
 
 
@@ -50,6 +50,7 @@ _MODEL_HOSTS = (
 def _endswith_any(s: str, suffixes: tuple[str, ...]) -> bool:
     s = s.lower()
     return any(s.endswith(sfx) for sfx in suffixes)
+
 
 def classify_url(url: str) -> str:
     """
@@ -113,7 +114,7 @@ def classify_url(url: str) -> str:
         return "code"
 
     # 7) Path keywords that imply datasets
-    if any(seg in path_l for seg in ("/dataset", "/datasets", "/data/", 
+    if any(seg in path_l for seg in ("/dataset", "/datasets", "/data/",
                                      "/download", "/files", "/record", "/records")):
         return "dataset"
 
