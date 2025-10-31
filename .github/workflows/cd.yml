@@ -1,0 +1,58 @@
+# .github/workflows/deploy.yml
+name: Deploy to AWS
+
+# Trigger the workflow on pushes to the 'main' branch
+on:
+  push:
+    branches:
+      - main
+
+# Define the permissions the job will need
+permissions:
+  id-token: write  # Required for OIDC authentication
+  contents: read   # Required to check out the repository
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Paste the ARN of the IAM role you created in Step 1
+          role-to-assume: arn:aws:iam::245639921953:role/GithubActions_DeployRole
+          aws-region: us-east-2 # Change this to your AWS region
+
+      # --- Example: Deploy Backend to AWS Lambda ---
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' 
+
+      - name: Install dependencies and create zip file
+        run: |
+          pip install -r requirements.txt -t ./package
+          zip -r backend_deployment.zip . -x ".*" -x "*/__pycache__/*"
+          
+      - name: Deploy to AWS Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name YOUR_LAMBDA_FUNCTION_NAME \
+            --zip-file fileb://backend_deployment.zip
+
+      # --- Example: Deploy Frontend to S3 ---
+      - name: Build Frontend
+        run: |
+          # npm install 
+          # npm run build 
+          echo "Build your frontend here..."
+          # The build output is often in a 'build' or 'dist' folder
+
+      - name: Deploy Frontend to S3
+        run: |
+          # aws s3 sync ./build s3://YOUR_S3_BUCKET_NAME --delete
+          echo "Syncing build folder to S3..."
