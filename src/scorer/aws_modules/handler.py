@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # The following imports assume that the `src` directory is in the PYTHONPATH.
 # For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
 from scorer.utils.logging import setup_logging, get_logger, set_run_id
-# from scorer.url_handler.base import classify_url
+from scorer.url_handler.base import classify_url
 # from scorer.metrics.size import get_size_score
 # from scorer.metrics.license import get_license_score
 # from scorer.metrics.dataset_quality import get_dataset_quality_score

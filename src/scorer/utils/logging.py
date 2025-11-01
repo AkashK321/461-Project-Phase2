@@ -167,6 +167,29 @@ def setup_logging(
     - No console handler (stdout must remain clean for grader).
     """
     global _INITIALIZED
+    is_lambda = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
+
+    # In Lambda, log to stdout, which is captured by CloudWatch.
+    if is_lambda:
+        if _INITIALIZED:
+            return
+        verbosity = _normalize_verbosity(level)
+        py_level = _verbosity_to_logging_level(verbosity)
+
+        logger = logging.getLogger("scorer")
+        logger.setLevel(py_level)
+        logger.propagate = False
+
+        # Clear existing handlers and add a stream handler for stdout
+        if logger.hasHandlers():
+            logger.handlers.clear()
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(py_level)
+        handler.setFormatter(JSONLineFormatter())
+        logger.addHandler(handler)
+
+        _INITIALIZED = True
+        return
 
     # Normalize verbosity (0/1/2) and set env
     verbosity = _normalize_verbosity(level)
@@ -176,10 +199,6 @@ def setup_logging(
     # Ensure LOG_FILE is set or use default
     log_path = Path(os.environ.get("LOG_FILE", "logs/scorer.log"))
     os.environ.setdefault("LOG_FILE", str(log_path))
-
-    if not log_path.exists() or log_path.is_dir():
-        print(f"Error: log file {log_path} does not exist.", file=sys.stderr)
-        sys.exit(1)
 
     if _INITIALIZED:
         # Even if already initialized, return the resolved path
