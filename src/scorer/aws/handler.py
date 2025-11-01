@@ -1,0 +1,122 @@
+"""
+AWS Lambda handler for the scorer.
+
+This function is designed to be the entry point for an AWS Lambda function.
+It receives a list of URLs via an event payload, processes them using the
+existing scorer logic, and returns the results as a list of JSON objects.
+"""
+
+import os
+import json
+import time
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# --- IMPORTANT ---
+# The following imports assume that the `src` directory is in the PYTHONPATH.
+# For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
+from scorer.utils.logging import setup_logging, get_logger, set_run_id
+from scorer.url_handler.base import classify_url
+from scorer.metrics.size import get_size_score
+from scorer.metrics.license import get_license_score
+from scorer.metrics.dataset_quality import get_dataset_quality_score
+from scorer.metrics.code_quality import get_code_quality
+from scorer.metrics.performance_claims import get_performance_claims
+from scorer.metrics.dataset_and_code import get_dataset_and_code_score
+from scorer.metrics.rampup import get_ramp_up
+from scorer.metrics.busfactor import get_bus_factor
+from scorer.metrics.base import get_repo_id
+
+MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
+
+# Initialize logging for the Lambda environment
+setup_logging(json_lines=True)
+log = get_logger(__name__)
+
+
+def score_url(url: str, url_type: str) -> dict:
+    """Scores a single URL and returns a dictionary of results."""
+    repo = get_repo_id(url, url_type) or ""
+    parts = repo.split("/", 1)
+    name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+
+    tasks = {}
+    if url_type == "code":
+        tasks["code_quality"] = lambda: get_code_quality(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+    elif url_type == "dataset":
+        tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(url, url_type)
+    elif url_type == "model":
+        tasks["size"] = lambda: get_size_score(url, url_type)
+        tasks["license"] = lambda: get_license_score(url, url_type)
+        tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+
+    results = {"name": name, "category": url_type.upper()}
+    latencies = {}
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
+        for future in as_completed(future_to_metric):
+            metric_name = future_to_metric[future]
+            try:
+                val, lat = future.result()
+                results[metric_name] = val
+                latencies[f"{metric_name}_latency"] = lat
+            except Exception as e:
+                log.exception(f"Metric '{metric_name}' failed for URL '{url}'")
+                results[metric_name] = 0.0 if metric_name not in ["size"] else {}
+                latencies[f"{metric_name}_latency"] = 0
+
+    # Calculate net_score (simplified for clarity, can be adjusted)
+    # This logic should mirror your CLI's net score calculation
+    size_score = 0.0
+    if "size" in results and results["size"]:
+        size_score = sum(results["size"].values()) / len(results["size"])
+
+    net_score = (
+        0.15 * size_score +
+        0.15 * results.get("license", 0.0) +
+        0.10 * results.get("ramp_up", 0.0) +
+        0.10 * results.get("bus_factor", 0.0) +
+        0.15 * results.get("dataset_quality", 0.0) +
+        0.10 * results.get("code_quality", 0.0) +
+        0.15 * results.get("performance_claims", 0.0) +
+        0.10 * results.get("dataset_and_code_score", 0.0)
+    )
+    results["net_score"] = round(net_score, 2)
+
+    # Combine results and latencies
+    final_output = {**results, **latencies}
+    return final_output
+
+
+def lambda_handler(event, context):
+    """
+    AWS Lambda entry point.
+
+    :param event: A dictionary containing the input data. Expected format:
+                  `{"urls": ["url1", "url2", ...]}`
+    :param context: A Lambda context object.
+    :return: A dictionary with a status code and a body containing the scoring results.
+    """
+    run_id = set_run_id(context.aws_request_id)
+    log.info("Handler started", extra={"run_id": run_id, "event": event})
+
+    urls = event.get("urls", [])
+    if not isinstance(urls, list) or not urls:
+        return {"statusCode": 400, "body": json.dumps("Input must be a JSON object with a non-empty 'urls' list.")}
+
+    all_scores = []
+    for url in urls:
+        url_type = classify_url(url)
+        if url_type not in ["model", "dataset", "code"]:
+            log.warning(f"Skipping unknown or unsupported URL type for: {url}")
+            continue
+        all_scores.append(score_url(url, url_type))
+
+    log.info("Handler finished", extra={"run_id": run_id, "results_count": len(all_scores)})
+    return {"statusCode": 200, "body": json.dumps(all_scores, indent=2)}

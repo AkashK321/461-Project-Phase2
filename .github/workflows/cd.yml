@@ -32,27 +32,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12' 
-
-      - name: Install dependencies and create zip file
+      
+      - name: Create Lambda deployment package
         run: |
+          # Create a directory to hold the package contents
+          mkdir package
+          
+          # Install dependencies from requirements.txt into the package directory
           pip install -r requirements.txt -t ./package
-          zip -r backend_deployment.zip . -x ".*" -x "*/__pycache__/*"
+          
+          # Copy the application source code into the package directory
+          # This makes 'scorer' and 'aws' top-level packages in the zip
+          cp -r src/* ./package/
+          
+          # Create the zip file from the contents of the package directory
+          cd package
+          zip -r ../lambda_deployment.zip .
           
       - name: Deploy to AWS Lambda
         run: |
           aws lambda update-function-code \
-            --function-name YOUR_LAMBDA_FUNCTION_NAME \
-            --zip-file fileb://backend_deployment.zip
-
-      # --- Example: Deploy Frontend to S3 ---
-      - name: Build Frontend
-        run: |
-          # npm install 
-          # npm run build 
-          echo "Build your frontend here..."
-          # The build output is often in a 'build' or 'dist' folder
-
-      - name: Deploy Frontend to S3
-        run: |
-          # aws s3 sync ./build s3://YOUR_S3_BUCKET_NAME --delete
-          echo "Syncing build folder to S3..."
+            --function-name scorer-function \
+            --zip-file fileb://lambda_deployment.zip
+        env:
+          # Ensure you have AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as secrets
+          AWS_REGION: us-east-2 # Change to your region
