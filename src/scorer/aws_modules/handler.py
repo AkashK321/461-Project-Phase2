@@ -22,7 +22,7 @@ from scorer.metrics.code_quality import get_code_quality
 from scorer.metrics.performance_claims import get_performance_claims
 from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 from scorer.metrics.rampup import get_ramp_up
-from scorer.metrics.busfactor import get_bus_factor
+# from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
