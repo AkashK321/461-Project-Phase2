@@ -158,7 +158,7 @@ _INITIALIZED = False
 
 def setup_logging(
     *, level: Optional[Union[int, str]] = None, json_lines: bool = True
-) -> Path:
+) -> Optional[Path]:
     """
     Initialize project logging to a rotating file.
     - File path from $LOG_FILE, else ./logs/scorer.log
@@ -172,7 +172,7 @@ def setup_logging(
     # In Lambda, log to stdout, which is captured by CloudWatch.
     if is_lambda:
         if _INITIALIZED:
-            return
+            return None
         verbosity = _normalize_verbosity(level)
         py_level = _verbosity_to_logging_level(verbosity)
 
@@ -189,7 +189,7 @@ def setup_logging(
         logger.addHandler(handler)
 
         _INITIALIZED = True
-        return
+        return None
 
     # Normalize verbosity (0/1/2) and set env
     verbosity = _normalize_verbosity(level)
