@@ -168,6 +168,11 @@ def setup_logging(
     """
     global _INITIALIZED
 
+    # Normalize verbosity (0/1/2) and set env
+    verbosity = _normalize_verbosity(level)
+    os.environ["LOG_LEVEL"] = str(verbosity)
+    py_level = _verbosity_to_logging_level(verbosity)
+
     # Ensure LOG_FILE is set or use default
     log_path = Path(os.environ.get("LOG_FILE", "logs/scorer.log"))
     os.environ.setdefault("LOG_FILE", str(log_path))
@@ -175,11 +180,6 @@ def setup_logging(
     if not log_path.exists() or log_path.is_dir():
         print(f"Error: log file {log_path} does not exist.", file=sys.stderr)
         sys.exit(1)
-
-    # Normalize verbosity (0/1/2)
-    verbosity = _normalize_verbosity(level)
-    os.environ["LOG_LEVEL"] = str(verbosity)  # reflect normalized value back to env
-    py_level = _verbosity_to_logging_level(verbosity)
 
     if _INITIALIZED:
         # Even if already initialized, return the resolved path
