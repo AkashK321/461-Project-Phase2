@@ -45,8 +45,9 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
     elif url_type == "dataset":
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-        tasks["dataset_and_code_score"] = \
-            lambda: get_dataset_and_code_score(url, url_type)
+        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+            url, url_type
+        )
     elif url_type == "model":
         tasks["size"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
@@ -77,15 +78,14 @@ def score_url(url: str, url_type: str) -> dict:
         size_score = sum(results["size"].values()) / len(results["size"])
 
     net_score = (
-        0.15 * size_score +
-        0.15 * results.get("license", 0.0) +
-        0.10 * results.get("ramp_up", 0.0) +
-        0.10 * results.get("bus_factor", 0.0) +
-        0.15 * results.get("dataset_quality", 0.0) +
-        0.10 * results.get("code_quality", 0.0) +
-        0.15 * results.get("performance_claims", 0.0) +
-        0.10 *
-        results.get("dataset_and_code_score", 0.0)
+        0.15 * size_score
+        + 0.15 * results.get("license", 0.0)
+        + 0.10 * results.get("ramp_up", 0.0)
+        + 0.10 * results.get("bus_factor", 0.0)
+        + 0.15 * results.get("dataset_quality", 0.0)
+        + 0.10 * results.get("code_quality", 0.0)
+        + 0.15 * results.get("performance_claims", 0.0)
+        + 0.10 * results.get("dataset_and_code_score", 0.0)
     )
     results["net_score"] = round(net_score, 2)
 
@@ -108,12 +108,12 @@ def lambda_handler(event, context):
 
     urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:
-        return {"statusCode": 400,
-                "body":
-                    json.dumps(
-                        "Input must be a JSON object with a non-empty 'urls' list."
-                    )
-                }
+        return {
+            "statusCode": 400,
+            "body": json.dumps(
+                "Input must be a JSON object with a non-empty 'urls' list."
+            ),
+        }
 
     all_scores = []
     for url in urls:
@@ -123,6 +123,7 @@ def lambda_handler(event, context):
             continue
         all_scores.append(score_url(url, url_type))
 
-    log.info("Handler finished",
-             extra={"run_id": run_id, "results_count": len(all_scores)})
+    log.info(
+        "Handler finished", extra={"run_id": run_id, "results_count": len(all_scores)}
+    )
     return {"statusCode": 200, "body": json.dumps(all_scores, indent=2)}
