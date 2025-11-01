@@ -38,6 +38,7 @@ def score_url(url: str, url_type: str) -> dict:
     parts = repo.split("/", 1)
     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
 
+    #TODO refactor metrics that rely on git (will do this once metrics work for the phase 1 autograder)
     tasks = {}
     if url_type == "code":
         pass
