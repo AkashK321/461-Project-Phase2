@@ -15,14 +15,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
 from scorer.utils.logging import setup_logging, get_logger, set_run_id
 from scorer.url_handler.base import classify_url
-# from scorer.metrics.size import get_size_score
-# from scorer.metrics.license import get_license_score
-# from scorer.metrics.dataset_quality import get_dataset_quality_score
-# from scorer.metrics.code_quality import get_code_quality
-# from scorer.metrics.performance_claims import get_performance_claims
-# from scorer.metrics.dataset_and_code import get_dataset_and_code_score
-# from scorer.metrics.rampup import get_ramp_up
-# from scorer.metrics.busfactor import get_bus_factor
+from scorer.metrics.size import get_size_score
+from scorer.metrics.license import get_license_score
+from scorer.metrics.dataset_quality import get_dataset_quality_score
+from scorer.metrics.code_quality import get_code_quality
+from scorer.metrics.performance_claims import get_performance_claims
+from scorer.metrics.dataset_and_code import get_dataset_and_code_score
+from scorer.metrics.rampup import get_ramp_up
+from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
