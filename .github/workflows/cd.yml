@@ -42,7 +42,6 @@ jobs:
           pip install -r requirements.txt -t ./package
           
           # Copy the application source code into the package directory
-          # This makes 'scorer' and 'aws' top-level packages in the zip
           cp -r src/* ./package/
           
           # Create the zip file from the contents of the package directory
@@ -52,8 +51,5 @@ jobs:
       - name: Deploy to AWS Lambda
         run: |
           aws lambda update-function-code \
-            --function-name scorer-function \
+            --function-name scorer_function \
             --zip-file fileb://lambda_deployment.zip
-        env:
-          # Ensure you have AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as secrets
-          AWS_REGION: us-east-2 # Change to your region
