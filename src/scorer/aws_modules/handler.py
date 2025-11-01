@@ -41,7 +41,7 @@ def score_url(url: str, url_type: str) -> dict:
     tasks = {}
     if url_type == "code":
         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
-        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
     elif url_type == "dataset":
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
@@ -52,7 +52,7 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["size"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
 
     results = {"name": name, "category": url_type.upper()}
@@ -81,7 +81,7 @@ def score_url(url: str, url_type: str) -> dict:
         0.15 * size_score
         + 0.15 * results.get("license", 0.0)
         + 0.10 * results.get("ramp_up", 0.0)
-        + 0.10 * results.get("bus_factor", 0.0)
+        # + 0.10 * results.get("bus_factor", 0.0)
         + 0.15 * results.get("dataset_quality", 0.0)
         + 0.10 * results.get("code_quality", 0.0)
         + 0.15 * results.get("performance_claims", 0.0)
