@@ -18,9 +18,11 @@ from scorer.url_handler.base import classify_url
 from scorer.metrics.size import get_size_score
 from scorer.metrics.license import get_license_score
 from scorer.metrics.dataset_quality import get_dataset_quality_score
+
 # from scorer.metrics.code_quality import get_code_quality
 # from scorer.metrics.performance_claims import get_performance_claims
 from scorer.metrics.dataset_and_code import get_dataset_and_code_score
+
 # from scorer.metrics.rampup import get_ramp_up
 # from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
@@ -38,7 +40,8 @@ def score_url(url: str, url_type: str) -> dict:
     parts = repo.split("/", 1)
     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
 
-    #TODO refactor metrics that rely on git (will do this once metrics work for the phase 1 autograder)
+    # TODO refactor metrics that rely on git
+    # (will do this once metrics work for the phase 1 autograder)
     tasks = {}
     if url_type == "code":
         pass
