@@ -85,7 +85,7 @@ def score_url(url: str, url_type: str) -> dict:
         0.10 * results.get("code_quality", 0.0) +
         0.15 * results.get("performance_claims", 0.0) +
         0.10 *
-            results.get("dataset_and_code_score", 0.0)
+        results.get("dataset_and_code_score", 0.0)
     )
     results["net_score"] = round(net_score, 2)
 
@@ -108,8 +108,8 @@ def lambda_handler(event, context):
 
     urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:
-        return {"statusCode": 400, 
-                "body": 
+        return {"statusCode": 400,
+                "body":
                     json.dumps(
                         "Input must be a JSON object with a non-empty 'urls' list."
                     )
@@ -123,6 +123,6 @@ def lambda_handler(event, context):
             continue
         all_scores.append(score_url(url, url_type))
 
-    log.info("Handler finished", 
+    log.info("Handler finished",
              extra={"run_id": run_id, "results_count": len(all_scores)})
     return {"statusCode": 200, "body": json.dumps(all_scores, indent=2)}
