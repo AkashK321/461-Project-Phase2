@@ -173,12 +173,6 @@ def setup_logging(
     os.environ["LOG_LEVEL"] = str(verbosity)
     py_level = _verbosity_to_logging_level(verbosity)
 
-    if _is_running_in_aws_lambda():
-        if not _INITIALIZED:
-            _setup_lambda_logging(py_level)
-            _INITIALIZED = True
-        return Path("/tmp/lambda.log")  # Return a dummy path
-
     # Ensure LOG_FILE is set or use default
     log_path = Path(os.environ.get("LOG_FILE", "logs/scorer.log"))
     os.environ.setdefault("LOG_FILE", str(log_path))

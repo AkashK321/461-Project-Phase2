@@ -8,8 +8,6 @@ existing scorer logic, and returns the results as a list of JSON objects.
 
 import os
 import json
-import time
-import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- IMPORTANT ---
@@ -86,8 +84,8 @@ def score_url(url: str, url_type: str) -> dict:
         0.15 * results.get("dataset_quality", 0.0) +
         0.10 * results.get("code_quality", 0.0) +
         0.15 * results.get("performance_claims", 0.0) +
-        0.10 * \
-        results.get("dataset_and_code_score", 0.0)
+        0.10 *
+            results.get("dataset_and_code_score", 0.0)
     )
     results["net_score"] = round(net_score, 2)
 
@@ -110,7 +108,12 @@ def lambda_handler(event, context):
 
     urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:
-        return {"statusCode": 400, "body": json.dumps("Input must be a JSON object with a non-empty 'urls' list.")}
+        return {"statusCode": 400, 
+                "body": 
+                    json.dumps(
+                        "Input must be a JSON object with a non-empty 'urls' list."
+                    )
+                }
 
     all_scores = []
     for url in urls:
@@ -120,5 +123,6 @@ def lambda_handler(event, context):
             continue
         all_scores.append(score_url(url, url_type))
 
-    log.info("Handler finished", extra={"run_id": run_id, "results_count": len(all_scores)})
+    log.info("Handler finished", 
+             extra={"run_id": run_id, "results_count": len(all_scores)})
     return {"statusCode": 200, "body": json.dumps(all_scores, indent=2)}
