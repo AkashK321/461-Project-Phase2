@@ -101,19 +101,6 @@ def _fail_invalid_log_path(log_path: Path, err: BaseException) -> None:
     raise SystemExit(2)
 
 
-def _is_running_in_aws_lambda() -> bool:
-    """Check for an environment variable that is set by AWS Lambda."""
-    return "AWS_LAMBDA_FUNCTION_NAME" in os.environ
-
-
-def _setup_lambda_logging(level: int) -> None:
-    """Configure logging to standard output for AWS Lambda."""
-    logger = logging.getLogger("scorer")
-    logger.setLevel(level)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JSONLineFormatter())
-    logger.addHandler(handler)
-
 def _validate_log_path(log_path: Path) -> None:
     """
     Ensure parent exists, the path is not a directory, and is writable.
@@ -180,7 +167,7 @@ def setup_logging(
     - No console handler (stdout must remain clean for grader).
     """
     global _INITIALIZED
-    
+
     # Normalize verbosity (0/1/2) and set env
     verbosity = _normalize_verbosity(level)
     os.environ["LOG_LEVEL"] = str(verbosity)
@@ -190,7 +177,7 @@ def setup_logging(
         if not _INITIALIZED:
             _setup_lambda_logging(py_level)
             _INITIALIZED = True
-        return Path("/tmp/lambda.log") # Return a dummy path
+        return Path("/tmp/lambda.log")  # Return a dummy path
 
     # Ensure LOG_FILE is set or use default
     log_path = Path(os.environ.get("LOG_FILE", "logs/scorer.log"))

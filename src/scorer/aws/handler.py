@@ -47,7 +47,8 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
     elif url_type == "dataset":
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(url, url_type)
+        tasks["dataset_and_code_score"] = \
+            lambda: get_dataset_and_code_score(url, url_type)
     elif url_type == "model":
         tasks["size"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
@@ -67,7 +68,7 @@ def score_url(url: str, url_type: str) -> dict:
                 results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
             except Exception as e:
-                log.exception(f"Metric '{metric_name}' failed for URL '{url}'")
+                log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
                 results[metric_name] = 0.0 if metric_name not in ["size"] else {}
                 latencies[f"{metric_name}_latency"] = 0
 
@@ -85,7 +86,8 @@ def score_url(url: str, url_type: str) -> dict:
         0.15 * results.get("dataset_quality", 0.0) +
         0.10 * results.get("code_quality", 0.0) +
         0.15 * results.get("performance_claims", 0.0) +
-        0.10 * results.get("dataset_and_code_score", 0.0)
+        0.10 * \
+        results.get("dataset_and_code_score", 0.0)
     )
     results["net_score"] = round(net_score, 2)
 
