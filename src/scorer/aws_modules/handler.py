@@ -14,10 +14,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # The following imports assume that the `src` directory is in the PYTHONPATH.
 # For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
 from scorer.utils.logging import setup_logging, get_logger, set_run_id
-from scorer.url_handler.base import classify_url
-from scorer.metrics.size import get_size_score
-from scorer.metrics.license import get_license_score
-from scorer.metrics.performance_claims import get_performance_claims
+# from scorer.url_handler.base import classify_url
+# from scorer.metrics.size import get_size_score
+# from scorer.metrics.license import get_license_score
+# from scorer.metrics.dataset_quality import get_dataset_quality_score
+# from scorer.metrics.code_quality import get_code_quality
+# from scorer.metrics.performance_claims import get_performance_claims
+# from scorer.metrics.dataset_and_code import get_dataset_and_code_score
+# from scorer.metrics.rampup import get_ramp_up
+# from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
@@ -33,32 +38,25 @@ def score_url(url: str, url_type: str) -> dict:
     parts = repo.split("/", 1)
     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
 
-    # --- Deferred Imports ---
-    # These are imported here to avoid initializing git-dependent libraries
-    # at the module level, which causes errors in the Lambda environment.
-    from scorer.metrics.code_quality import get_code_quality
-    from scorer.metrics.rampup import get_ramp_up
-
     tasks = {}
     if url_type == "code":
-        tasks["code_quality"] = lambda: get_code_quality(url, url_type)
+        pass
+        # tasks["code_quality"] = lambda: get_code_quality(url, url_type)
         # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        # tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
     elif url_type == "dataset":
-        tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-        # Deferred imports for dataset-specific metrics
-        from scorer.metrics.dataset_quality import get_dataset_quality_score
-        from scorer.metrics.dataset_and_code import get_dataset_and_code_score
-
-        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
-            url, url_type
-        )
+        pass
+        # tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+        # tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+        #     url, url_type
+        # )
     elif url_type == "model":
-        tasks["size"] = lambda: get_size_score(url, url_type)
-        tasks["license"] = lambda: get_license_score(url, url_type)
-        tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
+        pass
+        # tasks["size"] = lambda: get_size_score(url, url_type)
+        # tasks["license"] = lambda: get_license_score(url, url_type)
+        # tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
         # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        # tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
 
     results = {"name": name, "category": url_type.upper()}
     latencies = {}
@@ -86,7 +84,7 @@ def score_url(url: str, url_type: str) -> dict:
         0.15 * size_score
         + 0.15 * results.get("license", 0.0)
         + 0.10 * results.get("ramp_up", 0.0)
-        # + 0.10 * results.get("bus_factor", 0.0)
+        + 0.10 * results.get("bus_factor", 0.0)
         + 0.15 * results.get("dataset_quality", 0.0)
         + 0.10 * results.get("code_quality", 0.0)
         + 0.15 * results.get("performance_claims", 0.0)
