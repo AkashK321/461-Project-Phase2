@@ -2,6 +2,7 @@ import boto3
 import os
 import logging
 import uuid
+from decimal import Decimal
 
 # Set up logging
 logger = logging.getLogger()
@@ -18,6 +19,22 @@ else:
     table = dynamodb.Table(TABLE_NAME)
 
 
+def floats_to_decimals(obj):
+    """
+    Recursively converts all float values in a dictionary or list to Decimal.
+    This is necessary for DynamoDB, which does not support floats.
+    """
+    if isinstance(obj, list):
+        return [floats_to_decimals(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: floats_to_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, float):
+        # Convert float to string, then to Decimal for precision
+        return Decimal(str(obj))
+    else:
+        return obj
+
+
 def save_model_metadata(name, version, s3_key, scores):
     """
     Saves a new model's metadata to the DynamoDB table.
@@ -28,12 +45,15 @@ def save_model_metadata(name, version, s3_key, scores):
 
     try:
         new_id = str(uuid.uuid4())
+
+        scores_with_decimal = floats_to_decimals(scores)
+
         item = {
             "id": new_id,  # Primary key
             "model_name": name,
             "version": version,
-            "s3_key": s3_key,  # Link to the S3 file
-            "scores": scores,  # Your Phase 1 & 2 scores
+            "s3_key": s3_key,
+            "scores": scores_with_decimal,
         }
 
         table.put_item(Item=item)
