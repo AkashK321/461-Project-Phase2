@@ -46,58 +46,98 @@ def download_model(s3_object_key, local_download_path):
 def test_s3_operations():
     """
     Test function for Lambda console to verify S3 upload/download functionality.
-    Creates a test file, uploads it, downloads it, and verifies the operation.
+    Downloads real model files from HuggingFace, creates a zip package, 
+    and tests upload/download using the existing upload_model/download_model functions.
     """
     import tempfile
+    import urllib.request
+    import hashlib
+    import zipfile
     
-    test_content = "This is a test file for S3 operations"
-    test_key = "test-files/lambda-test.txt"
+    # Download a couple small files from BERT model to create a zip
+    model_files = {
+        "config.json": "https://huggingface.co/google-bert/bert-base-uncased/resolve/main/config.json",
+        "tokenizer_config.json": "https://huggingface.co/google-bert/bert-base-uncased/resolve/main/tokenizer_config.json"
+    }
     
-    # Create a temporary file for upload
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as tmp_file:
-        tmp_file.write(test_content)
-        upload_path = tmp_file.name
+    test_key = "test-models/bert-package.zip"
     
     try:
-        # Test upload
-        logger.info("Testing S3 upload...")
-        upload_success = upload_model(upload_path, test_key)
-        
-        if not upload_success:
-            return {"status": "FAILED", "error": "Upload failed"}
-        
-        # Test download
-        logger.info("Testing S3 download...")
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt') as tmp_download:
-            download_path = tmp_download.name
-        
-        downloaded_path = download_model(test_key, download_path)
-        
-        if not downloaded_path:
-            return {"status": "FAILED", "error": "Download failed"}
-        
-        # Verify content
-        with open(downloaded_path, 'r') as f:
-            downloaded_content = f.read()
-        
-        if downloaded_content == test_content:
-            return {
-                "status": "SUCCESS", 
-                "message": "S3 upload and download working correctly",
-                "test_key": test_key,
-                "bucket": S3_BUCKET_NAME
-            }
-        else:
-            return {"status": "FAILED", "error": "Content mismatch after download"}
+        # Create temporary directory for model files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Download model files
+            logger.info("Downloading model files from HuggingFace...")
+            
+            # Create zip package
+            zip_path = os.path.join(temp_dir, "bert-package.zip")
+            
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for filename, url in model_files.items():
+                    try:
+                        # Download file to temp location
+                        temp_file = os.path.join(temp_dir, filename)
+                        urllib.request.urlretrieve(url, temp_file)
+                        # Add to zip
+                        zipf.write(temp_file, filename)
+                        logger.info(f"Added {filename} to zip")
+                    except Exception as e:
+                        logger.warning(f"Failed to add {filename}: {e}")
+            
+            # Verify zip was created
+            if not os.path.exists(zip_path):
+                return {"status": "FAILED", "error": "Failed to create zip package"}
+            
+            # Get original zip hash for verification
+            with open(zip_path, 'rb') as f:
+                original_hash = hashlib.md5(f.read()).hexdigest()
+            original_size = os.path.getsize(zip_path)
+            
+            # Test upload using existing upload_model function
+            logger.info("Testing S3 upload with existing upload_model function...")
+            upload_success = upload_model(zip_path, test_key)
+            
+            if not upload_success:
+                return {"status": "FAILED", "error": "Upload of zip package failed"}
+            
+            # Test download using existing download_model function
+            logger.info("Testing S3 download with existing download_model function...")
+            download_path = os.path.join(temp_dir, "downloaded-package.zip")
+            downloaded_path = download_model(test_key, download_path)
+            
+            if not downloaded_path:
+                return {"status": "FAILED", "error": "Download of zip package failed"}
+            
+            # Verify file integrity
+            with open(downloaded_path, 'rb') as f:
+                downloaded_hash = hashlib.md5(f.read()).hexdigest()
+            downloaded_size = os.path.getsize(downloaded_path)
+            
+            # Verify zip contents
+            try:
+                with zipfile.ZipFile(downloaded_path, 'r') as zipf:
+                    zip_contents = zipf.namelist()
+            except Exception as e:
+                return {"status": "FAILED", "error": f"Downloaded zip file is corrupted: {e}"}
+            
+            if original_hash == downloaded_hash:
+                return {
+                    "status": "SUCCESS", 
+                    "message": "Existing upload_model/download_model functions work perfectly with zip files!",
+                    "test_key": test_key,
+                    "bucket": S3_BUCKET_NAME,
+                    "zip_size_bytes": downloaded_size,
+                    "zip_contents": zip_contents,
+                    "md5_hash": downloaded_hash,
+                    "note": "Your existing functions already handle zip files - no changes needed!"
+                }
+            else:
+                return {
+                    "status": "FAILED", 
+                    "error": "Zip file integrity check failed",
+                    "original_hash": original_hash,
+                    "downloaded_hash": downloaded_hash
+                }
             
     except Exception as e:
         logger.error(f"Test failed with exception: {e}")
         return {"status": "FAILED", "error": str(e)}
-    finally:
-        # Clean up local files
-        try:
-            os.unlink(upload_path)
-            if 'download_path' in locals():
-                os.unlink(download_path)
-        except:
-            pass
