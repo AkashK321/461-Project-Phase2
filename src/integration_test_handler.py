@@ -21,15 +21,14 @@ def test_aws_integration(event, context):
     """
     logger.info("--- STARTING AWS INTEGRATION TEST ---")
 
-    # Get bucket name from environment
-    S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
-
     # --- 1. S3 TEST ---
     logger.info("--- Phase 1: Testing S3 Operations ---")
 
     model_files = {
-        "config.json": "https://huggingface.co/google-bert/bert-base-uncased/resolve/main/config.json",
-        "tokenizer_config.json": "https://huggingface.co/google-bert/bert-base-uncased/resolve/main/tokenizer_config.json",
+        "config.json": "https://huggingface.co/google-bert/bert-base-uncased"
+        "/resolve/main/config.json",
+        "tokenizer_config.json": "https://huggingface.co/google-bert/"
+        "bert-base-uncased/resolve/main/tokenizer_config.json",
     }
     s3_test_key = "test-models/integration-test-package.zip"
     created_item_id = None  # To store the DB item ID for cleanup
@@ -64,7 +63,7 @@ def test_aws_integration(event, context):
                 downloaded_hash = hashlib.md5(f.read()).hexdigest()
 
             if original_hash != downloaded_hash:
-                raise Exception(f"File integrity check failed. Hashes do not match.")
+                raise Exception("File integrity check failed. Hashes do not match.")
 
             logger.info("S3 operations test SUCCEEDED.")
 
