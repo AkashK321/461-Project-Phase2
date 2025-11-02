@@ -7,3 +7,4 @@ lizard
 pytest-cov
 pytest-json-report
 requests
+boto3
