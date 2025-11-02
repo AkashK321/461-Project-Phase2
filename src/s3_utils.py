@@ -47,7 +47,7 @@ def test_s3_operations():
     """
     Test function for Lambda console to verify S3 upload/download functionality.
     Downloads real model files from HuggingFace, creates a zip package, 
-    and tests upload/download using the existing upload_model/download_model functions.
+    and tests upload/download using the upload_model/download_model functions.
     """
     import tempfile
     import urllib.request
@@ -93,14 +93,14 @@ def test_s3_operations():
             original_size = os.path.getsize(zip_path)
             
             # Test upload using existing upload_model function
-            logger.info("Testing S3 upload with existing upload_model function...")
+            logger.info("Testing S3 upload with upload_model function...")
             upload_success = upload_model(zip_path, test_key)
             
             if not upload_success:
                 return {"status": "FAILED", "error": "Upload of zip package failed"}
             
             # Test download using existing download_model function
-            logger.info("Testing S3 download with existing download_model function...")
+            logger.info("Testing S3 download with download_model function...")
             download_path = os.path.join(temp_dir, "downloaded-package.zip")
             downloaded_path = download_model(test_key, download_path)
             
@@ -122,13 +122,12 @@ def test_s3_operations():
             if original_hash == downloaded_hash:
                 return {
                     "status": "SUCCESS", 
-                    "message": "Existing upload_model/download_model functions work perfectly with zip files!",
+                    "message": "Upload_model/download_model functions work!",
                     "test_key": test_key,
                     "bucket": S3_BUCKET_NAME,
                     "zip_size_bytes": downloaded_size,
                     "zip_contents": zip_contents,
-                    "md5_hash": downloaded_hash,
-                    "note": "Your existing functions already handle zip files - no changes needed!"
+                    "md5_hash": downloaded_hash
                 }
             else:
                 return {
