@@ -27,6 +27,9 @@ from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 # from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 
+# Import S3 test function
+from s3_utils import test_s3_operations
+
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 
 # Initialize logging for the Lambda environment
@@ -112,6 +115,12 @@ def lambda_handler(event, context):
     """
     run_id = set_run_id(context.aws_request_id)
     log.info("Handler started", extra={"run_id": run_id, "event": event})
+
+    # Check if this is an S3 test request
+    if event.get("test_s3", False):
+        log.info("Running S3 test", extra={"run_id": run_id})
+        test_result = test_s3_operations()
+        return {"statusCode": 200, "body": json.dumps(test_result, indent=2)}
 
     urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:

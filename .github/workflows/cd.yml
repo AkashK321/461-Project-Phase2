@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - scorer-lambda
+      - s3-storage
 
 # Define the permissions the job will need
 permissions:
