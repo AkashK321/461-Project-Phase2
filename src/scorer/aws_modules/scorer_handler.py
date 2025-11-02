@@ -120,10 +120,7 @@ def lambda_handler(event, context):
     if event.get("test_s3", False):
         log.info("Running S3 test", extra={"run_id": run_id})
         test_result = test_s3_operations()
-        return {
-            "statusCode": 200,
-            "body": json.dumps(test_result, indent=2)
-        }
+        return {"statusCode": 200, "body": json.dumps(test_result, indent=2)}
 
     urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:
