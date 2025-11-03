@@ -1,17 +1,12 @@
-import os
 import json
 import base64
 import uuid
-from datetime import datetime, timezone
 
-from src.s3_utils import upload_model
-from src.db_utils import put_model_metadata, get_model_metadata
-
-S3_BUCKET = os.environ.get("S3_BUCKET_NAME")
-DDB_TABLE = os.environ.get("DDB_TABLE_NAME")
+from s3_utils import upload_model
+from db_utils import save_model_metadata, get_model_by_id
 
 def make_response(status_code, body):
-    """Formats HTTP response for API Gateway."""
+    """Return HTTP-style JSON response."""
     return {
         "statusCode": status_code,
         "headers": {"Content-Type": "application/json"},
@@ -19,11 +14,11 @@ def make_response(status_code, body):
     }
 
 def handler(event, context):
-    """Main Lambda handler for registry API routes."""
+    """Lambda handler for model registry API routes."""
     path = event.get("rawPath", "")
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
 
-    # Handle POST /upload
+    # POST /upload
     if method == "POST" and path == "/upload":
         try:
             body = event.get("body") or "{}"
@@ -42,36 +37,33 @@ def handler(event, context):
             model_id = str(uuid.uuid4())
             s3_key = f"models/{model_id}/{filename}"
 
-            # Upload file to S3
-            if not upload_model(tmp_path, s3_key):
+            # upload to S3 (helper raises on error; returns False only if it handled failure)
+            result = upload_model(tmp_path, s3_key)
+            if result is False:
                 return make_response(500, {"error": "S3 upload failed"})
 
-            # Store model metadata in DynamoDB
-            item = {
-                "id": model_id,
-                "name": filename,
-                "s3_key": s3_key,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "scores": {},
-            }
+            name = filename.rsplit(".", 1)[0]
+            version = "v1"
+            scores = {}
 
-            if not put_model_metadata(DDB_TABLE, item):
-                return make_response(500, {"error": "Failed to store metadata"})
+            item = save_model_metadata(name, version, s3_key, scores)
+            if not item:
+                return make_response(500, {"error": "failed to store metadata"})
 
-            return make_response(201, {"id": model_id, "s3_key": s3_key})
+            return make_response(201, {"id": item["id"], "s3_key": s3_key})
 
         except Exception as e:
             return make_response(400, {"error": str(e)})
 
-    # Handle GET /artifact/{id}
+    # GET /artifact/{id}
     if method == "GET" and path.startswith("/artifact/"):
         model_id = path.split("/artifact/", 1)[-1]
-        item = get_model_metadata(DDB_TABLE, model_id)
+        item = get_model_by_id(model_id)
 
         if not item:
             return make_response(404, {"error": "Model not found"})
 
         return make_response(200, item)
 
-    # Unrecognized route
     return make_response(404, {"error": f"Route not found: {method} {path}"})
+
