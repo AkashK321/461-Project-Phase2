@@ -8,6 +8,7 @@ on:
       - main
       - scorer-lambda
       - s3-storage
+      - registry-endpoints
 
 # Define the permissions the job will need
 permissions:
@@ -17,7 +18,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,25 +34,30 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12' 
-      
+          python-version: '3.12'
+
       - name: Create Lambda deployment package
         run: |
           # Create a directory to hold the package contents
           mkdir package
-          
+
           # Install dependencies from requirements.txt into the package directory
           pip install -r requirements.txt -t ./package
-          
+
           # Copy the application source code into the package directory
           cp -r src/* ./package/
-          
+
           # Create the zip file from the contents of the package directory
           cd package
           zip -r ../lambda_deployment.zip .
-          
+
       - name: Deploy to AWS Lambda
         run: |
+          if [ "${GITHUB_REF_NAME}" = "registry-endpoints" ]; then
+            FUNC="registry_api"
+          else
+            FUNC="scorer_function"
+          fi
           aws lambda update-function-code \
-            --function-name scorer_function \
+            --function-name "$FUNC" \
             --zip-file fileb://lambda_deployment.zip
