@@ -17,6 +17,7 @@ s3 = boto3.client("s3")
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 
+
 def make_response(status_code, body):
     # formats API Gateway response
     return {
@@ -101,8 +102,16 @@ def ingest_artifact(art_type, payload):
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #t = :t, #c = :c, #fn = :fn",
-            ExpressionAttributeNames={"#t": "type", "#c": "created_at", "#fn": "filename"},
-            ExpressionAttributeValues={":t": art_type, ":c": created_at, ":fn": filename},
+            ExpressionAttributeNames={
+                "#t": "type",
+                "#c": "created_at",
+                "#fn": "filename",
+            },
+            ExpressionAttributeValues={
+                ":t": art_type,
+                ":c": created_at,
+                ":fn": filename,
+            },
         )
     except Exception:
 
@@ -128,7 +137,11 @@ def search_artifacts(payload):
 
     # filter by type (if provided)
     if not want_all_types:
-        items = [it for it in items if str(it.get("type", "")).lower() in {t.lower() for t in types}]
+        items = [
+            it
+            for it in items
+            if str(it.get("type", "")).lower() in {t.lower() for t in types}
+        ]
 
     # filter by name (regex-like); if empty, return all from above
     if name_query:
