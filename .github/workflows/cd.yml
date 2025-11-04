@@ -9,6 +9,7 @@ on:
       - scorer-lambda
       - s3-storage
       - registry-endpoints
+      - refactor-file-structure
 
 # Define the permissions the job will need
 permissions:
@@ -53,11 +54,10 @@ jobs:
 
       - name: Deploy to AWS Lambda
         run: |
-          if [ "${GITHUB_REF_NAME}" = "registry-endpoints" ]; then
-            FUNC="registry_api"
-          else
-            FUNC="scorer_function"
-          fi
           aws lambda update-function-code \
-            --function-name "$FUNC" \
+            --function-name "scorer_function" \
+            --zip-file fileb://lambda_deployment.zip
+
+          aws lambda update-function-code \
+            --function-name "registry_api" \
             --zip-file fileb://lambda_deployment.zip
