@@ -28,7 +28,7 @@ from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 from scorer.metrics.base import get_repo_id
 
 # Import S3 test function
-from s3_utils import test_s3_operations
+from aws_modules.s3_utils import test_s3_operations
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 
@@ -104,7 +104,7 @@ def score_url(url: str, url_type: str) -> dict:
     return final_output
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """
     AWS Lambda entry point.
 
