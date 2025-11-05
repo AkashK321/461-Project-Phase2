@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 import boto3
 
-from s3_utils import upload_model
-from db_utils import save_model_metadata, get_model_by_id
+from aws_modules.s3_utils import upload_model
+from aws_modules.db_utils import save_model_metadata, get_model_by_id
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")

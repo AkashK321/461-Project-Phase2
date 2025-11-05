@@ -6,8 +6,8 @@ import hashlib
 import zipfile
 
 # Import both utility modules
-import s3_utils
-import db_utils
+import aws_modules.s3_utils as s3_utils
+import aws_modules.db_utils as db_utils
 
 # Set up logging
 logger = logging.getLogger()
