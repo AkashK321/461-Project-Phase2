@@ -107,41 +107,25 @@ def ingest_artifact(art_type, payload):
     # 3. If not, return an error and do not proceed with ingestion.
     logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
 
-    # Define paths
-    final_zip_name = f"{name}.zip"
-    tmp_zip_file = f"/tmp/{final_zip_name}"  # Path for the final zip file
-
+    tmp_dir = f"/tmp/{str(uuid.uuid4())}"
+    tmp_zip_file = ""
     try:
-        # --- NEW EFFICIENT METHOD: STREAM AND ZIP ---
-        logger.info(f"Streaming model '{repo}' to zip file '{tmp_zip_file}'")
+        # Download all files from the Hugging Face repo
+        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
+        snapshot_download(
+            repo_id=repo,
+            local_dir=tmp_dir,
+            local_dir_use_symlinks=False,  # Important for zipping
+        )
 
-        # Get the list of all files in the repo
-        repo_files = list_repo_files(repo_id=repo)
-
-        with zipfile.ZipFile(
-            tmp_zip_file, "w", compression=zipfile.ZIP_DEFLATED
-        ) as zf:
-            with requests.Session() as session:
-                for filename in repo_files:
-                    # Get the direct download URL for the file
-                    file_url = hf_hub_url(
-                        repo_id=repo, filename=filename
-                    )
-
-                    # Stream the file download
-                    with session.get(file_url, stream=True) as r:
-                        r.raise_for_status()
-
-                        # Create ZipInfo to preserve file metadata and hierarchy
-                        zinfo = zipfile.ZipInfo(filename)
-                        zinfo.compress_type = zipfile.ZIP_DEFLATED
-                        
-                        # Open the zip file for writing this specific entry
-                        with zf.open(zinfo, 'w') as dest_file:
-                            # Stream the content from download to zip
-                            shutil.copyfileobj(r.raw, dest_file)
-        
-        logger.info(f"Successfully created zip file at {tmp_zip_file}")
+        # Zip the downloaded directory
+        zip_name = f"{name}"
+        tmp_zip_path_base = f"/tmp/{zip_name}"
+        # Creates a zip file (e.g., /tmp/bert-base-uncased.zip)
+        tmp_zip_file = shutil.make_archive(
+            tmp_zip_path_base, "zip", tmp_dir
+        )
+        final_zip_name = f"{name}.zip"
 
         # --- Upload and Save to DB ---
         model_id = str(uuid.uuid4())
@@ -188,10 +172,15 @@ def ingest_artifact(art_type, payload):
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
         # Cleanup temp files and directories
-        if os.path.exists(tmp_zip_file):
-            os.remove(tmp_zip_file)
-            logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
-
+        try:
+            if os.path.exists(tmp_dir):
+                shutil.rmtree(tmp_dir)
+                logger.info(f"Cleaned up temp dir: {tmp_dir}")
+            if os.path.exists(tmp_zip_file):
+                os.remove(tmp_zip_file)
+                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
 
 def search_artifacts(payload):
     """
