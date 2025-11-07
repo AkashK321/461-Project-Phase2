@@ -26,6 +26,10 @@ s3 = boto3.client("s3")
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
+
 
 def make_response(status_code, body):
     # formats API Gateway response
@@ -159,9 +163,9 @@ def ingest_artifact(art_type, payload):
         logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
         snapshot_download(
             repo_id=repo,
-            local_dir=tmp_dir,
-            local_dir_use_symlinks=False,  # Important for zipping
+            local_dir=tmp_dir
         )
+        logger.info(f"Successfully downloaded model to '{tmp_dir}'")
 
         # Zip the downloaded directory
         zip_name = f"{repo}"
