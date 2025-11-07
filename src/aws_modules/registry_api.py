@@ -1,14 +1,23 @@
 import json
 import base64
+import shutil
 import uuid
 import os
 import re
+import logging
 from datetime import datetime, timezone
 
 import boto3
+from huggingface_hub import snapshot_download, HfHubHTTPError
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
+from scorer.metrics.base import get_repo_id
+from scorer.url_handler.base import classify_url
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")
@@ -63,7 +72,7 @@ def reset_state():
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
 
-def ingest_artifact(art_type, payload):
+def ingest_artifact_old(art_type, payload):
     """
     Ingests an artifact (model) via POST /artifact/{type}
     Expects payload with:
@@ -118,6 +127,113 @@ def ingest_artifact(art_type, payload):
         pass
 
     return make_response(201, {"id": item["id"], "s3_key": s3_key})
+
+
+def ingest_artifact(art_type, payload):
+    try:
+        for url in payload["urls"]:
+            url_type = classify_url(url)
+            if url_type == "model":
+                repo = get_repo_id(url, url_type) or ""
+                break
+            else:
+                repo = ""
+        parts = repo.split("/", 1)
+        name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+    except Exception:
+        return make_response(400, {"error": "unable to find model url in payload"})
+    
+    # TODO: Per the spec , you must add logic here to:
+    # 1. Calculate all non-latency metrics for the model *before* downloading.
+    # 2. Check if all scores are >= 0.5.
+    # 3. If not, return an error and do not proceed with ingestion.
+    logger.warning(
+        "Metric pre-check not implemented. Proceeding directly to download."
+    )
+
+    tmp_dir = f"/tmp/{str(uuid.uuid4())}"
+    tmp_zip_file = ""
+
+    try:
+        # Download all files from the Hugging Face repo
+        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
+        snapshot_download(
+            repo_id=repo,
+            local_dir=tmp_dir,
+            local_dir_use_symlinks=False,  # Important for zipping
+        )
+
+        # Zip the downloaded directory
+        zip_name = f"{repo}"
+        tmp_zip_path_base = f"/tmp/{zip_name}"
+        # Creates a zip file (e.g., /tmp/bert-base-uncased.zip)
+        tmp_zip_file = shutil.make_archive(
+            tmp_zip_path_base, "zip", tmp_dir
+        )
+        final_zip_name = f"{name}.zip"
+
+        # --- Upload and Save to DB ---
+        model_id = str(uuid.uuid4())
+        s3_key = f"models/{model_id}/{final_zip_name}"
+
+        # Upload to S3
+        logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
+        ok = upload_model(tmp_zip_file, s3_key)
+        if ok is False:
+            return make_response(500, {"error": "S3 upload failed"})
+
+        version = "v1"  # TODO: You might want to parse this from HF
+        scores = {}  # TODO: Add scores from the pre-check
+        created_at = datetime.now(timezone.utc).isoformat()
+
+        # Save metadata to DynamoDB
+        item = save_model_metadata(name, version, s3_key, scores)
+        if not item:
+            return make_response(500, {"error": "failed to store metadata"})
+
+        # Add additional metadata
+        tbl = dynamodb.Table(TABLE_NAME)
+        tbl.update_item(
+            Key={"id": item["id"]},
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url",
+            ExpressionAttributeNames={
+                "#t": "type",
+                "#c": "created_at",
+                "#fn": "filename",
+                "#url": "source_url",
+            },
+            ExpressionAttributeValues={
+                ":t": art_type,
+                ":c": created_at,
+                ":fn": final_zip_name,
+                ":url": url,
+            },
+        )
+
+        logger.info(f"Successfully ingested model {model_id} from {url}")
+        return make_response(
+            201, {"id": item["id"], "s3_key": s3_key, "model": name}
+        )
+    except HfHubHTTPError as e:
+        logger.error(f"Hugging Face error: {e}")
+        return make_response(
+            404, {"error": f"Model not found on Hugging Face: {repo}"}
+        )
+    except Exception as e:
+        logger.error(f"Ingestion failed: {e}")
+        return make_response(500, {"error": f"Internal server error: {str(e)}"})
+    finally:
+        # Cleanup temp files and directories
+        try:
+            if os.path.exists(tmp_dir):
+                shutil.rmtree(tmp_dir)
+                logger.info(f"Cleaned up temp dir: {tmp_dir}")
+            if os.path.exists(tmp_zip_file):
+                os.remove(tmp_zip_file)
+                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+    
 
 
 def search_artifacts(payload):

@@ -10,6 +10,7 @@ on:
       - s3-storage
       - registry-endpoints
       - refactor-file-structure
+      - download-model-from-hugging-face
 
 # Define the permissions the job will need
 permissions:
