@@ -76,65 +76,15 @@ def reset_state():
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
 
-def ingest_artifact_old(art_type, payload):
+def ingest_artifact(art_type, payload):
     """
     Ingests an artifact (model) via POST /artifact/{type}
     Expects payload with:
-      - filename
-      - file_b64  (base64 of the file)
+      - urls (list of strings): at least 1 url pointing to the model
     """
-    filename = payload["filename"]
-    file_b64 = payload["file_b64"]
-    file_bytes = base64.b64decode(file_b64)
-
-    # write to tmp then upload
-    tmp_path = f"/tmp/{filename}"
-    with open(tmp_path, "wb") as f:
-        f.write(file_bytes)
-
-    model_id = str(uuid.uuid4())
-    s3_key = f"models/{model_id}/{filename}"
-
-    # upload to S3
-    ok = upload_model(tmp_path, s3_key)
-    if ok is False:
-        return make_response(500, {"error": "S3 upload failed"})
-
-    name = filename.rsplit(".", 1)[0]
-    version = "v1"
-    scores = {}
-    created_at = datetime.now(timezone.utc).isoformat()
-
-    # save base metadata with helper first (keeps compatibility)
-    item = save_model_metadata(name, version, s3_key, scores)
-    if not item:
-        return make_response(500, {"error": "failed to store metadata"})
-
     try:
-        tbl = dynamodb.Table(TABLE_NAME)
-        tbl.update_item(
-            Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn",
-            ExpressionAttributeNames={
-                "#t": "type",
-                "#c": "created_at",
-                "#fn": "filename",
-            },
-            ExpressionAttributeValues={
-                ":t": art_type,
-                ":c": created_at,
-                ":fn": filename,
-            },
-        )
-    except Exception:
-
-        pass
-
-    return make_response(201, {"id": item["id"], "s3_key": s3_key})
-
-
-def ingest_artifact(art_type, payload):
-    try:
+        if payload["urls"].type != list or len(payload["urls"]) == 0:
+            return make_response(400, {"error": "payload must have non-empty 'urls' list"})
         for url in payload["urls"]:
             url_type = classify_url(url)
             if url_type == "model":
