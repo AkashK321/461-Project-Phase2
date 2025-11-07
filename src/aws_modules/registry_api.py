@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 import boto3
-from huggingface_hub import snapshot_download, HfHubHTTPError
+from huggingface_hub import snapshot_download
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
@@ -213,11 +213,6 @@ def ingest_artifact(art_type, payload):
         logger.info(f"Successfully ingested model {model_id} from {url}")
         return make_response(
             201, {"id": item["id"], "s3_key": s3_key, "model": name}
-        )
-    except HfHubHTTPError as e:
-        logger.error(f"Hugging Face error: {e}")
-        return make_response(
-            404, {"error": f"Model not found on Hugging Face: {repo}"}
         )
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
