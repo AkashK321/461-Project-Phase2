@@ -5,12 +5,10 @@ import uuid
 import os
 import re
 import logging
-import requests
-import zipfile
 from datetime import datetime, timezone
 
 import boto3
-from huggingface_hub import hf_hub_url, list_repo_files, snapshot_download
+from huggingface_hub import snapshot_download
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
@@ -85,7 +83,7 @@ def ingest_artifact(art_type, payload):
       - urls (list of strings): at least 1 url pointing to the model
     """
     try:
-        if type(payload["urls"]) != list or len(payload["urls"]) == 0:
+        if type(payload["urls"]) is not list or len(payload["urls"]) == 0:
             return make_response(
                 400, {"error": "payload must have non-empty 'urls' list"}
             )
