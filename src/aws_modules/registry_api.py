@@ -85,7 +85,7 @@ def ingest_artifact(art_type, payload):
       - urls (list of strings): at least 1 url pointing to the model
     """
     try:
-        if payload["urls"].type != list or len(payload["urls"]) == 0:
+        if type(payload["urls"]) != list or len(payload["urls"]) == 0:
             return make_response(
                 400, {"error": "payload must have non-empty 'urls' list"}
             )
