@@ -5,10 +5,12 @@ import uuid
 import os
 import re
 import logging
+import requests
+import zipfile
 from datetime import datetime, timezone
 
 import boto3
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_url, list_repo_files, snapshot_download
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
@@ -105,21 +107,41 @@ def ingest_artifact(art_type, payload):
     # 3. If not, return an error and do not proceed with ingestion.
     logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
 
-    tmp_dir = f"/tmp/{str(uuid.uuid4())}"
-    tmp_zip_file = ""
+    # Define paths
+    final_zip_name = f"{name}.zip"
+    tmp_zip_file = f"/tmp/{final_zip_name}"  # Path for the final zip file
 
     try:
-        # Download all files from the Hugging Face repo
-        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
-        snapshot_download(repo_id=repo, local_dir=tmp_dir)
-        logger.info(f"Successfully downloaded model to '{tmp_dir}'")
+        # --- NEW EFFICIENT METHOD: STREAM AND ZIP ---
+        logger.info(f"Streaming model '{repo}' to zip file '{tmp_zip_file}'")
 
-        # Zip the downloaded directory
-        zip_name = f"{repo}"
-        tmp_zip_path_base = f"/tmp/{zip_name}"
-        # Creates a zip file (e.g., /tmp/bert-base-uncased.zip)
-        tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
-        final_zip_name = f"{name}.zip"
+        # Get the list of all files in the repo
+        repo_files = list_repo_files(repo_id=repo)
+
+        with zipfile.ZipFile(
+            tmp_zip_file, "w", compression=zipfile.ZIP_DEFLATED
+        ) as zf:
+            with requests.Session() as session:
+                for filename in repo_files:
+                    # Get the direct download URL for the file
+                    file_url = hf_hub_url(
+                        repo_id=repo, filename=filename
+                    )
+
+                    # Stream the file download
+                    with session.get(file_url, stream=True) as r:
+                        r.raise_for_status()
+
+                        # Create ZipInfo to preserve file metadata and hierarchy
+                        zinfo = zipfile.ZipInfo(filename)
+                        zinfo.compress_type = zipfile.ZIP_DEFLATED
+                        
+                        # Open the zip file for writing this specific entry
+                        with zf.open(zinfo, 'w') as dest_file:
+                            # Stream the content from download to zip
+                            shutil.copyfileobj(r.raw, dest_file)
+        
+        logger.info(f"Successfully created zip file at {tmp_zip_file}")
 
         # --- Upload and Save to DB ---
         model_id = str(uuid.uuid4())
