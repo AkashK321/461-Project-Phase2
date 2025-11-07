@@ -122,9 +122,7 @@ def ingest_artifact(art_type, payload):
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         # Creates a zip file (e.g., /tmp/bert-base-uncased.zip)
-        tmp_zip_file = shutil.make_archive(
-            tmp_zip_path_base, "zip", tmp_dir
-        )
+        tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
 
         # --- Upload and Save to DB ---
@@ -181,6 +179,7 @@ def ingest_artifact(art_type, payload):
                 logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
+
 
 def search_artifacts(payload):
     """
