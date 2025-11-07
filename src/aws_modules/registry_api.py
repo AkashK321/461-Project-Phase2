@@ -188,15 +188,9 @@ def ingest_artifact(art_type, payload):
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
         # Cleanup temp files and directories
-        try:
-            if os.path.exists(tmp_dir):
-                shutil.rmtree(tmp_dir)
-                logger.info(f"Cleaned up temp dir: {tmp_dir}")
-            if os.path.exists(tmp_zip_file):
-                os.remove(tmp_zip_file)
-                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+        if os.path.exists(tmp_zip_file):
+            os.remove(tmp_zip_file)
+            logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
 
 
 def search_artifacts(payload):
