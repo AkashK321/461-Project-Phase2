@@ -84,7 +84,9 @@ def ingest_artifact(art_type, payload):
     """
     try:
         if payload["urls"].type != list or len(payload["urls"]) == 0:
-            return make_response(400, {"error": "payload must have non-empty 'urls' list"})
+            return make_response(
+                400, {"error": "payload must have non-empty 'urls' list"}
+            )
         for url in payload["urls"]:
             url_type = classify_url(url)
             if url_type == "model":
@@ -96,14 +98,12 @@ def ingest_artifact(art_type, payload):
         name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
     except Exception:
         return make_response(400, {"error": "unable to find model url in payload"})
-    
+
     # TODO: Per the spec , you must add logic here to:
     # 1. Calculate all non-latency metrics for the model *before* downloading.
     # 2. Check if all scores are >= 0.5.
     # 3. If not, return an error and do not proceed with ingestion.
-    logger.warning(
-        "Metric pre-check not implemented. Proceeding directly to download."
-    )
+    logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
@@ -111,19 +111,14 @@ def ingest_artifact(art_type, payload):
     try:
         # Download all files from the Hugging Face repo
         logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
-        snapshot_download(
-            repo_id=repo,
-            local_dir=tmp_dir
-        )
+        snapshot_download(repo_id=repo, local_dir=tmp_dir)
         logger.info(f"Successfully downloaded model to '{tmp_dir}'")
 
         # Zip the downloaded directory
         zip_name = f"{repo}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         # Creates a zip file (e.g., /tmp/bert-base-uncased.zip)
-        tmp_zip_file = shutil.make_archive(
-            tmp_zip_path_base, "zip", tmp_dir
-        )
+        tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
 
         # --- Upload and Save to DB ---
@@ -165,9 +160,7 @@ def ingest_artifact(art_type, payload):
         )
 
         logger.info(f"Successfully ingested model {model_id} from {url}")
-        return make_response(
-            201, {"id": item["id"], "s3_key": s3_key, "model": name}
-        )
+        return make_response(201, {"id": item["id"], "s3_key": s3_key, "model": name})
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
@@ -182,7 +175,6 @@ def ingest_artifact(art_type, payload):
                 logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
-    
 
 
 def search_artifacts(payload):
