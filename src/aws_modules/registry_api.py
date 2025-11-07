@@ -1,14 +1,23 @@
 import json
 import base64
+import shutil
 import uuid
 import os
 import re
+import logging
 from datetime import datetime, timezone
 
 import boto3
+from huggingface_hub import snapshot_download
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
+from scorer.metrics.base import get_repo_id
+from scorer.url_handler.base import classify_url
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")
@@ -16,6 +25,10 @@ s3 = boto3.client("s3")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
+
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 
 
 def make_response(status_code, body):
@@ -67,57 +80,103 @@ def ingest_artifact(art_type, payload):
     """
     Ingests an artifact (model) via POST /artifact/{type}
     Expects payload with:
-      - filename
-      - file_b64  (base64 of the file)
+      - urls (list of strings): at least 1 url pointing to the model
     """
-    filename = payload["filename"]
-    file_b64 = payload["file_b64"]
-    file_bytes = base64.b64decode(file_b64)
-
-    # write to tmp then upload
-    tmp_path = f"/tmp/{filename}"
-    with open(tmp_path, "wb") as f:
-        f.write(file_bytes)
-
-    model_id = str(uuid.uuid4())
-    s3_key = f"models/{model_id}/{filename}"
-
-    # upload to S3
-    ok = upload_model(tmp_path, s3_key)
-    if ok is False:
-        return make_response(500, {"error": "S3 upload failed"})
-
-    name = filename.rsplit(".", 1)[0]
-    version = "v1"
-    scores = {}
-    created_at = datetime.now(timezone.utc).isoformat()
-
-    # save base metadata with helper first (keeps compatibility)
-    item = save_model_metadata(name, version, s3_key, scores)
-    if not item:
-        return make_response(500, {"error": "failed to store metadata"})
-
     try:
+        if type(payload["urls"]) is not list or len(payload["urls"]) == 0:
+            return make_response(
+                400, {"error": "payload must have non-empty 'urls' list"}
+            )
+        for url in payload["urls"]:
+            url_type = classify_url(url)
+            if url_type == "model":
+                repo = get_repo_id(url, url_type) or ""
+                break
+            else:
+                repo = ""
+        parts = repo.split("/", 1)
+        name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+    except Exception:
+        return make_response(400, {"error": "unable to find model url in payload"})
+
+    # TODO: Per the spec , you must add logic here to:
+    # 1. Calculate all non-latency metrics for the model *before* downloading.
+    # 2. Check if all scores are >= 0.5.
+    # 3. If not, return an error and do not proceed with ingestion.
+    logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
+
+    tmp_dir = f"/tmp/{str(uuid.uuid4())}"
+    tmp_zip_file = ""
+    try:
+        # Download all files from the Hugging Face repo
+        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
+        snapshot_download(
+            repo_id=repo,
+            local_dir=tmp_dir,
+            local_dir_use_symlinks=False,  # Important for zipping
+        )
+
+        # Zip the downloaded directory
+        zip_name = f"{name}"
+        tmp_zip_path_base = f"/tmp/{zip_name}"
+        # Creates a zip file (e.g., /tmp/bert-base-uncased.zip)
+        tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
+        final_zip_name = f"{name}.zip"
+
+        # --- Upload and Save to DB ---
+        model_id = str(uuid.uuid4())
+        s3_key = f"models/{model_id}/{final_zip_name}"
+
+        # Upload to S3
+        logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
+        ok = upload_model(tmp_zip_file, s3_key)
+        if ok is False:
+            return make_response(500, {"error": "S3 upload failed"})
+
+        version = "v1"  # TODO: You might want to parse this from HF
+        scores = {}  # TODO: Add scores from the pre-check
+        created_at = datetime.now(timezone.utc).isoformat()
+
+        # Save metadata to DynamoDB
+        item = save_model_metadata(name, version, s3_key, scores)
+        if not item:
+            return make_response(500, {"error": "failed to store metadata"})
+
+        # Add additional metadata
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn",
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
                 "#fn": "filename",
+                "#url": "source_url",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
                 ":c": created_at,
-                ":fn": filename,
+                ":fn": final_zip_name,
+                ":url": url,
             },
         )
-    except Exception:
 
-        pass
-
-    return make_response(201, {"id": item["id"], "s3_key": s3_key})
+        logger.info(f"Successfully ingested model {model_id} from {url}")
+        return make_response(201, {"id": item["id"], "s3_key": s3_key, "model": name})
+    except Exception as e:
+        logger.error(f"Ingestion failed: {e}")
+        return make_response(500, {"error": f"Internal server error: {str(e)}"})
+    finally:
+        # Cleanup temp files and directories
+        try:
+            if os.path.exists(tmp_dir):
+                shutil.rmtree(tmp_dir)
+                logger.info(f"Cleaned up temp dir: {tmp_dir}")
+            if os.path.exists(tmp_zip_file):
+                os.remove(tmp_zip_file)
+                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
 
 
 def search_artifacts(payload):
