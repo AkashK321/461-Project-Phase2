@@ -57,7 +57,7 @@ def get_base_model_from_card(model_repo_id):
         
         if not base_model:
             log.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
-            return None
+            return "None"
 
         # base_model can be a string or a list, handle both.
         if isinstance(base_model, list):
