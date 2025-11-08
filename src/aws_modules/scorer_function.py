@@ -8,14 +8,9 @@ existing scorer logic, and returns the results as a list of JSON objects.
 
 import os
 import json
-import re
 import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# --- IMPORTANT ---
-# The following imports assume that the `src` directory is in the PYTHONPATH.
-# For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
 from aws_modules.db_utils import get_model_by_id, get_model_by_repo_id
 from scorer.utils.logging import set_run_id
 from scorer.url_handler.base import classify_url

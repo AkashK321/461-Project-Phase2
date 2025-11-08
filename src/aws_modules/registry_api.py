@@ -6,8 +6,6 @@ import uuid
 import re
 import logging
 
-# Set Hugging Face cache directories to the writable /tmp folder
-# This MUST be done before any other imports that might use huggingface_hub
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
 os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
