@@ -18,8 +18,6 @@ from scorer.url_handler.base import classify_url
 from scorer.utils.logging import get_logger, setup_logging
 
 # Set up logging
-setup_logging(json_lines=True)
-log = get_logger(__name__)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -107,7 +105,7 @@ def ingest_artifact(art_type, payload):
     # 1. Calculate all non-latency metrics for the model *before* downloading.
     # 2. Check if all scores are >= 0.5.
     # 3. If not, return an error and do not proceed with ingestion.
-    log.warning("Metric pre-check not implemented. Proceeding directly to download.")
+    logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
@@ -117,7 +115,7 @@ def ingest_artifact(art_type, payload):
 
     try:
         # Download all files from the Hugging Face repo
-        log.info(f"Downloading model '{repo}' to '{tmp_dir}'")
+        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
         snapshot_download(
             repo_id=repo,
             local_dir=tmp_dir,
@@ -136,7 +134,7 @@ def ingest_artifact(art_type, payload):
         s3_key = f"models/{model_id}/{final_zip_name}"
 
         # Upload to S3
-        log.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
+        logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
         ok = upload_model(tmp_zip_file, s3_key)
         if ok is False:
             return make_response(500, {"error": "S3 upload failed"})
@@ -173,22 +171,22 @@ def ingest_artifact(art_type, payload):
             },
         )
 
-        log.info(f"Successfully ingested model {model_id} from {url}")
+        logger.info(f"Successfully ingested model {model_id} from {url}")
         return make_response(201, {"id": item["id"], "s3_key": s3_key, "model": name})
     except Exception as e:
-        log.error(f"Ingestion failed: {e}")
+        logger.error(f"Ingestion failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
         # Cleanup temp files and directories
         try:
             if os.path.exists(tmp_dir):
                 shutil.rmtree(tmp_dir)
-                log.info(f"Cleaned up temp dir: {tmp_dir}")
+                logger.info(f"Cleaned up temp dir: {tmp_dir}")
             if os.path.exists(tmp_zip_file):
                 os.remove(tmp_zip_file)
-                log.info(f"Cleaned up temp zip: {tmp_zip_file}")
+                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
         except Exception as e:
-            log.error(f"Error during cleanup: {e}")
+            logger.error(f"Error during cleanup: {e}")
 
 
 def search_artifacts(payload):
