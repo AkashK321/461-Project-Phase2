@@ -110,7 +110,7 @@ def ingest_artifact(art_type, payload):
     tmp_zip_file = ""
     base_model_repo = get_base_model_from_card(repo)
     logger.info(f"Base model repo from card: {base_model_repo}")
-    model_lineage = get_lineage(base_model_repo) if base_model_repo else []
+    # model_lineage = get_lineage(base_model_repo) if base_model_repo else []
 
     try:
         # Download all files from the Hugging Face repo
@@ -151,15 +151,14 @@ def ingest_artifact(art_type, payload):
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url, #rid = :rid, #brid = :brid, lineage = :lineage",
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url, #rid = :rid, #brid = :brid",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
                 "#fn": "filename",
                 "#url": "source_url",
                 "#rid": "repo_id",
-                "#brid": "base_model_repo_id",
-                "#lineage": "lineage",
+                "#brid": "base_model_repo_id"
             },
             ExpressionAttributeValues={
                 ":t": art_type,
@@ -167,8 +166,7 @@ def ingest_artifact(art_type, payload):
                 ":fn": final_zip_name,
                 ":url": url,
                 ":rid": repo,
-                ":brid": base_model_repo,
-                ":lineage": model_lineage,
+                ":brid": base_model_repo
             },
         )
 

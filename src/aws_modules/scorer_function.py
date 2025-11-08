@@ -142,7 +142,7 @@ def score_url(url: str, url_type: str) -> dict:
                 results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
             except Exception as e:
-                log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
+                logger.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
                 results[metric_name] = 0.0 if metric_name not in ["size"] else {}
                 latencies[f"{metric_name}_latency"] = 0
 
@@ -179,7 +179,7 @@ def handler(event, context):
     :return: A dictionary with a status code and a body containing the scoring results.
     """
     run_id = set_run_id(context.aws_request_id)
-    log.info("Handler started", extra={"run_id": run_id, "event": event})
+    logger.info("Handler started", extra={"run_id": run_id, "event": event})
 
     # Check if this is an S3 test request
     # if event.get("test_s3", False):
@@ -200,11 +200,11 @@ def handler(event, context):
     for url in urls:
         url_type = classify_url(url)
         if url_type not in ["model", "dataset", "code"]:
-            log.warning(f"Skipping unknown or unsupported URL type for: {url}")
+            logger.warning(f"Skipping unknown or unsupported URL type for: {url}")
             continue
         all_scores.append(score_url(url, url_type))
 
-    log.info(
+    logger.info(
         "Handler finished", extra={"run_id": run_id, "results_count": len(all_scores)}
     )
     return {"statusCode": 200, "body": json.dumps(all_scores, indent=2)}
