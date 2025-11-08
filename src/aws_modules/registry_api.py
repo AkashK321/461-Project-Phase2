@@ -20,6 +20,8 @@ from scorer.utils.logging import get_logger, setup_logging
 # Set up logging
 setup_logging(json_lines=True)
 log = get_logger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")
@@ -110,7 +112,7 @@ def ingest_artifact(art_type, payload):
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
     base_model_repo = get_base_model_from_card(repo)
-    log.info(f"Base model repo from card: {base_model_repo}")
+    logger.info(f"Base model repo from card: {base_model_repo}")
     # model_lineage = get_lineage(base_model_repo) if base_model_repo else []
 
     try:

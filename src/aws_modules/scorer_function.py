@@ -10,7 +10,6 @@ import os
 import json
 import re
 import boto3
-import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from huggingface_hub import ModelCard
