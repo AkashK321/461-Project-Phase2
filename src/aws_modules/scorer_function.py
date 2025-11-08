@@ -11,7 +11,6 @@ import json
 import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from aws_modules.db_utils import get_model_by_id, get_model_by_repo_id
 from scorer.utils.logging import set_run_id
 from scorer.url_handler.base import classify_url
 from scorer.metrics.size import get_size_score
@@ -31,8 +30,6 @@ from scorer.metrics.base import get_repo_id
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
-
-from huggingface_hub import ModelCard
 
 dynamodb = boto3.resource("dynamodb")
 

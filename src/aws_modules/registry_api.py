@@ -16,7 +16,7 @@ import boto3
 from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
-from utils.lineage_utils import get_lineage_items_from_id, get_base_model_from_card
+from utils.lineage_utils import get_base_model_from_card
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 
@@ -31,8 +31,6 @@ s3 = boto3.client("s3")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
-
-from huggingface_hub import snapshot_download
 
 
 def make_response(status_code, body):
@@ -152,7 +150,8 @@ def ingest_artifact(art_type, payload):
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url, #rid = :rid, #brid = :brid",
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
+                #url = :url, #rid = :rid, #brid = :brid",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
