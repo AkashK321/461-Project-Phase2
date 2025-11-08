@@ -19,7 +19,6 @@ from huggingface_hub import ModelCard
 # The following imports assume that the `src` directory is in the PYTHONPATH.
 # For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
 from aws_modules.db_utils import get_model_by_id, get_model_by_repo_id
-from aws_modules.registry_api import make_response
 from scorer.utils.logging import setup_logging, get_logger, set_run_id
 from scorer.url_handler.base import classify_url
 from scorer.metrics.size import get_size_score
