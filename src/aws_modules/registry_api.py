@@ -15,7 +15,6 @@ from aws_modules.db_utils import save_model_metadata, get_model_by_id
 from aws_modules.scorer_function import get_base_model_from_card, get_lineage
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
-from scorer.utils.logging import get_logger, setup_logging
 
 # Set up logging
 logger = logging.getLogger()
