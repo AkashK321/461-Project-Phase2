@@ -42,8 +42,8 @@ TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 dynamodb = boto3.resource("dynamodb")
 
 # Set up logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+setup_logging(json_lines=True)
+log = get_logger(__name__)
 
 def get_base_model_from_card(model_repo_id):
     """
@@ -51,12 +51,12 @@ def get_base_model_from_card(model_repo_id):
     metadata to find the 'base_model' key.
     """
     try:
-        logger.info(f"Fetching model card for {model_repo_id}...")
+        log.info(f"Fetching model card for {model_repo_id}...")
         card = ModelCard.load(model_repo_id)
         base_model = card.data.get("base_model")
         
         if not base_model:
-            logger.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
+            log.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
             return None
 
         # base_model can be a string or a list, handle both.
@@ -65,12 +65,12 @@ def get_base_model_from_card(model_repo_id):
         else:
             base_model_id = str(base_model)
         
-        logger.info(f"Found base model in card: {base_model_id}")
+        log.info(f"Found base model in card: {base_model_id}")
         return base_model_id
 
     except Exception as e:
         # This is a non-critical failure. Log and continue ingestion.
-        logger.warning(f"Could not retrieve base model from card for {model_repo_id}: {e}")
+        log.warning(f"Could not retrieve base model from card for {model_repo_id}: {e}")
         return None
 
 
@@ -89,15 +89,15 @@ def get_lineage(model_id: str) -> dict:
         parent_repo_id = current_item.get("base_model_repo_id")
         
         if not parent_repo_id:
-            logger.info("Reached root model (no parent repo ID).")
+            log.info("Reached root model (no parent repo ID).")
             break  # This is the root of the lineage
             
         # Check if the parent exists in our registry
-        logger.info(f"Searching for parent: {parent_repo_id}")
+        log.info(f"Searching for parent: {parent_repo_id}")
         current_item = get_model_by_repo_id(parent_repo_id)
         
         if not current_item:
-            logger.info(f"Parent '{parent_repo_id}' not found in registry. Ending trace.")
+            log.info(f"Parent '{parent_repo_id}' not found in registry. Ending trace.")
 
     return lineage_graph
 
@@ -142,7 +142,7 @@ def score_url(url: str, url_type: str) -> dict:
                 results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
             except Exception as e:
-                logger.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
+                log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
                 results[metric_name] = 0.0 if metric_name not in ["size"] else {}
                 latencies[f"{metric_name}_latency"] = 0
 
@@ -179,7 +179,7 @@ def handler(event, context):
     :return: A dictionary with a status code and a body containing the scoring results.
     """
     run_id = set_run_id(context.aws_request_id)
-    logger.info("Handler started", extra={"run_id": run_id, "event": event})
+    log.info("Handler started", extra={"run_id": run_id, "event": event})
 
     # Check if this is an S3 test request
     # if event.get("test_s3", False):
@@ -200,11 +200,11 @@ def handler(event, context):
     for url in urls:
         url_type = classify_url(url)
         if url_type not in ["model", "dataset", "code"]:
-            logger.warning(f"Skipping unknown or unsupported URL type for: {url}")
+            log.warning(f"Skipping unknown or unsupported URL type for: {url}")
             continue
         all_scores.append(score_url(url, url_type))
 
-    logger.info(
+    log.info(
         "Handler finished", extra={"run_id": run_id, "results_count": len(all_scores)}
     )
     return {"statusCode": 200, "body": json.dumps(all_scores, indent=2)}
