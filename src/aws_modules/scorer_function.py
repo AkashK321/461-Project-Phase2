@@ -13,8 +13,6 @@ import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from huggingface_hub import ModelCard
-
 # --- IMPORTANT ---
 # The following imports assume that the `src` directory is in the PYTHONPATH.
 # For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
@@ -41,6 +39,8 @@ TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
 os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
+
+from huggingface_hub import ModelCard
 
 dynamodb = boto3.resource("dynamodb")
 
