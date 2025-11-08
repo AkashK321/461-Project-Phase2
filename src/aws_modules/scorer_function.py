@@ -10,6 +10,7 @@ import os
 import json
 import re
 import boto3
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from huggingface_hub import ModelCard
@@ -41,8 +42,8 @@ TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 dynamodb = boto3.resource("dynamodb")
 
 # Set up logging
-setup_logging(json_lines=True)
-log = get_logger(__name__)
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
 def get_base_model_from_card(model_repo_id):
     """

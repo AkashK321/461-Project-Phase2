@@ -25,10 +25,6 @@ _run_id_var = contextvars.ContextVar("run_id", default=None)
 _url_var = contextvars.ContextVar("url", default=None)
 _metric_var = contextvars.ContextVar("metric", default=None)
 
-# Base logger name used by setup_logging/get_logger. Make configurable so other
-# packages (e.g., aws modules) can re-use the same logging configuration.
-_BASE_LOGGER_NAME: str = "scorer"
-
 
 def set_run_id(run_id: Optional[str] = None) -> str:
     rid = run_id or str(uuid.uuid4())
@@ -161,7 +157,7 @@ _INITIALIZED = False
 
 
 def setup_logging(
-    *, level: Optional[Union[int, str]] = None, json_lines: bool = True, logger_name: Optional[str] = None
+    *, level: Optional[Union[int, str]] = None, json_lines: bool = True
 ) -> Optional[Path]:
     """
     Initialize project logging to a rotating file.
@@ -170,12 +166,7 @@ def setup_logging(
     - Rotates at 5 MB, keep 2 backups.
     - No console handler (stdout must remain clean for grader).
     """
-    global _INITIALIZED, _BASE_LOGGER_NAME
-
-    # Allow callers to override the base logger name used project-wide.
-    if logger_name is not None:
-        _BASE_LOGGER_NAME = logger_name
-
+    global _INITIALIZED
     is_lambda = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
     # In Lambda, log to stdout, which is captured by CloudWatch.
@@ -185,17 +176,17 @@ def setup_logging(
         verbosity = _normalize_verbosity(level)
         py_level = _verbosity_to_logging_level(verbosity)
 
-        base_logger = logging.getLogger(_BASE_LOGGER_NAME) if _BASE_LOGGER_NAME else logging.getLogger()
-        base_logger.setLevel(py_level)
-        base_logger.propagate = False
+        logger = logging.getLogger("scorer")
+        logger.setLevel(py_level)
+        logger.propagate = False
 
         # Clear existing handlers and add a stream handler for stdout
-        if base_logger.hasHandlers():
-            base_logger.handlers.clear()
+        if logger.hasHandlers():
+            logger.handlers.clear()
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(py_level)
         handler.setFormatter(JSONLineFormatter())
-        base_logger.addHandler(handler)
+        logger.addHandler(handler)
 
         _INITIALIZED = True
         return None
@@ -215,9 +206,9 @@ def setup_logging(
 
     _validate_log_path(log_path)
 
-    base_logger = logging.getLogger(_BASE_LOGGER_NAME) if _BASE_LOGGER_NAME else logging.getLogger()
-    base_logger.setLevel(py_level)
-    base_logger.propagate = False
+    logger = logging.getLogger("scorer")
+    logger.setLevel(py_level)
+    logger.propagate = False
 
     try:
         handler = RotatingFileHandler(
@@ -229,7 +220,7 @@ def setup_logging(
 
     handler.setLevel(py_level)
     handler.setFormatter(JSONLineFormatter() if json_lines else TextFormatter())
-    base_logger.addHandler(handler)
+    logger.addHandler(handler)
 
     # Keep root logger quiet; we only use "scorer"
     logging.getLogger().handlers.clear()
@@ -240,16 +231,8 @@ def setup_logging(
 
 
 def get_logger(name: Optional[str] = None) -> logging.LoggerAdapter:
-    # Build the logger name using the configured base. If the base is empty,
-    # return a logger named with `name` (or the root logger when name is None).
-    base_name = _BASE_LOGGER_NAME or ""
-    if base_name:
-        full_name = base_name if not name else f"{base_name}.{name}"
-    else:
-        full_name = name or ""
-
-    logger = logging.getLogger(full_name) if full_name else logging.getLogger()
-    return logging.LoggerAdapter(logger, _extra())
+    base = logging.getLogger("scorer" + ("" if not name else f".{name}"))
+    return logging.LoggerAdapter(base, _extra())
 
 
 def log_call(phase: str = "metric") -> Callable:
