@@ -115,8 +115,6 @@ def ingest_artifact(art_type, payload):
     tmp_zip_file = ""
     base_model_repo = get_base_model_from_card(repo)
     logger.info(f"Base model repo from card: {base_model_repo}")
-    model_lineage = get_lineage_items_from_id(base_model_repo) if base_model_repo else []
-    logging.info(f"Model lineage items: {model_lineage}")
 
     try:
         # Download all files from the Hugging Face repo

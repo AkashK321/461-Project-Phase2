@@ -92,7 +92,7 @@ def _calculate_treescore(base_model_repo_id):
         logger.info(f"Parent '{base_model_repo_id}' not in registry. Treescore is 0.")
         return 0.0
         
-    parent_lineage = _get_lineage_items_from_id(parent_item.get("id"))
+    parent_lineage = get_lineage_items_from_id(parent_item.get("id"))
     
     if not parent_lineage:
         return 0.0
