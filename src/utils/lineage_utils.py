@@ -57,7 +57,7 @@ def get_model_by_repo_id(repo_id):
         return None
 
 
-def _get_lineage_items_from_id(start_art_id):
+def get_lineage_items_from_id(start_art_id):
     """Helper to traverse and return all items in a model's lineage."""
     lineage_items = []
     current_item = get_model_by_id(start_art_id)

@@ -18,7 +18,7 @@ import boto3
 from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
-from utils.lineage_utils import get_base_model_from_card
+from utils.lineage_utils import get_lineage_items_from_id, get_base_model_from_card
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 
@@ -115,7 +115,8 @@ def ingest_artifact(art_type, payload):
     tmp_zip_file = ""
     base_model_repo = get_base_model_from_card(repo)
     logger.info(f"Base model repo from card: {base_model_repo}")
-    # model_lineage = get_lineage(base_model_repo) if base_model_repo else []
+    model_lineage = get_lineage_items_from_id(base_model_repo) if base_model_repo else []
+    logging.info(f"Model lineage items: {model_lineage}")
 
     try:
         # Download all files from the Hugging Face repo
