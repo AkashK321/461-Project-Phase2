@@ -1,14 +1,21 @@
+import os
 import json
 import base64
 import shutil
 import uuid
-import os
 import re
 import logging
+
+# Set Hugging Face cache directories to the writable /tmp folder
+# This MUST be done before any other imports that might use huggingface_hub
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
+
 from datetime import datetime, timezone
 
 import boto3
-
+from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
 from utils.lineage_utils import get_base_model_from_card
@@ -26,10 +33,6 @@ s3 = boto3.client("s3")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
-
-os.environ["HF_HOME"] = "/tmp/huggingface"
-os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
-os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 
 from huggingface_hub import snapshot_download
 
