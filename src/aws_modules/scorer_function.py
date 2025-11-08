@@ -8,11 +8,18 @@ existing scorer logic, and returns the results as a list of JSON objects.
 
 import os
 import json
+import re
+import boto3
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from huggingface_hub import ModelCard
 
 # --- IMPORTANT ---
 # The following imports assume that the `src` directory is in the PYTHONPATH.
 # For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
+from aws_modules.db_utils import get_model_by_id, get_model_by_repo_id
+from aws_modules.registry_api import make_response
 from scorer.utils.logging import setup_logging, get_logger, set_run_id
 from scorer.url_handler.base import classify_url
 from scorer.metrics.size import get_size_score
@@ -31,10 +38,69 @@ from scorer.metrics.base import get_repo_id
 # from aws_modules.s3_utils import test_s3_operations
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
+TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 
-# Initialize logging for the Lambda environment
-setup_logging(json_lines=True)
-log = get_logger(__name__)
+dynamodb = boto3.resource("dynamodb")
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def get_base_model_from_card(model_repo_id):
+    """
+    Fetches the model card from Hugging Face and parses its
+    metadata to find the 'base_model' key.
+    """
+    try:
+        logger.info(f"Fetching model card for {model_repo_id}...")
+        card = ModelCard.load(model_repo_id)
+        base_model = card.data.get("base_model")
+        
+        if not base_model:
+            logger.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
+            return None
+
+        # base_model can be a string or a list, handle both.
+        if isinstance(base_model, list):
+            base_model_id = base_model[0]
+        else:
+            base_model_id = str(base_model)
+        
+        logger.info(f"Found base model in card: {base_model_id}")
+        return base_model_id
+
+    except Exception as e:
+        # This is a non-critical failure. Log and continue ingestion.
+        logger.warning(f"Could not retrieve base model from card for {model_repo_id}: {e}")
+        return None
+
+
+def get_lineage(model_id: str) -> dict:
+    """
+    Traverses the model's parentage as long as the parents
+    exist in the registry.
+    """
+    lineage_graph = []
+    current_item = get_model_by_id(model_id)  # Start with the given ID
+
+    while current_item:
+        lineage_graph.append(current_item)
+        
+        # Get the parent's repo ID (e.g., "google-bert/bert-base-uncased")
+        parent_repo_id = current_item.get("base_model_repo_id")
+        
+        if not parent_repo_id:
+            logger.info("Reached root model (no parent repo ID).")
+            break  # This is the root of the lineage
+            
+        # Check if the parent exists in our registry
+        logger.info(f"Searching for parent: {parent_repo_id}")
+        current_item = get_model_by_repo_id(parent_repo_id)
+        
+        if not current_item:
+            logger.info(f"Parent '{parent_repo_id}' not found in registry. Ending trace.")
+
+    return lineage_graph
 
 
 def score_url(url: str, url_type: str) -> dict:

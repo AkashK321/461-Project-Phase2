@@ -12,6 +12,7 @@ from huggingface_hub import snapshot_download
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
+from aws_modules.scorer_function import get_base_model_from_card, get_lineage
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 
@@ -107,6 +108,10 @@ def ingest_artifact(art_type, payload):
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
+    base_model_repo = get_base_model_from_card(repo)
+    logger.info(f"Base model repo from card: {base_model_repo}")
+    model_lineage = get_lineage(base_model_repo) if base_model_repo else []
+
     try:
         # Download all files from the Hugging Face repo
         logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
@@ -146,18 +151,24 @@ def ingest_artifact(art_type, payload):
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url",
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url, #rid = :rid, #brid = :brid, lineage = :lineage",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
                 "#fn": "filename",
                 "#url": "source_url",
+                "#rid": "repo_id",
+                "#brid": "base_model_repo_id",
+                "#lineage": "lineage",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
                 ":c": created_at,
                 ":fn": final_zip_name,
                 ":url": url,
+                ":rid": repo,
+                ":brid": base_model_repo,
+                ":lineage": model_lineage,
             },
         )
 
