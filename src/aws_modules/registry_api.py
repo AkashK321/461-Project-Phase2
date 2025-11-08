@@ -15,10 +15,11 @@ from aws_modules.db_utils import save_model_metadata, get_model_by_id
 from aws_modules.scorer_function import get_base_model_from_card, get_lineage
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
+from scorer.utils.logging import get_logger, setup_logging
 
 # Set up logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+setup_logging(json_lines=True)
+log = get_logger(__name__)
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")
@@ -104,17 +105,17 @@ def ingest_artifact(art_type, payload):
     # 1. Calculate all non-latency metrics for the model *before* downloading.
     # 2. Check if all scores are >= 0.5.
     # 3. If not, return an error and do not proceed with ingestion.
-    logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
+    log.warning("Metric pre-check not implemented. Proceeding directly to download.")
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
     base_model_repo = get_base_model_from_card(repo)
-    logger.info(f"Base model repo from card: {base_model_repo}")
+    log.info(f"Base model repo from card: {base_model_repo}")
     # model_lineage = get_lineage(base_model_repo) if base_model_repo else []
 
     try:
         # Download all files from the Hugging Face repo
-        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
+        log.info(f"Downloading model '{repo}' to '{tmp_dir}'")
         snapshot_download(
             repo_id=repo,
             local_dir=tmp_dir,
@@ -133,7 +134,7 @@ def ingest_artifact(art_type, payload):
         s3_key = f"models/{model_id}/{final_zip_name}"
 
         # Upload to S3
-        logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
+        log.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
         ok = upload_model(tmp_zip_file, s3_key)
         if ok is False:
             return make_response(500, {"error": "S3 upload failed"})
@@ -170,22 +171,22 @@ def ingest_artifact(art_type, payload):
             },
         )
 
-        logger.info(f"Successfully ingested model {model_id} from {url}")
+        log.info(f"Successfully ingested model {model_id} from {url}")
         return make_response(201, {"id": item["id"], "s3_key": s3_key, "model": name})
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        log.error(f"Ingestion failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
         # Cleanup temp files and directories
         try:
             if os.path.exists(tmp_dir):
                 shutil.rmtree(tmp_dir)
-                logger.info(f"Cleaned up temp dir: {tmp_dir}")
+                log.info(f"Cleaned up temp dir: {tmp_dir}")
             if os.path.exists(tmp_zip_file):
                 os.remove(tmp_zip_file)
-                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
+                log.info(f"Cleaned up temp zip: {tmp_zip_file}")
         except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+            log.error(f"Error during cleanup: {e}")
 
 
 def search_artifacts(payload):
