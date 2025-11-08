@@ -18,8 +18,9 @@ from scorer.url_handler.base import classify_url
 from scorer.utils.logging import get_logger, setup_logging
 
 # Set up logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# Use the project's logging setup so Lambda-mode writes go to stdout (CloudWatch)
+setup_logging(json_lines=True)
+logger = get_logger(__name__)
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")
