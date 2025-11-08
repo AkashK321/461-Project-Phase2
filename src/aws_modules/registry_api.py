@@ -161,7 +161,7 @@ def ingest_artifact(art_type, payload):
                 "#fn": "filename",
                 "#url": "source_url",
                 "#rid": "repo_id",
-                "#brid": "base_model_repo_id"
+                "#brid": "base_model_repo_id",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
@@ -169,7 +169,7 @@ def ingest_artifact(art_type, payload):
                 ":fn": final_zip_name,
                 ":url": url,
                 ":rid": repo,
-                ":brid": base_model_repo
+                ":brid": base_model_repo,
             },
         )
 

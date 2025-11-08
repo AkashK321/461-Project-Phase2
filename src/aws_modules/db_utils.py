@@ -80,7 +80,8 @@ def get_model_by_id(model_id):
     except Exception as e:
         logger.error(f"Failed to get item {model_id}: {e}")
         return None
-    
+
+
 def get_model_by_repo_id(repo_id):
     """
     Finds a model in DynamoDB by its 'repo_id' using a scan.

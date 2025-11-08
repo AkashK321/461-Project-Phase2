@@ -23,7 +23,7 @@ def get_base_model_from_card(model_repo_id):
         logger.info(f"Fetching model card for {model_repo_id}...")
         card = ModelCard.load(model_repo_id)
         base_model = card.data.get("base_model")
-        
+
         if not base_model:
             logger.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
             return None
@@ -32,12 +32,14 @@ def get_base_model_from_card(model_repo_id):
             base_model_id = base_model[0]
         else:
             base_model_id = str(base_model)
-        
+
         logger.info(f"Found base model in card: {base_model_id}")
         return base_model_id
 
     except Exception as e:
-        logger.warning(f"Could not retrieve base model from card for {model_repo_id}: {e}")
+        logger.warning(
+            f"Could not retrieve base model from card for {model_repo_id}: {e}"
+        )
         return None
 
 
@@ -65,17 +67,19 @@ def get_lineage_items_from_id(start_art_id):
     while current_item:
         lineage_items.append(current_item)
         parent_repo_id = current_item.get("base_model_repo_id")
-        
+
         if not parent_repo_id:
             logger.info("Reached root model (no parent repo ID).")
             break
-            
+
         logger.info(f"Searching for parent: {parent_repo_id}")
         current_item = get_model_by_repo_id(parent_repo_id)
-        
+
         if not current_item:
-            logger.info(f"Parent '{parent_repo_id}' not found in registry. Ending trace.")
-    
+            logger.info(
+                f"Parent '{parent_repo_id}' not found in registry. Ending trace."
+            )
+
     return lineage_items
 
 
@@ -86,24 +90,24 @@ def _calculate_treescore(base_model_repo_id):
     if not base_model_repo_id:
         logger.info("No base model. Treescore is 0.")
         return 0.0
-    
+
     parent_item = get_model_by_repo_id(base_model_repo_id)
     if not parent_item:
         logger.info(f"Parent '{base_model_repo_id}' not in registry. Treescore is 0.")
         return 0.0
-        
+
     parent_lineage = get_lineage_items_from_id(parent_item.get("id"))
-    
+
     if not parent_lineage:
         return 0.0
 
     total_score = 0.0
     num_parents = len(parent_lineage)
-    
+
     for parent in parent_lineage:
         parent_scores = parent.get("scores", {})
-        net_score = parent_scores.get("net_score", 0.0) 
+        net_score = parent_scores.get("net_score", 0.0)
         total_score += net_score
-        
+
     logger.info(f"Treescore calculation: {total_score} / {num_parents}")
     return total_score / num_parents
