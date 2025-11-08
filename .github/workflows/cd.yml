@@ -11,6 +11,7 @@ on:
       - registry-endpoints
       - refactor-file-structure
       - download-model-from-hugging-face
+      - model-lineage-tree
 
 # Define the permissions the job will need
 permissions:
