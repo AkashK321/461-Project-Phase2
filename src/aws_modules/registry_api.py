@@ -8,7 +8,6 @@ import logging
 from datetime import datetime, timezone
 
 import boto3
-from huggingface_hub import snapshot_download
 
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
@@ -31,6 +30,8 @@ BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
 os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
+
+from huggingface_hub import snapshot_download
 
 
 def make_response(status_code, body):
@@ -119,7 +120,6 @@ def ingest_artifact(art_type, payload):
         snapshot_download(
             repo_id=repo,
             local_dir=tmp_dir,
-            local_dir_use_symlinks=False,  # Important for zipping
         )
 
         # Zip the downloaded directory
