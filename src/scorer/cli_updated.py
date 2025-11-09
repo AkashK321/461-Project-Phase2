@@ -15,6 +15,7 @@ import math
 import json
 from utils.logging import setup_logging, set_run_id, get_logger
 from url_handler.base import classify_url
+from urllib.parse import urlparse
 
 # from url_handler.model import handle_model_url
 # from url_handler.dataset import handle_dataset_url
@@ -237,6 +238,11 @@ def main() -> None:
                 parts = repo.split("/", 1)
                 name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
                 category = url_type.upper()
+
+                if not name and url_type == "model":
+                    path = urlparse(url).path.strip("/")
+                    if path:
+                        name = path.split("/")[-1]
 
                 tasks = {}
                 if url_type == "code":
