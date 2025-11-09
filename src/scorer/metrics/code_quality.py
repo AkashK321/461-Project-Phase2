@@ -198,7 +198,7 @@ def _check_code_repo_quality(code_url: str) -> float:
             Repo.clone_from(code_url, temp_dir)
         except Exception as e:
             print(f"Cannot clone repo for code quality check: {e}")
-            exit(1)
+            raise
         # first reliability check - check for the word test in the files
         reliability = 0.0
         for _, _, files in os.walk(temp_dir):
