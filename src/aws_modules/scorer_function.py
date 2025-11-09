@@ -8,12 +8,10 @@ existing scorer logic, and returns the results as a list of JSON objects.
 
 import os
 import json
+import boto3
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# --- IMPORTANT ---
-# The following imports assume that the `src` directory is in the PYTHONPATH.
-# For Lambda, this is achieved by packaging the `src` contents at the root of the zip.
-from scorer.utils.logging import setup_logging, get_logger, set_run_id
+from scorer.utils.logging import set_run_id
 from scorer.url_handler.base import classify_url
 from scorer.metrics.size import get_size_score
 from scorer.metrics.license import get_license_score
@@ -31,10 +29,13 @@ from scorer.metrics.base import get_repo_id
 # from aws_modules.s3_utils import test_s3_operations
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
+TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 
-# Initialize logging for the Lambda environment
-setup_logging(json_lines=True)
-log = get_logger(__name__)
+dynamodb = boto3.resource("dynamodb")
+
+# Set up logging
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
 
 def score_url(url: str, url_type: str) -> dict:

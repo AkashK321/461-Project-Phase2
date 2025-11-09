@@ -1,23 +1,29 @@
+import os
 import json
 import base64
 import shutil
 import uuid
-import os
 import re
 import logging
+
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
+
 from datetime import datetime, timezone
 
 import boto3
 from huggingface_hub import snapshot_download
-
 from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import save_model_metadata, get_model_by_id
+from utils.lineage_utils import get_base_model_from_card
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 
 # Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 # wire up AWS stuff once
 dynamodb = boto3.resource("dynamodb")
@@ -25,10 +31,6 @@ s3 = boto3.client("s3")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
-
-os.environ["HF_HOME"] = "/tmp/huggingface"
-os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
-os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 
 
 def make_response(status_code, body):
@@ -107,13 +109,15 @@ def ingest_artifact(art_type, payload):
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
+    base_model_repo = get_base_model_from_card(repo)
+    logger.info(f"Base model repo from card: {base_model_repo}")
+
     try:
         # Download all files from the Hugging Face repo
         logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
         snapshot_download(
             repo_id=repo,
             local_dir=tmp_dir,
-            local_dir_use_symlinks=False,  # Important for zipping
         )
 
         # Zip the downloaded directory
@@ -146,18 +150,23 @@ def ingest_artifact(art_type, payload):
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, #url = :url",
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
+                #url = :url, #rid = :rid, #brid = :brid",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
                 "#fn": "filename",
                 "#url": "source_url",
+                "#rid": "repo_id",
+                "#brid": "base_model_repo_id",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
                 ":c": created_at,
                 ":fn": final_zip_name,
                 ":url": url,
+                ":rid": repo,
+                ":brid": base_model_repo,
             },
         )
 
