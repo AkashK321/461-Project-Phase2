@@ -19,6 +19,14 @@ from aws_modules.db_utils import save_model_metadata, get_model_by_id
 from utils.lineage_utils import get_base_model_from_card
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
+from aws_modules.api_utils import make_response
+
+from aws_modules.auth import (
+    authenticate_user, 
+    get_validated_user, 
+    register_user,
+    hash_password  
+)
 
 # Set up logging
 logger = logging.getLogger()
@@ -31,15 +39,8 @@ s3 = boto3.client("s3")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
-
-
-def make_response(status_code, body):
-    # formats API Gateway response
-    return {
-        "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body),
-    }
+USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
 
 
 def parse_event(event):
@@ -74,7 +75,31 @@ def reset_state():
             objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
             if objs:
                 s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
-
+    
+    if USER_TABLE_NAME:
+        user_tbl = dynamodb.Table(USER_TABLE_NAME)
+        # Credentials from spec
+        admin_user = "ece30861defaultadminuser" 
+        admin_pass = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages" 
+        
+        scan = user_tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
+        user_ids = [it["id"] for it in scan.get("Items", [])]
+        
+        if user_ids:
+            with user_tbl.batch_writer() as batch:
+                for _id in user_ids:
+                    batch.delete_item(Key={"id": _id})
+        
+        admin_id = str(uuid.uuid4())
+        user_tbl.put_item(Item={
+            'id': admin_id,
+            'username': admin_user,
+            'password_hash': hash_password(admin_pass), 
+            'roles': ['admin', 'upload', 'search', 'download'], 
+            'created_at': datetime.now(timezone.utc).isoformat()
+        })
+        logger.info(f"Reset user table and added default admin {admin_user}")
+        
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
 
@@ -236,14 +261,41 @@ def handler(event, context):
     # ---- tracks (baseline: no auth, empty is fine) ----
     if method == "GET" and path == "/tracks":
         return make_response(200, {"tracks": []})
+    
+    if method == "PUT" and path == "/authenticate":
+        if not USER_TABLE_NAME or not JWT_SECRET_KEY:
+             return make_response(501, {"error": "This system does not support authentication."})
+        return authenticate_user(body)
+    
+    # --- Protected Routes ---
+    user_payload = get_validated_user(event)
 
     # ---- reset (autograder gates on this) ----
     if path == "/reset" and method in ("POST", "DELETE"):
+        if not user_payload:
+            # 403 for auth failure
+            return make_response(403, {"error": "Authentication failed due to invalid or missing AuthenticationToken."})
+        
+        user_roles = user_payload.get('roles', [])
+        
+        if "admin" not in user_roles:
+            # 401 for permission denied
+            return make_response(401, {"error": "You do not have permission to reset the registry."})
+        
         try:
             out = reset_state()
             return make_response(200, out)
         except Exception as e:
             return make_response(500, {"error": str(e)})
+        
+    if not user_payload:
+        return make_response(403, {"error": "Authentication failed due to invalid or missing AuthenticationToken."})
+
+    user_roles = user_payload.get('roles', [])
+    logger.info(f"Authenticated user {user_payload.get('sub')} with roles {user_roles}")
+
+    if method == "POST" and path == "/users":
+        return register_user(body, user_roles)
 
     # ---- ingest: POST /artifact/{type} ----
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:
