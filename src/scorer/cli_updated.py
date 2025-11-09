@@ -195,8 +195,8 @@ def main() -> None:
         try:
             # intialize all fields to zero
             # string fields
-            name = ""
-            category = ""
+            name = "unknown-model"
+            category = "MODEL"
 
             # float scores (0–1)
             net_score = 0.0
@@ -239,10 +239,16 @@ def main() -> None:
                 name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
                 category = url_type.upper()
 
-                if not name and url_type == "model":
+
+                # Fallback: if get_repo_id failed or returned empty, derive a name from the URL itself
+                if not name:
                     path = urlparse(url).path.strip("/")
                     if path:
+                        # use last path segment, e.g. "gpt2", "vit-tiny-patch16-224"
                         name = path.split("/")[-1]
+                    else:
+                        # absolute last resort: use the whole URL so it's non-empty
+                        name = url
 
                 tasks = {}
                 if url_type == "code":
@@ -303,7 +309,7 @@ def main() -> None:
             if not line:  # nothing recognized on this line
                 # Still print a default row for this input line
                 output = {
-                    "name": "",
+                    "name": "unknown-model",
                     "category": "UNKNOWN",
                     "net_score": 0.0,
                     "net_score_latency": 0,
@@ -387,8 +393,8 @@ def main() -> None:
             print(
                 json.dumps(
                     {
-                        "name": "",
-                        "category": "",
+                        "name": "unknown-model",
+                        "category": "MODEL",
                         "net_score": 0.0,
                         "net_score_latency": 0,
                         "ramp_up_time": 0.0,
