@@ -13,6 +13,7 @@ on:
       - download-model-from-hugging-face
       - model-lineage-tree
       - authentication-and-registration
+      - enhance-search-endpoints
 
 # Define the permissions the job will need
 permissions:
