@@ -61,7 +61,7 @@ def register_user(body, current_user_roles=None):
         # TODO: Add logic to check if user already exists
         
         user_id = str(uuid.uuid4())
-        # Default roles per Phase 2 doc
+        # Default roles 
         roles = body.get('roles', ["upload", "search", "download"])
         if body.get('is_admin', False):
             if "admin" not in roles:
@@ -92,7 +92,6 @@ def authenticate_user(body):
     Authenticates a user and returns a JWT.
     """
     try:
-        # **CORRECTION**: Parse body according to AuthenticationRequest schema
         username = body['user']['name']
         password = body['secret']['password']
         
@@ -118,8 +117,7 @@ def authenticate_user(body):
         # --- Password is valid, create token ---
         token = create_token(user['id'], user.get('roles', []))
         
-        # **CORRECTION**: Return the token as a simple string in the body,
-        # matching the spec's example response.
+        
         return make_response(200, token)
 
     except KeyError:
