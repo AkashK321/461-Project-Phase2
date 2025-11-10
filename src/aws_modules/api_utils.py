@@ -1,5 +1,6 @@
 import json
 
+
 def make_response(status_code, body):
     """
     Formats an API Gateway proxy response.
@@ -8,9 +9,9 @@ def make_response(status_code, body):
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",  # Allow all origins
-            "Access-Control-Allow-Headers": "*", # Allow all headers
-            "Access-Control-Allow-Methods": "*", # Allow all methods
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Methods": "*",
         },
         "body": json.dumps(body),
     }

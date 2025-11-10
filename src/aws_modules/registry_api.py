@@ -22,10 +22,10 @@ from scorer.url_handler.base import classify_url
 from aws_modules.api_utils import make_response
 
 from aws_modules.auth import (
-    authenticate_user, 
-    get_validated_user, 
+    authenticate_user,
+    get_validated_user,
     register_user,
-    hash_password  
+    hash_password,
 )
 
 # Set up logging
@@ -75,31 +75,35 @@ def reset_state():
             objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
             if objs:
                 s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
-    
+
     if USER_TABLE_NAME:
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
         # Credentials from spec
-        admin_user = "ece30861defaultadminuser" 
-        admin_pass = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages" 
-        
-        scan = user_tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
+        admin_user = "ece30861defaultadminuser"
+        admin_pass = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
+
+        scan = user_tbl.scan(
+            ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
+        )
         user_ids = [it["id"] for it in scan.get("Items", [])]
-        
+
         if user_ids:
             with user_tbl.batch_writer() as batch:
                 for _id in user_ids:
                     batch.delete_item(Key={"id": _id})
-        
+
         admin_id = str(uuid.uuid4())
-        user_tbl.put_item(Item={
-            'id': admin_id,
-            'username': admin_user,
-            'password_hash': hash_password(admin_pass), 
-            'roles': ['admin', 'upload', 'search', 'download'], 
-            'created_at': datetime.now(timezone.utc).isoformat()
-        })
+        user_tbl.put_item(
+            Item={
+                "id": admin_id,
+                "username": admin_user,
+                "password_hash": hash_password(admin_pass),
+                "roles": ["admin", "upload", "search", "download"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         logger.info(f"Reset user table and added default admin {admin_user}")
-        
+
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
 
@@ -261,12 +265,14 @@ def handler(event, context):
     # ---- tracks (baseline: no auth, empty is fine) ----
     if method == "GET" and path == "/tracks":
         return make_response(200, {"tracks": []})
-    
+
     if method == "PUT" and path == "/authenticate":
         if not USER_TABLE_NAME or not JWT_SECRET_KEY:
-             return make_response(501, {"error": "This system does not support authentication."})
+            return make_response(
+                501, {"error": "This system does not support authentication."}
+            )
         return authenticate_user(body)
-    
+
     # --- Protected Routes ---
     user_payload = get_validated_user(event)
 
@@ -274,24 +280,36 @@ def handler(event, context):
     if path == "/reset" and method in ("POST", "DELETE"):
         if not user_payload:
             # 403 for auth failure
-            return make_response(403, {"error": "Authentication failed due to invalid or missing AuthenticationToken."})
-        
-        user_roles = user_payload.get('roles', [])
-        
+            return make_response(
+                403,
+                {
+                    "error": "Authentication failed due to invalid or missing AuthenticationToken."
+                },
+            )
+
+        user_roles = user_payload.get("roles", [])
+
         if "admin" not in user_roles:
             # 401 for permission denied
-            return make_response(401, {"error": "You do not have permission to reset the registry."})
-        
+            return make_response(
+                401, {"error": "You do not have permission to reset the registry."}
+            )
+
         try:
             out = reset_state()
             return make_response(200, out)
         except Exception as e:
             return make_response(500, {"error": str(e)})
-        
-    if not user_payload:
-        return make_response(403, {"error": "Authentication failed due to invalid or missing AuthenticationToken."})
 
-    user_roles = user_payload.get('roles', [])
+    if not user_payload:
+        return make_response(
+            403,
+            {
+                "error": "Authentication failed due to invalid or missing AuthenticationToken."
+            },
+        )
+
+    user_roles = user_payload.get("roles", [])
     logger.info(f"Authenticated user {user_payload.get('sub')} with roles {user_roles}")
 
     if method == "POST" and path == "/users":
