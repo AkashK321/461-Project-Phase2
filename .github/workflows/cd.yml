@@ -12,6 +12,7 @@ on:
       - refactor-file-structure
       - download-model-from-hugging-face
       - model-lineage-tree
+      - authentication-and-registration
 
 # Define the permissions the job will need
 permissions:

@@ -239,8 +239,8 @@ def main() -> None:
                 name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
                 category = url_type.upper()
 
-
-                # Fallback: if get_repo_id failed or returned empty, derive a name from the URL itself
+                # Fallback: if get_repo_id failed or returned empty,
+                # derive a name from the URL itself
                 if not name:
                     path = urlparse(url).path.strip("/")
                     if path:
