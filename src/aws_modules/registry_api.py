@@ -283,7 +283,8 @@ def handler(event, context):
             return make_response(
                 403,
                 {
-                    "error": "Authentication failed due to invalid or missing AuthenticationToken."
+                    "error": "Authentication failed due to invalid or "
+                    "missing AuthenticationToken."
                 },
             )
 
@@ -305,7 +306,8 @@ def handler(event, context):
         return make_response(
             403,
             {
-                "error": "Authentication failed due to invalid or missing AuthenticationToken."
+                "error": "Authentication failed due to invalid or "
+                "missing AuthenticationToken."
             },
         )
 

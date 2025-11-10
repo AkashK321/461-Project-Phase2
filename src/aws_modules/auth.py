@@ -125,7 +125,8 @@ def authenticate_user(body):
         return make_response(
             400,
             {
-                "error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."
+                "error": "There is missing field(s) in the "
+                "AuthenticationRequest or it is formed improperly."
             },
         )
     except Exception as e:
