@@ -19,6 +19,7 @@ from aws_modules import registry_api as reg
 
 # ---------- helpers ----------
 
+
 def decode_body(resp):
     """
     Helper for make_response-style outputs:
@@ -32,6 +33,7 @@ def decode_body(resp):
 
 
 # ---------- parse_semver / version_satisfies ----------
+
 
 def test_parse_semver_valid():
     assert reg.parse_semver("1.2.3") == (1, 2, 3)
@@ -88,6 +90,7 @@ def test_version_satisfies_caret():
 
 # ---------- parse_event ----------
 
+
 def test_parse_event_plain_json():
     event = {
         "rawPath": "/artifacts",
@@ -117,6 +120,7 @@ def test_parse_event_base64():
 
 
 # ---------- search_artifacts (with fake Dynamo) ----------
+
 
 class FakeTable:
     def __init__(self, items):
@@ -221,6 +225,7 @@ def test_search_artifacts_version_filters(monkeypatch):
 
 # ---------- ingest_artifact (happy path, everything mocked) ----------
 
+
 def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
     # make env sane
     reg.TABLE_NAME = "table"
@@ -289,6 +294,7 @@ def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
 
 
 # ---------- handler tests ----------
+
 
 @pytest.fixture(autouse=True)
 def _set_env_basics(monkeypatch):

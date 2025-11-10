@@ -334,8 +334,8 @@ def search_artifacts(payload):
 
     # support both "version" and "version_range"
     version_query = (
-        (payload.get("version") or payload.get("version_range") or "").strip()
-    )
+        payload.get("version") or payload.get("version_range") or ""
+    ).strip()
 
     # pagination (1-based)
     page = payload.get("page") or payload.get("page_num") or 1
@@ -364,27 +364,15 @@ def search_artifacts(payload):
     # filter by type (if provided)
     if not want_all_types:
         type_set = {str(t).lower() for t in types}
-        items = [
-            it
-            for it in items
-            if str(it.get("type", "")).lower() in type_set
-        ]
+        items = [it for it in items if str(it.get("type", "")).lower() in type_set]
 
     # filter by name (regex on model_name, fall back to substring)
     if name_query:
         try:
             rx = re.compile(name_query)
-            items = [
-                it
-                for it in items
-                if rx.search(str(it.get("model_name", "")))
-            ]
+            items = [it for it in items if rx.search(str(it.get("model_name", "")))]
         except re.error:
-            items = [
-                it
-                for it in items
-                if name_query in str(it.get("model_name", ""))
-            ]
+            items = [it for it in items if name_query in str(it.get("model_name", ""))]
 
     # filter by version constraint (if any)
     if version_query:
