@@ -112,10 +112,13 @@ def score_url(url: str, url_type: str) -> dict:
     # If so, check if it has a parent model and calculate its treescore.
     try:
         item_in_db = get_model_by_repo_id(repo)
+        log.info(f"Fetched item from DB for repo '{repo}': {item_in_db}")
         if item_in_db:
             item_id = item_in_db.get("id")
             if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
+                log.info("Calculating treescore...")
                 base_model_repo_id = get_attribute_value(item_id, "base_model_repo_id")
+                log.info(f"Base model repo ID: {base_model_repo_id}")
                 if base_model_repo_id:
                     treescore = _calculate_treescore(base_model_repo_id)
                     results["treescore"] = round(treescore, 2)
