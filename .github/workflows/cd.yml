@@ -66,6 +66,9 @@ jobs:
             --function-name "registry_api" \
             --zip-file fileb://lambda_deployment.zip
 
+          echo "Waiting for registry_api function update to complete..."
+          aws lambda wait function-updated --function-name "registry_api"
+
           aws lambda update-function-configuration \
             --function-name "registry_api" \
             --environment "Variables={DYNAMODB_TABLE_NAME=phase2-registry,S3_BUCKET_NAME=phase2-s3-bucket-akash,USER_DYNAMODB_TABLE_NAME=phase2-users,JWT_SECRET_KEY=a-very-unsafe-default-secret,SCORER_FUNCTION_NAME=scorer_function}"
