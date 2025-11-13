@@ -5,14 +5,19 @@ This function is designed to be the entry point for an AWS Lambda function.
 It receives a list of URLs via an event payload, processes them using the
 existing scorer logic, and returns the results as a list of JSON objects.
 """
-
+import traceback
 import os
 import json
 import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from aws_modules.db_utils import attribute_is_not_none
 from scorer.utils.logging import set_run_id
-from scorer.url_handler.base import classify_url
+from aws_modules.db_utils import (
+    attribute_is_not_none,
+    get_attribute_value,
+    get_model_by_repo_id,
+)
 from scorer.metrics.size import get_size_score
 from scorer.metrics.license import get_license_score
 from scorer.metrics.dataset_quality import get_dataset_quality_score
@@ -24,6 +29,8 @@ from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 # from scorer.metrics.rampup import get_ramp_up
 # from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
+from scorer.url_handler.base import classify_url
+from utils.lineage_utils import _calculate_treescore
 
 # Import S3 test function
 # from aws_modules.s3_utils import test_s3_operations
@@ -99,6 +106,25 @@ def score_url(url: str, url_type: str) -> dict:
         + 0.10 * results.get("dataset_and_code_score", 0.0)
     )
     results["net_score"] = round(net_score, 2)
+
+    # --- Calculate Treescore if applicable ---
+    # This model might already be in the DB if it's being re-scored.
+    # If so, check if it has a parent model and calculate its treescore.
+    try:
+        item_in_db = get_model_by_repo_id(repo)
+        if item_in_db:
+            item_id = item_in_db.get("id")
+            if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
+                base_model_repo_id = get_attribute_value(item_id, "base_model_repo_id")
+                if base_model_repo_id:
+                    treescore = _calculate_treescore(base_model_repo_id)
+                    results["treescore"] = round(treescore, 2)
+                    log.info(f"Treescore for {repo}: {treescore}")
+    except Exception as e:
+        log.error(f"Failed to calculate treescore for {repo}: {e}")
+        log.error(traceback.format_exc())
+
+    log.info(f"Scoring complete for URL: {url} | Results: {results}")
 
     # Combine results and latencies
     final_output = {**results, **latencies}
