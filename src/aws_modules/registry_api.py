@@ -36,6 +36,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 # shared AWS clients/resources
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
+lambda_client = boto3.client("lambda")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
@@ -268,7 +269,27 @@ def ingest_artifact(art_type, payload):
             return make_response(500, {"error": "S3 upload failed"})
 
         version = "v1"  # could be pulled from HF metadata later
-        scores = {}  # placeholder for metric pre-check results
+
+        # --- Invoke scorer_function to get scores ---
+        scorer_function_name = os.getenv("SCORER_FUNCTION_NAME")
+        scores = {}
+        if scorer_function_name:
+            logger.info(f"Invoking scorer function: {scorer_function_name}")
+            try:
+                scorer_payload = json.dumps({"urls": [url]})
+                response = lambda_client.invoke(
+                    FunctionName=scorer_function_name,
+                    InvocationType="RequestResponse",
+                    Payload=scorer_payload,
+                )
+                response_payload = json.loads(response["Payload"].read().decode())
+                if response_payload.get("statusCode") == 200:
+                    scores_list = json.loads(response_payload["body"])
+                    if scores_list:
+                        scores = scores_list[0]  # We only sent one URL
+            except Exception as e:
+                logger.error(f"Failed to invoke or parse scorer response: {e}")
+
         created_at = datetime.now(timezone.utc).isoformat()
 
         item = save_model_metadata(name, version, s3_key, scores)
