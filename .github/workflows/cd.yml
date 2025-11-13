@@ -11,7 +11,7 @@ on:
       - registry-endpoints
       - refactor-file-structure
       - download-model-from-hugging-face
-      - model-lineage-tree
+      - model-lineage
       - authentication-and-registration
       - enhance-search-endpoints
 

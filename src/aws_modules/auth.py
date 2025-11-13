@@ -95,6 +95,7 @@ def authenticate_user(body):
     try:
         username = body["user"]["name"]
         password = body["secret"]["password"]
+        logger.info(f"Authenticating user: {username}")
 
         if not USER_TABLE_NAME:
             return make_response(500, {"error": "User table not configured"})
