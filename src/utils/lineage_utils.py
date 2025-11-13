@@ -64,7 +64,7 @@ def get_base_model_from_card(model_repo_id):
 
         if not base_model:
             logger.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
-            return None
+            return None, None
 
         if isinstance(base_model, list):
             base_model_id = base_model[0]
@@ -73,7 +73,8 @@ def get_base_model_from_card(model_repo_id):
 
         logger.info(f"Found base model in card: {base_model_id}")
         
-        lineage_type = get_model_lineage_type(model_repo_id, base_model_id)
+        if base_model_id:
+            lineage_type = get_model_lineage_type(model_repo_id, base_model_id)
 
         return base_model_id, lineage_type
 
