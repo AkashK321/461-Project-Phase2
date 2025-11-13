@@ -30,7 +30,7 @@ from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 # from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
-from utils.lineage_utils import _calculate_treescore
+from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
 
 # Import S3 test function
 # from aws_modules.s3_utils import test_s3_operations
@@ -123,6 +123,14 @@ def score_url(url: str, url_type: str) -> dict:
                     treescore = _calculate_treescore(base_model_repo_id)
                     results["treescore"] = round(treescore, 2)
                     log.info(f"Treescore for {repo}: {treescore}")
+        else:
+            base_model_repo_id = get_base_model_from_card(repo)
+            log.info(f"Base model from card: {base_model_repo_id}")
+            if base_model_repo_id:
+                log.info("Calculating treescore for new model...")
+                treescore = _calculate_treescore(base_model_repo_id)
+                results["treescore"] = round(treescore, 2)
+
     except Exception as e:
         log.error(f"Failed to calculate treescore for {repo}: {e}")
         log.error(traceback.format_exc())
