@@ -127,7 +127,7 @@ def score_url(url: str, url_type: str) -> dict:
                     results["treescore"] = round(treescore, 2)
                     log.info(f"Treescore for {repo}: {treescore}")
         else:
-            base_model_repo_id = get_base_model_from_card(repo)
+            base_model_repo_id, lineage_type = get_base_model_from_card(repo)
             log.info(f"Base model from card: {base_model_repo_id}")
             if base_model_repo_id:
                 log.info("Calculating treescore for new model...")
