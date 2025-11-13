@@ -7,6 +7,9 @@ existing scorer logic, and returns the results as a list of JSON objects.
 """
 import traceback
 import os
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 import json
 import boto3
 import logging
