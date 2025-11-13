@@ -9,4 +9,4 @@ pytest-json-report
 requests
 boto3
 bcrypt
-jwt
+PyJWT
