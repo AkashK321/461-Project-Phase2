@@ -152,7 +152,7 @@ def _calculate_treescore(base_model_repo_id):
     for parent in parent_lineage:
         parent_scores = parent.get("scores", {})
         net_score = parent_scores.get("net_score", 0.0)
-        total_score += net_score
+        total_score += float(net_score)
 
     logger.info(f"Treescore calculation: {total_score} / {num_parents}")
     return total_score / num_parents
