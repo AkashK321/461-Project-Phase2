@@ -105,6 +105,7 @@ def get_lineage_items_from_id(start_art_id):
     """Helper to traverse and return all items in a model's lineage."""
     lineage_items = []
     current_item = get_model_by_id(start_art_id)
+    logger.info(f"Starting lineage trace from ID: {current_item}")
 
     while current_item:
         lineage_items.append(current_item)
@@ -134,11 +135,13 @@ def _calculate_treescore(base_model_repo_id):
         return 0.0
 
     parent_item = get_model_by_repo_id(base_model_repo_id)
+    logger.info(f"Calculating treescore for base model repo ID: {base_model_repo_id}")
     if not parent_item:
         logger.info(f"Parent '{base_model_repo_id}' not in registry. Treescore is 0.")
         return 0.0
 
     parent_lineage = get_lineage_items_from_id(parent_item.get("id"))
+    logger.info(f"Parent lineage: {parent_lineage}")
 
     if not parent_lineage:
         return 0.0
