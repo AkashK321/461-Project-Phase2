@@ -42,6 +42,7 @@ TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
+SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 
 
 # simple helpers for semver-ish ranges
@@ -271,7 +272,7 @@ def ingest_artifact(art_type, payload):
         version = "v1"  # could be pulled from HF metadata later
 
         # --- Invoke scorer_function to get scores ---
-        scorer_function_name = os.getenv("SCORER_FUNCTION_NAME")
+        scorer_function_name = SCORER_FUNCTION_NAME
         scores = {}
         if scorer_function_name:
             logger.info(f"Invoking scorer function: {scorer_function_name}")

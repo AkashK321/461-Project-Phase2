@@ -68,7 +68,3 @@ jobs:
 
           echo "Waiting for registry_api function update to complete..."
           aws lambda wait function-updated --function-name "registry_api"
-
-          aws lambda update-function-configuration \
-            --function-name "registry_api" \
-            --environment "Variables={SCORER_FUNCTION_NAME=scorer_function}"
