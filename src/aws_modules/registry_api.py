@@ -241,8 +241,8 @@ def ingest_artifact(art_type, payload):
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    base_model_repo = get_base_model_from_card(repo)
-    logger.info(f"Base model repo from card: {base_model_repo}")
+    base_model_repo, lineage_type = get_base_model_from_card(repo)
+    logger.info(f"Base model repo from card: {base_model_repo}-{lineage_type}")
 
     try:
         # pull the full repo contents down locally
@@ -280,7 +280,7 @@ def ingest_artifact(art_type, payload):
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
-                #url = :url, #rid = :rid, #brid = :brid",
+                #url = :url, #rid = :rid, #brid = :brid, #ling = :ling",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
@@ -288,6 +288,7 @@ def ingest_artifact(art_type, payload):
                 "#url": "source_url",
                 "#rid": "repo_id",
                 "#brid": "base_model_repo_id",
+                "#ling": "lineage_type",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
@@ -296,6 +297,7 @@ def ingest_artifact(art_type, payload):
                 ":url": url,
                 ":rid": repo,
                 ":brid": base_model_repo,
+                ":ling": lineage_type,
             },
         )
 
