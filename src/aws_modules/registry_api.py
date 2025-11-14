@@ -268,9 +268,54 @@ def ingest_artifact(art_type, payload):
     except Exception:
         return make_response(400, {"error": "unable to find model url in payload"})
 
-    # per the spec we eventually need a pre-metric gate here
-    # (non-latency metrics >= 0.5 before we allow ingestion).
-    logger.warning("Metric pre-check not implemented. Proceeding directly to download.")
+   
+    # --- First, invoke scorer_function to get scores before downloading ---
+    scorer_function_name = SCORER_FUNCTION_NAME
+    scores = {}
+    if not scorer_function_name:
+        logger.error("Scorer function not configured, cannot validate metrics")
+        return make_response(500, {"error": "Metric scoring service not available"})
+    
+    logger.info(f"Invoking scorer function: {scorer_function_name}")
+    try:
+        scorer_payload = json.dumps({"urls": payload["urls"]})
+        response = lambda_client.invoke(
+            FunctionName=scorer_function_name,
+            InvocationType="RequestResponse",
+            Payload=scorer_payload,
+        )
+        response_payload = json.loads(response["Payload"].read().decode())
+        if response_payload.get("statusCode") == 200:
+            scores_list = json.loads(response_payload["body"])
+            if scores_list:
+                scores = scores_list[0]  # We only sent one URL
+        else:
+            logger.error(f"Scorer function returned error: {response_payload}")
+            return make_response(500, {"error": "Failed to calculate metrics"})
+    except Exception as e:
+        logger.error(f"Failed to invoke or parse scorer response: {e}")
+        return make_response(500, {"error": "Failed to calculate metrics"})
+    
+    # Check if all non-latency metrics meet the 0.5 threshold
+    non_latency_metrics = [
+        "bus_factor", "code_quality", "license", "ramp_up", 
+        "dataset_quality", "performance_claims", "dataset_and_code", "size"
+    ]
+    
+    failing_metrics = []
+    for metric in non_latency_metrics:
+        score = scores.get(metric, 0)
+        if score < 0.5:
+            failing_metrics.append(f"{metric}: {score}")
+    
+    if failing_metrics:
+        logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
+        return make_response(424, {
+            "error": "Package is not uploaded due to insufficient quality metrics",
+            "failing_metrics": failing_metrics
+        })
+    
+    logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
@@ -301,26 +346,6 @@ def ingest_artifact(art_type, payload):
             return make_response(500, {"error": "S3 upload failed"})
 
         version = "v1"  # could be pulled from HF metadata later
-
-        # --- Invoke scorer_function to get scores ---
-        scorer_function_name = SCORER_FUNCTION_NAME
-        scores = {}
-        if scorer_function_name:
-            logger.info(f"Invoking scorer function: {scorer_function_name}")
-            try:
-                scorer_payload = json.dumps({"urls": [url]})
-                response = lambda_client.invoke(
-                    FunctionName=scorer_function_name,
-                    InvocationType="RequestResponse",
-                    Payload=scorer_payload,
-                )
-                response_payload = json.loads(response["Payload"].read().decode())
-                if response_payload.get("statusCode") == 200:
-                    scores_list = json.loads(response_payload["body"])
-                    if scores_list:
-                        scores = scores_list[0]  # We only sent one URL
-            except Exception as e:
-                logger.error(f"Failed to invoke or parse scorer response: {e}")
 
         created_at = datetime.now(timezone.utc).isoformat()
 
