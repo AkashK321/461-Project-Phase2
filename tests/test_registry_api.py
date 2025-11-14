@@ -241,7 +241,7 @@ def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
         return "org/my-model"
 
     def fake_get_base_model_from_card(repo):
-        return "base/model"
+        return "base/model", "inferred", "none"
 
     tmp_zip_file = tmp_path / "model.zip"
 
