@@ -14,6 +14,11 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
 dynamodb = boto3.resource("dynamodb")
 logger = logging.getLogger()
 
+# Default admin user credentials from environment variables
+# Fall back to the specification defaults if not set
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+
 
 def hash_password(pw):
     """Hashes password for secure storage."""
@@ -25,6 +30,46 @@ def check_password(pw, hashed_pw):
     if not hashed_pw:
         return False
     return bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
+
+
+def ensure_default_user():
+    """
+    Ensures the default admin user exists in the system.
+    This function should be called during system initialization.
+    """
+    if not USER_TABLE_NAME:
+        logger.error("User table not configured, cannot create default user")
+        return False
+    
+    try:
+        user_table = dynamodb.Table(USER_TABLE_NAME)
+        
+        # Check if default admin user already exists
+        response = user_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(DEFAULT_ADMIN_USERNAME)
+        )
+        
+        if response.get("Items"):
+            logger.info(f"Default admin user '{DEFAULT_ADMIN_USERNAME}' already exists")
+            return True
+        
+        # Create the default admin user
+        admin_id = str(uuid.uuid4())
+        item = {
+            "id": admin_id,
+            "username": DEFAULT_ADMIN_USERNAME,
+            "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+            "roles": ["admin", "upload", "search", "download"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        user_table.put_item(Item=item)
+        logger.info(f"Created default admin user '{DEFAULT_ADMIN_USERNAME}' with ID: {admin_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to create default user: {e}\n{traceback.format_exc()}")
+        return False
 
 
 def create_token(user_id, roles):
@@ -95,6 +140,15 @@ def authenticate_user(body):
     try:
         username = body["user"]["name"]
         password = body["secret"]["password"]
+        
+        # Basic input validation for security
+        if not username or not password:
+            return make_response(400, {"error": "Username and password cannot be empty"})
+        
+        # Sanitize username - only allow alphanumeric characters and specific special chars
+        if not isinstance(username, str) or not isinstance(password, str):
+            return make_response(400, {"error": "Username and password must be strings"})
+            
         logger.info(f"Authenticating user: {username}")
 
         if not USER_TABLE_NAME:

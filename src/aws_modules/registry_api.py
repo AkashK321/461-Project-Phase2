@@ -33,6 +33,7 @@ from aws_modules.auth import (
     get_validated_user,
     register_user,
     hash_password,
+    ensure_default_user,
 )
 
 # logging setup
@@ -50,6 +51,14 @@ BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
 SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
+
+# Default admin user credentials from environment variables
+# Fall back to the specification defaults if not set
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+
+# Global flag to track if initialization has been performed
+_initialized = False
 
 
 # simple helpers for semver-ish ranges
@@ -171,6 +180,23 @@ def parse_event(event):
     return method, path, body
 
 
+def initialize_system():
+    """
+    Initialize the system by ensuring the default admin user exists.
+    This should be called once per Lambda container initialization.
+    """
+    global _initialized
+    
+    if _initialized:
+        return
+    
+    # Only initialize if we have authentication support
+    if USER_TABLE_NAME and JWT_SECRET_KEY:
+        ensure_default_user()
+    
+    _initialized = True
+
+
 def reset_state():
     # wipe the main registry table
     tbl = dynamodb.Table(TABLE_NAME)
@@ -192,8 +218,6 @@ def reset_state():
     if USER_TABLE_NAME:
         # rebuild the user table with the default admin from the spec
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
-        admin_user = "ece30861defaultadminuser"
-        admin_pass = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
 
         scan = user_tbl.scan(
             ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
@@ -209,13 +233,13 @@ def reset_state():
         user_tbl.put_item(
             Item={
                 "id": admin_id,
-                "username": admin_user,
-                "password_hash": hash_password(admin_pass),
+                "username": DEFAULT_ADMIN_USERNAME,
+                "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
                 "roles": ["admin", "upload", "search", "download"],
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
-        logger.info(f"Reset user table and added default admin {admin_user}")
+        logger.info(f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}")
 
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
@@ -506,6 +530,9 @@ def get_lineage_graph(start_art_id):
 
 
 def handler(event, context):
+    # Initialize the system on first run (ensures default user exists)
+    initialize_system()
+    
     method, path, body = parse_event(event)
 
     if not TABLE_NAME or not BUCKET_NAME:

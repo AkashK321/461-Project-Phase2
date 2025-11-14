@@ -14,6 +14,7 @@ on:
       - model-lineage
       - authentication-and-registration
       - enhance-search-endpoints
+      - uploads-and-downloads
 
 # Define the permissions the job will need
 permissions:
