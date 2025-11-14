@@ -28,20 +28,9 @@ def hash_password(pw):
 def check_password(pw, hashed_pw):
     """Checks a plaintext password against a stored hash."""
     if not hashed_pw:
-        logger.info("check_password: No hashed password provided")
         return False
     
-    # Generate hash from input password for comparison logging
-    input_hash = bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    
-    logger.info(f"check_password: Input password length: {len(pw)}")
-    logger.info(f"check_password: Stored hash: {hashed_pw}")
-    logger.info(f"check_password: Fresh hash of input: {input_hash}")
-    logger.info(f"check_password: Stored hash length: {len(hashed_pw)}")
-    logger.info(f"check_password: Fresh hash length: {len(input_hash)}")
-    
     result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
-    logger.info(f"check_password: Verification result: {result}")
     
     return result
 
@@ -232,3 +221,4 @@ def get_validated_user(event):
     except jwt.InvalidTokenError:
         logger.warning(f"Token invalid: {traceback.format_exc()}")
         return None
+    
