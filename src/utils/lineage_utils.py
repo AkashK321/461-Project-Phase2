@@ -13,12 +13,13 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 
+
 def get_model_lineage_type(model_repo_id, base_model):
     api = HfApi()
     logger.info(f"Determining lineage type for model: {model_repo_id}")
     try:
         model_info = api.model_info(model_repo_id)
-        
+
         # Get metadata (tags) and file list
         card_data = model_info.cardData or {}  # The YAML metadata in the README
         files = [f.rfilename for f in model_info.siblings]
@@ -72,7 +73,7 @@ def get_base_model_from_card(model_repo_id):
             base_model_id = str(base_model)
 
         logger.info(f"Found base model in card: {base_model_id}")
-        
+
         lineage_type, source = get_model_lineage_type(model_repo_id, base_model_id)
 
         return base_model_id, lineage_type, source
@@ -108,7 +109,9 @@ def get_models_by_base_repo_id(base_repo_id):
     """
     try:
         tbl = dynamodb.Table(TABLE_NAME)
-        response = tbl.scan(FilterExpression=Attr("base_model_repo_id").eq(base_repo_id))
+        response = tbl.scan(
+            FilterExpression=Attr("base_model_repo_id").eq(base_repo_id)
+        )
         items = response.get("Items", [])
         return items
     except Exception as e:
@@ -167,6 +170,7 @@ def get_descendant_items(start_repo_id):
                 visited_repos.add(child_repo_id)
 
     return all_descendants
+
 
 def _calculate_treescore(base_model_repo_id):
     """

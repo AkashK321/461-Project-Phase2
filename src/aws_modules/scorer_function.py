@@ -5,8 +5,10 @@ This function is designed to be the entry point for an AWS Lambda function.
 It receives a list of URLs via an event payload, processes them using the
 existing scorer logic, and returns the results as a list of JSON objects.
 """
+
 import traceback
 import os
+
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
 os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
