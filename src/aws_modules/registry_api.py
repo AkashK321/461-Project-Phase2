@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import boto3
 from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
-from aws_modules.db_utils import save_model_metadata, get_model_by_id
+from aws_modules.db_utils import save_model_metadata, get_model_by_id, get_lineage_items_from_id
 from utils.lineage_utils import get_base_model_from_card
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
@@ -426,6 +426,53 @@ def search_artifacts(payload):
     return make_response(200, {"items": page_items})
 
 
+def get_lineage_graph(start_art_id):
+    """
+    Handle GET /artifact/model/{id}/lineage
+    Constructs and returns the lineage graph for a given model ID.
+    """
+    lineage_items = get_lineage_items_from_id(start_art_id)
+
+    if not lineage_items:
+        # Check if the start artifact itself exists but has no lineage
+        start_item = get_model_by_id(start_art_id)
+        if not start_item:
+            return make_response(404, {"error": "Artifact not found"})
+        # If it exists but has no parents, it's a root node
+        node = {
+            "artifact_id": start_item.get("id"),
+            "name": start_item.get("model_name"),
+            "source": start_item.get("lineage_source", "inferred"),
+        }
+        return make_response(200, {"nodes": [node], "edges": []})
+
+    nodes = []
+    edges = []
+
+    # The first item is the start node, the last is the root.
+    # We iterate through to build the graph.
+    for i, item in enumerate(lineage_items):
+        nodes.append(
+            {
+                "artifact_id": item.get("id"),
+                "name": item.get("model_name"),
+                "source": item.get("lineage_source", "inferred"),
+            }
+        )
+        # If there's a next item in the list, it's the parent.
+        if i + 1 < len(lineage_items):
+            parent_item = lineage_items[i + 1]
+            edges.append(
+                {
+                    "from_node_artifact_id": parent_item.get("id"),
+                    "to_node_artifact_id": item.get("id"),
+                    "relationship": item.get("lineage_type", "fine_tuned_from"),
+                }
+            )
+
+    return make_response(200, {"nodes": nodes, "edges": edges})
+
+
 def handler(event, context):
     method, path, body = parse_event(event)
 
@@ -509,12 +556,12 @@ def handler(event, context):
         return make_response(200, item)
     
     # GET /artifact/model/{id}/lineage
-    if method == "GET" and path.startswith("/artifact/model/") and path.count("/") == 4:
-        art_id = path.split("/artifact/model/", 1)[-2]
-        item = get_model_by_id(art_id)
-        if not item:
-            return make_response(404, {"error": "Model not found"})
-        
+    lineage_match = re.match(r"/artifact/model/([^/]+)/lineage", path)
+    if method == "GET" and lineage_match:
+        art_id = lineage_match.group(1)
+        if not art_id:
+            return make_response(400, {"error": "Missing artifact ID in path"})
+        return get_lineage_graph(art_id)
 
     # POST /artifacts
     if method == "POST" and path == "/artifacts":
