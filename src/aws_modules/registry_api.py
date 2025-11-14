@@ -243,7 +243,7 @@ def ingest_artifact(art_type, payload):
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    base_model_repo, lineage_type = get_base_model_from_card(repo)
+    base_model_repo, lineage_type, source = get_base_model_from_card(repo)
     logger.info(f"Base model repo from card: {base_model_repo}-{lineage_type}")
 
     try:
@@ -302,7 +302,7 @@ def ingest_artifact(art_type, payload):
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
-                #url = :url, #rid = :rid, #brid = :brid, #ling = :ling",
+                #url = :url, #rid = :rid, #brid = :brid, #ling = :ling, #linsrc = :linsrc",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
@@ -311,6 +311,7 @@ def ingest_artifact(art_type, payload):
                 "#rid": "repo_id",
                 "#brid": "base_model_repo_id",
                 "#ling": "lineage_type",
+                "#linsrc": "lineage_source",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
@@ -320,6 +321,7 @@ def ingest_artifact(art_type, payload):
                 ":rid": repo,
                 ":brid": base_model_repo,
                 ":ling": lineage_type,
+                ":linsrc": source,
             },
         )
 
@@ -505,6 +507,14 @@ def handler(event, context):
         if not item:
             return make_response(404, {"error": "Model not found"})
         return make_response(200, item)
+    
+    # GET /artifact/model/{id}/lineage
+    if method == "GET" and path.startswith("/artifact/model/") and path.count("/") == 4:
+        art_id = path.split("/artifact/model/", 1)[-2]
+        item = get_model_by_id(art_id)
+        if not item:
+            return make_response(404, {"error": "Model not found"})
+        
 
     # POST /artifacts
     if method == "POST" and path == "/artifacts":

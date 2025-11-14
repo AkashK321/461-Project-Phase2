@@ -24,32 +24,32 @@ def get_model_lineage_type(model_repo_id, base_model):
         files = [f.rfilename for f in model_info.siblings]
         tags = model_info.tags or []
 
-        is_adapter = (
-            card_data.get('library_name') == 'peft' or 
-            'adapter_config.json' in files
-        )
+        if card_data.get("library_name") == "peft":
+            return "Adapter", "model_card"
+        if "adapter_config.json" in files:
+            return "Adapter", "config_json"
 
-        if is_adapter:
-            return "Adapter"
-        
-        is_gguf = any(f.endswith('.gguf') for f in files)
-        is_awq = any(f.endswith('.awq') for f in files)
-        is_gptq = 'gptq' in tags or 'GPTQ' in model_repo_id
-        has_quant_filename = any("quant" in f.lower() for f in files)
+        if any(f.endswith((".gguf", ".awq")) for f in files):
+            return "Quantized", "filename"
+        if "gptq" in tags or "GPTQ" in model_repo_id:
+            return "Quantized", "tags"
+        if any("quant" in f.lower() for f in files):
+            return "Quantized", "filename"
 
-        if is_gguf or is_awq or is_gptq or has_quant_filename:
-            return "Quantized"
-
-        # --- CHECK 3: IS IT A FINE-TUNE? ---
-        # If it has a 'base_model' tag but isn't an adapter/quant, it's likely a full fine-tune
-        # or a merge.
+        # If it has a 'base_model' but isn't an adapter/quant, it's likely
+        # a full fine-tune or a merge. The source is the model card.
         if base_model:
-            return "Fine-Tune"
+            return "Fine-Tune", "model_card"
 
-        return "Base"
+        # If no parent is found, it's a base model.
+        return "Base", "inferred"
 
     except Exception as e:
-        return "Unknown"
+        logger.error(
+            f"Failed to determine lineage type for {model_repo_id}: {e}",
+            exc_info=True,
+        )
+        return "Unknown", "error"
 
 
 def get_base_model_from_card(model_repo_id):
@@ -64,7 +64,7 @@ def get_base_model_from_card(model_repo_id):
 
         if not base_model:
             logger.warning(f"No 'base_model' key in metadata for {model_repo_id}.")
-            return None, None
+            return None, "Base", "inferred"
 
         if isinstance(base_model, list):
             base_model_id = base_model[0]
@@ -73,16 +73,15 @@ def get_base_model_from_card(model_repo_id):
 
         logger.info(f"Found base model in card: {base_model_id}")
         
-        if base_model_id:
-            lineage_type = get_model_lineage_type(model_repo_id, base_model_id)
+        lineage_type, source = get_model_lineage_type(model_repo_id, base_model_id)
 
-        return base_model_id, lineage_type
+        return base_model_id, lineage_type, source
 
     except Exception as e:
         logger.warning(
             f"Could not retrieve base model from card for {model_repo_id}: {e}"
         )
-        return None, None
+        return None, "Unknown", "error"
 
 
 def get_model_by_repo_id(repo_id):

@@ -40,6 +40,10 @@ from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
+BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
+USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
+SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 
 dynamodb = boto3.resource("dynamodb")
 
@@ -127,7 +131,7 @@ def score_url(url: str, url_type: str) -> dict:
                     results["treescore"] = round(treescore, 2)
                     log.info(f"Treescore for {repo}: {treescore}")
         else:
-            base_model_repo_id, lineage_type = get_base_model_from_card(repo)
+            base_model_repo_id, lineage_type, source = get_base_model_from_card(repo)
             log.info(f"Base model from card: {base_model_repo_id}")
             if base_model_repo_id:
                 log.info("Calculating treescore for new model...")
