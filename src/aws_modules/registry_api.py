@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 import boto3
 from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
-from aws_modules.db_utils import save_model_metadata, get_model_by_id, get_lineage_items_from_id
-from utils.lineage_utils import get_base_model_from_card
+from aws_modules.db_utils import save_model_metadata, get_model_by_id
+from utils.lineage_utils import get_base_model_from_card, get_lineage_items_from_id
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 from aws_modules.api_utils import make_response
