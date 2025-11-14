@@ -125,6 +125,33 @@ def get_lineage_items_from_id(start_art_id):
     return lineage_items
 
 
+def get_descendant_items(start_repo_id):
+    """
+    Helper to recursively find all descendants of a model.
+    This performs a breadth-first search.
+    """
+    if not start_repo_id:
+        return []
+
+    all_descendants = []
+    queue = [start_repo_id]
+    visited_repos = {start_repo_id}
+
+    while queue:
+        current_repo_id = queue.pop(0)
+        logger.info(f"Finding children for: {current_repo_id}")
+
+        # This scan is inefficient. A GSI on 'base_model_repo_id' would be ideal.
+        children = get_model_by_repo_id(current_repo_id, find_all=True)
+        for child in children:
+            child_repo_id = child.get("repo_id")
+            if child_repo_id and child_repo_id not in visited_repos:
+                all_descendants.append(child)
+                queue.append(child_repo_id)
+                visited_repos.add(child_repo_id)
+
+    return all_descendants
+
 def _calculate_treescore(base_model_repo_id):
     """
     Calculates the Treescore for a new model based on its parent's lineage.

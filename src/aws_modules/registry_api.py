@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 import boto3
 from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
-from aws_modules.db_utils import save_model_metadata, get_model_by_id
-from utils.lineage_utils import get_base_model_from_card, get_lineage_items_from_id
+from aws_modules.db_utils import save_model_metadata, get_model_by_id, get_model_by_repo_id
+from utils.lineage_utils import get_base_model_from_card, get_lineage_items_from_id, get_descendant_items
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 from aws_modules.api_utils import make_response
@@ -431,44 +431,56 @@ def get_lineage_graph(start_art_id):
     Handle GET /artifact/model/{id}/lineage
     Constructs and returns the lineage graph for a given model ID.
     """
-    lineage_items = get_lineage_items_from_id(start_art_id)
+    start_item = get_model_by_id(start_art_id)
+    if not start_item:
+        return make_response(404, {"error": "Artifact not found"})
 
-    if not lineage_items:
-        # Check if the start artifact itself exists but has no lineage
-        start_item = get_model_by_id(start_art_id)
-        if not start_item:
-            return make_response(404, {"error": "Artifact not found"})
-        # If it exists but has no parents, it's a root node
-        node = {
-            "artifact_id": start_item.get("id"),
-            "name": start_item.get("model_name"),
-            "source": start_item.get("lineage_source", "inferred"),
-        }
-        return make_response(200, {"nodes": [node], "edges": []})
+    # --- Build the full graph: ancestors + start_node + descendants ---
+    ancestors = get_lineage_items_from_id(start_art_id)
+    start_repo_id = start_item.get("repo_id")
+    descendants = get_descendant_items(start_repo_id)
 
+    # Combine all items, ensuring no duplicates
+    all_items = {item["id"]: item for item in ancestors}
+    all_items[start_item["id"]] = start_item
+    for item in descendants:
+        all_items[item["id"]] = item
+
+    # --- Construct nodes and edges from all items ---
     nodes = []
     edges = []
-
-    # The first item is the start node, the last is the root.
-    # We iterate through to build the graph.
-    for i, item in enumerate(lineage_items):
+    for item_id, item in all_items.items():
         nodes.append(
             {
-                "artifact_id": item.get("id"),
+                "artifact_id": item_id,
                 "name": item.get("model_name"),
                 "source": item.get("lineage_source", "inferred"),
             }
         )
-        # If there's a next item in the list, it's the parent.
-        if i + 1 < len(lineage_items):
-            parent_item = lineage_items[i + 1]
-            edges.append(
-                {
-                    "from_node_artifact_id": parent_item.get("id"),
-                    "to_node_artifact_id": item.get("id"),
-                    "relationship": item.get("lineage_type", "fine_tuned_from"),
-                }
-            )
+
+        # If the item has a parent, create an edge
+        parent_repo_id = item.get("base_model_repo_id")
+        if parent_repo_id:
+            # Find the parent item in our collected items
+            parent_item = None
+            for p_item in all_items.values():
+                if p_item.get("repo_id") == parent_repo_id:
+                    parent_item = p_item
+                    break
+
+            if parent_item:
+                edges.append(
+                    {
+                        "from_node_artifact_id": parent_item.get("id"),
+                        "to_node_artifact_id": item_id,
+                        "relationship": item.get("lineage_type", "fine_tuned_from"),
+                    }
+                )
+            else:
+                # This case can happen if a parent exists but is not in the registry
+                logger.warning(
+                    f"Parent model with repo_id '{parent_repo_id}' not found in registry for child '{item.get('repo_id')}'"
+                )
 
     return make_response(200, {"nodes": nodes, "edges": edges})
 
