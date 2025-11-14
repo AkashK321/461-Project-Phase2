@@ -11,7 +11,7 @@ on:
       - registry-endpoints
       - refactor-file-structure
       - download-model-from-hugging-face
-      - model-lineage-tree
+      - model-lineage
       - authentication-and-registration
       - enhance-search-endpoints
 
@@ -65,3 +65,6 @@ jobs:
           aws lambda update-function-code \
             --function-name "registry_api" \
             --zip-file fileb://lambda_deployment.zip
+
+          echo "Waiting for registry_api function update to complete..."
+          aws lambda wait function-updated --function-name "registry_api"

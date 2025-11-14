@@ -15,8 +15,15 @@ from datetime import datetime, timezone
 import boto3
 from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model
-from aws_modules.db_utils import save_model_metadata, get_model_by_id
-from utils.lineage_utils import get_base_model_from_card
+from aws_modules.db_utils import (
+    save_model_metadata,
+    get_model_by_id,
+)
+from utils.lineage_utils import (
+    get_base_model_from_card,
+    get_lineage_items_from_id,
+    get_descendant_items,
+)
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 from aws_modules.api_utils import make_response
@@ -36,11 +43,13 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 # shared AWS clients/resources
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
+lambda_client = boto3.client("lambda")
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
+SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 
 
 # simple helpers for semver-ish ranges
@@ -241,8 +250,8 @@ def ingest_artifact(art_type, payload):
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    base_model_repo = get_base_model_from_card(repo)
-    logger.info(f"Base model repo from card: {base_model_repo}")
+    base_model_repo, lineage_type, source = get_base_model_from_card(repo)
+    logger.info(f"Base model repo from card: {base_model_repo}-{lineage_type}")
 
     try:
         # pull the full repo contents down locally
@@ -268,7 +277,27 @@ def ingest_artifact(art_type, payload):
             return make_response(500, {"error": "S3 upload failed"})
 
         version = "v1"  # could be pulled from HF metadata later
-        scores = {}  # placeholder for metric pre-check results
+
+        # --- Invoke scorer_function to get scores ---
+        scorer_function_name = SCORER_FUNCTION_NAME
+        scores = {}
+        if scorer_function_name:
+            logger.info(f"Invoking scorer function: {scorer_function_name}")
+            try:
+                scorer_payload = json.dumps({"urls": [url]})
+                response = lambda_client.invoke(
+                    FunctionName=scorer_function_name,
+                    InvocationType="RequestResponse",
+                    Payload=scorer_payload,
+                )
+                response_payload = json.loads(response["Payload"].read().decode())
+                if response_payload.get("statusCode") == 200:
+                    scores_list = json.loads(response_payload["body"])
+                    if scores_list:
+                        scores = scores_list[0]  # We only sent one URL
+            except Exception as e:
+                logger.error(f"Failed to invoke or parse scorer response: {e}")
+
         created_at = datetime.now(timezone.utc).isoformat()
 
         item = save_model_metadata(name, version, s3_key, scores)
@@ -280,7 +309,8 @@ def ingest_artifact(art_type, payload):
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
-                #url = :url, #rid = :rid, #brid = :brid",
+                #url = :url, #rid = :rid, #brid = :brid, \
+                #ling = :ling, #linsrc = :linsrc",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
@@ -288,6 +318,8 @@ def ingest_artifact(art_type, payload):
                 "#url": "source_url",
                 "#rid": "repo_id",
                 "#brid": "base_model_repo_id",
+                "#ling": "lineage_type",
+                "#linsrc": "lineage_source",
             },
             ExpressionAttributeValues={
                 ":t": art_type,
@@ -296,6 +328,8 @@ def ingest_artifact(art_type, payload):
                 ":url": url,
                 ":rid": repo,
                 ":brid": base_model_repo,
+                ":ling": lineage_type,
+                ":linsrc": source,
             },
         )
 
@@ -400,6 +434,77 @@ def search_artifacts(payload):
     return make_response(200, {"items": page_items})
 
 
+def get_lineage_graph(start_art_id):
+    """
+    Handle GET /artifact/model/{id}/lineage
+    Constructs and returns the lineage graph for a given model ID.
+    """
+    start_item = get_model_by_id(start_art_id)
+    if not start_item:
+        return make_response(404, {"error": "Artifact does not exist."})
+
+    # --- Build the full graph: ancestors + start_node + descendants ---
+    ancestors = get_lineage_items_from_id(start_art_id)
+    start_repo_id = start_item.get("repo_id")
+
+    # Per spec, if metadata is malformed for lineage (e.g., missing repo_id),
+    # return a 400 error.
+    if not start_repo_id:
+        return make_response(
+            400,
+            {
+                "error": "The lineage graph cannot be computed \
+                because the artifact metadata is missing or malformed."
+            },
+        )
+    descendants = get_descendant_items(start_repo_id)
+
+    # Combine all items, ensuring no duplicates
+    all_items = {item["id"]: item for item in ancestors}
+    all_items[start_item["id"]] = start_item
+    for item in descendants:
+        all_items[item["id"]] = item
+
+    # --- Construct nodes and edges from all items ---
+    nodes = []
+    edges = []
+    for item_id, item in all_items.items():
+        nodes.append(
+            {
+                "artifact_id": item_id,
+                "name": item.get("model_name"),
+                "source": item.get("lineage_source", "inferred"),
+            }
+        )
+
+        # If the item has a parent, create an edge
+        parent_repo_id = item.get("base_model_repo_id")
+        if parent_repo_id:
+            # Find the parent item in our collected items
+            parent_item = None
+            for p_item in all_items.values():
+                if p_item.get("repo_id") == parent_repo_id:
+                    parent_item = p_item
+                    break
+
+            if parent_item:
+                edges.append(
+                    {
+                        "from_node_artifact_id": parent_item.get("id"),
+                        "to_node_artifact_id": item_id,
+                        "relationship": item.get("lineage_type", "fine_tuned_from"),
+                    }
+                )
+            else:
+                # This case can happen if a parent exists but is not in the registry
+                logger.warning(
+                    f"Parent model with repo_id '{parent_repo_id}' not \
+                        found in registry for child '{item.get('repo_id')}'"
+                )
+
+    return make_response(200, {"nodes": nodes, "edges": edges})
+
+
 def handler(event, context):
     method, path, body = parse_event(event)
 
@@ -481,6 +586,14 @@ def handler(event, context):
         if not item:
             return make_response(404, {"error": "Model not found"})
         return make_response(200, item)
+
+    # GET /artifact/model/{id}/lineage
+    lineage_match = re.match(r"/artifact/model/([^/]+)/lineage", path)
+    if method == "GET" and lineage_match:
+        art_id = lineage_match.group(1)
+        if not art_id:
+            return make_response(400, {"error": "Missing artifact ID in path"})
+        return get_lineage_graph(art_id)
 
     # POST /artifacts
     if method == "POST" and path == "/artifacts":

@@ -99,6 +99,46 @@ def get_model_by_repo_id(repo_id):
         return None
 
 
+def attribute_is_not_none(model_id, attribute_name):
+    """
+    Checks if a given attribute for a model exists and is not None.
+
+    :param model_id: The ID of the model to check.
+    :param attribute_name: The name of the attribute to check.
+    :return: True if the attribute exists and is not None, False otherwise.
+    """
+    item = get_model_by_id(model_id)
+    if not item:
+        logger.warning(f"Item with id '{model_id}' not found for attribute check.")
+        return False
+
+    # .get() returns None if the key doesn't exist, so this single
+    # check handles both missing keys and keys with a value of None.
+    is_present_and_not_none = item.get(attribute_name) is not None
+    logger.info(
+        f"Check for attribute '{attribute_name}' \
+            on item '{model_id}': {is_present_and_not_none}"
+    )
+    return is_present_and_not_none
+
+
+def get_attribute_value(model_id, attribute_name):
+    """
+    Gets the value of a specific attribute for a given model ID.
+
+    :param model_id: The ID of the model to check.
+    :param attribute_name: The name of the attribute to retrieve.
+    :return: The value of the attribute, or None if the item or attribute doesn't exist.
+    """
+    item = get_model_by_id(model_id)
+    if not item:
+        logger.warning(f"Item with id '{model_id}' not found for attribute retrieval.")
+        return None
+
+    value = item.get(attribute_name)
+    return value
+
+
 def delete_model_metadata(model_id):
     """
     Deletes a model's metadata record by its ID.

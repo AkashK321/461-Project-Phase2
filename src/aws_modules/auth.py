@@ -95,6 +95,7 @@ def authenticate_user(body):
     try:
         username = body["user"]["name"]
         password = body["secret"]["password"]
+        logger.info(f"Authenticating user: {username}")
 
         if not USER_TABLE_NAME:
             return make_response(500, {"error": "User table not configured"})
@@ -117,6 +118,7 @@ def authenticate_user(body):
 
         # --- Password is valid, create token ---
         token = create_token(user["id"], user.get("roles", []))
+        logger.info(f"User '{username}' authenticated successfully with token {token}")
 
         return make_response(200, token)
 

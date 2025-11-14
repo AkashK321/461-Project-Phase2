@@ -6,13 +6,22 @@ It receives a list of URLs via an event payload, processes them using the
 existing scorer logic, and returns the results as a list of JSON objects.
 """
 
+import traceback
 import os
+
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 import json
 import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scorer.utils.logging import set_run_id
-from scorer.url_handler.base import classify_url
+from aws_modules.db_utils import (
+    attribute_is_not_none,
+    get_attribute_value,
+    get_model_by_repo_id,
+)
 from scorer.metrics.size import get_size_score
 from scorer.metrics.license import get_license_score
 from scorer.metrics.dataset_quality import get_dataset_quality_score
@@ -24,12 +33,18 @@ from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 # from scorer.metrics.rampup import get_ramp_up
 # from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
+from scorer.url_handler.base import classify_url
+from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
 
 # Import S3 test function
 # from aws_modules.s3_utils import test_s3_operations
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
+BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
+USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
+SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 
 dynamodb = boto3.resource("dynamodb")
 
@@ -99,6 +114,36 @@ def score_url(url: str, url_type: str) -> dict:
         + 0.10 * results.get("dataset_and_code_score", 0.0)
     )
     results["net_score"] = round(net_score, 2)
+
+    # --- Calculate Treescore if applicable ---
+    # This model might already be in the DB if it's being re-scored.
+    # If so, check if it has a parent model and calculate its treescore.
+    try:
+        item_in_db = get_model_by_repo_id(repo)
+        log.info(f"Fetched item from DB for repo '{repo}': {item_in_db}")
+        if item_in_db:
+            item_id = item_in_db.get("id")
+            if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
+                log.info("Calculating treescore...")
+                base_model_repo_id = get_attribute_value(item_id, "base_model_repo_id")
+                log.info(f"Base model repo ID: {base_model_repo_id}")
+                if base_model_repo_id:
+                    treescore = _calculate_treescore(base_model_repo_id)
+                    results["treescore"] = round(treescore, 2)
+                    log.info(f"Treescore for {repo}: {treescore}")
+        else:
+            base_model_repo_id, lineage_type, source = get_base_model_from_card(repo)
+            log.info(f"Base model from card: {base_model_repo_id}")
+            if base_model_repo_id:
+                log.info("Calculating treescore for new model...")
+                treescore = _calculate_treescore(base_model_repo_id)
+                results["treescore"] = round(treescore, 2)
+
+    except Exception as e:
+        log.error(f"Failed to calculate treescore for {repo}: {e}")
+        log.error(traceback.format_exc())
+
+    log.info(f"Scoring complete for URL: {url} | Results: {results}")
 
     # Combine results and latencies
     final_output = {**results, **latencies}
