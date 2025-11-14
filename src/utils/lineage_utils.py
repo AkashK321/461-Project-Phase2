@@ -100,6 +100,22 @@ def get_model_by_repo_id(repo_id):
         return None
 
 
+def get_models_by_base_repo_id(base_repo_id):
+    """
+    Finds all models that have a specific base_model_repo_id.
+    This uses a scan, which is inefficient on large tables.
+    A GSI on 'base_model_repo_id' would be a performance improvement.
+    """
+    try:
+        tbl = dynamodb.Table(TABLE_NAME)
+        response = tbl.scan(FilterExpression=Attr("base_model_repo_id").eq(base_repo_id))
+        items = response.get("Items", [])
+        return items
+    except Exception as e:
+        logger.error(f"Error scanning for base_repo_id '{base_repo_id}': {e}")
+        return []
+
+
 def get_lineage_items_from_id(start_art_id):
     """Helper to traverse and return all items in a model's lineage."""
     lineage_items = []
@@ -141,8 +157,8 @@ def get_descendant_items(start_repo_id):
         current_repo_id = queue.pop(0)
         logger.info(f"Finding children for: {current_repo_id}")
 
-        # This scan is inefficient. A GSI on 'base_model_repo_id' would be ideal.
-        children = get_model_by_repo_id(current_repo_id, find_all=True)
+        # Find all direct children of the current model
+        children = get_models_by_base_repo_id(current_repo_id)
         for child in children:
             child_repo_id = child.get("repo_id")
             if child_repo_id and child_repo_id not in visited_repos:
