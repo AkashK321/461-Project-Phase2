@@ -116,7 +116,8 @@ def attribute_is_not_none(model_id, attribute_name):
     # check handles both missing keys and keys with a value of None.
     is_present_and_not_none = item.get(attribute_name) is not None
     logger.info(
-        f"Check for attribute '{attribute_name}' on item '{model_id}': {is_present_and_not_none}"
+        f"Check for attribute '{attribute_name}' \
+            on item '{model_id}': {is_present_and_not_none}"
     )
     return is_present_and_not_none
 

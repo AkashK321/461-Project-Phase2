@@ -16,7 +16,6 @@ import json
 import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from aws_modules.db_utils import attribute_is_not_none
 from scorer.utils.logging import set_run_id
 from aws_modules.db_utils import (
     attribute_is_not_none,

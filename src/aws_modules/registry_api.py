@@ -18,7 +18,6 @@ from aws_modules.s3_utils import upload_model
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
-    get_model_by_repo_id,
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -310,7 +309,8 @@ def ingest_artifact(art_type, payload):
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
-                #url = :url, #rid = :rid, #brid = :brid, #ling = :ling, #linsrc = :linsrc",
+                #url = :url, #rid = :rid, #brid = :brid, \
+                #ling = :ling, #linsrc = :linsrc",
             ExpressionAttributeNames={
                 "#t": "type",
                 "#c": "created_at",
@@ -453,7 +453,8 @@ def get_lineage_graph(start_art_id):
         return make_response(
             400,
             {
-                "error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."
+                "error": "The lineage graph cannot be computed \
+                because the artifact metadata is missing or malformed."
             },
         )
     descendants = get_descendant_items(start_repo_id)
@@ -497,7 +498,8 @@ def get_lineage_graph(start_art_id):
             else:
                 # This case can happen if a parent exists but is not in the registry
                 logger.warning(
-                    f"Parent model with repo_id '{parent_repo_id}' not found in registry for child '{item.get('repo_id')}'"
+                    f"Parent model with repo_id '{parent_repo_id}' not \
+                        found in registry for child '{item.get('repo_id')}'"
                 )
 
     return make_response(200, {"nodes": nodes, "edges": edges})
