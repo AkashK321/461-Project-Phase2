@@ -433,11 +433,19 @@ def get_lineage_graph(start_art_id):
     """
     start_item = get_model_by_id(start_art_id)
     if not start_item:
-        return make_response(404, {"error": "Artifact not found"})
+        return make_response(404, {"error": "Artifact does not exist."})
 
     # --- Build the full graph: ancestors + start_node + descendants ---
     ancestors = get_lineage_items_from_id(start_art_id)
     start_repo_id = start_item.get("repo_id")
+
+    # Per spec, if metadata is malformed for lineage (e.g., missing repo_id),
+    # return a 400 error.
+    if not start_repo_id:
+        return make_response(
+            400,
+            {"error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."}
+        )
     descendants = get_descendant_items(start_repo_id)
 
     # Combine all items, ensuring no duplicates
