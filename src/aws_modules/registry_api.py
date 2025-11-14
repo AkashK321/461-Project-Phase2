@@ -515,9 +515,9 @@ def handler(event, context):
     if method == "GET" and path == "/health":
         return make_response(200, {"status": "ok"})
 
-    # tracks: spec allows this to just return an empty list for now
+    # tracks
     if method == "GET" and path == "/tracks":
-        return make_response(200, {"tracks": []})
+        return make_response(200, {"tracks": ["Access control track"]})
 
     # authentication entry point
     if method == "PUT" and path == "/authenticate":
