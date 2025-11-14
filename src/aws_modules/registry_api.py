@@ -14,7 +14,10 @@ from datetime import datetime, timezone
 
 import boto3
 from huggingface_hub import snapshot_download
-from aws_modules.s3_utils import upload_model
+from aws_modules.s3_utils import (
+    upload_model, 
+    generate_presigned_download_url
+)
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
@@ -667,10 +670,21 @@ def handler(event, context):
             "id": item.get("id"),
             "type": item.get("type")
         }
+        s3_key = item.get("s3_key")
+        download_url = None
+        if s3_key:
+            download_url = generate_presigned_download_url(s3_key)
+        else:
+            logger.warning(f"Artifact {art_id} has no 's3_key' to generate download URL")
+
         data = {
             "url": item.get("source_url")
-            # "download_url" would go here if you had it
         }
+        
+        if download_url:
+            data["download_url"] = download_url
+
+            
         return make_response(200, {"metadata": metadata, "data": data})
 
     # GET /artifact/model/{id}/lineage
