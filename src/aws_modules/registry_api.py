@@ -169,6 +169,7 @@ def parse_event(event):
     # pull out method, path, and JSON body from the API Gateway event
     path = event.get("rawPath", "") or "/"
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
+    query_params = event.get("queryStringParameters") or {}
     is_b64 = event.get("isBase64Encoded", False)
     raw_body = event.get("body") or "{}"
     if is_b64:
@@ -177,7 +178,7 @@ def parse_event(event):
         body = json.loads(raw_body) if raw_body else {}
     except Exception:
         body = {}
-    return method, path, body
+    return method, path, body, query_params
 
 
 def initialize_system():
@@ -249,25 +250,39 @@ def ingest_artifact(art_type, payload):
     Handle POST /artifact/{type}.
 
     Payload should have:
-      - urls: non-empty list of URLs pointing at the model.
+      - urls: a single URL string pointing at the model.
     """
     try:
-        if type(payload["urls"]) is not list or len(payload["urls"]) == 0:
+        # --- FIX 1: Spec uses "url" (string), not "urls" (list) ---
+        url = payload.get("url")
+        if not url or not isinstance(url, str):
             return make_response(
-                400, {"error": "payload must have non-empty 'urls' list"}
+                400, {"error": "payload must have a non-empty 'url' string"}
             )
-        for url in payload["urls"]:
-            url_type = classify_url(url)
+        
+        # Keep it as a list for internal functions that expect one
+        urls = [url]
+        # --- END FIX 1 ---
+
+        repo = ""
+        for u in urls:
+            url_type = classify_url(u)
             if url_type == "model":
-                repo = get_repo_id(url, url_type) or ""
+                repo = get_repo_id(u, url_type) or ""
                 break
             else:
                 repo = ""
+        
+        if not repo:
+             return make_response(400, {"error": "unable to find model url in payload"})
+             
         parts = repo.split("/", 1)
         name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+    
+    except KeyError:
+        return make_response(400, {"error": "payload must have a non-empty 'url' string"})
     except Exception:
-        return make_response(400, {"error": "unable to find model url in payload"})
-
+        return make_response(400, {"error": "unable to parse model url in payload"})
    
     # --- First, invoke scorer_function to get scores before downloading ---
     scorer_function_name = SCORER_FUNCTION_NAME
@@ -383,7 +398,16 @@ def ingest_artifact(art_type, payload):
         )
 
         logger.info(f"Successfully ingested model {model_id} from {url}")
-        return make_response(201, {"id": item["id"], "s3_key": s3_key, "model": name})
+        metadata = {
+            "name": item.get("model_name"),
+            "id": item.get("id"),
+            "type": item.get("type")
+        }
+        data = {
+            "url": item.get("source_url")
+            # "download_url" would go here
+        }
+        return make_response(201, {"metadata": metadata, "data": data})
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
@@ -400,46 +424,44 @@ def ingest_artifact(art_type, payload):
             logger.error(f"Error during cleanup: {e}")
 
 
-def search_artifacts(payload):
+def search_artifacts(query_array, query_params):
     """
     Handle POST /artifacts.
 
-    All fields are optional:
-      - name: regex (or simple substring if regex is invalid)
-      - types: list of artifact types
-      - version / version_range: version constraint string
-      - page / page_num: 1-based page number
-      - page_size / limit: number of items per page
+    - query_array: The request body, which is a list of query objects.
+    - query_params: The query string parameters, containing the 'offset'.
     """
-    name_query = (payload.get("name") or "").strip()
-    types = payload.get("types", [])
-    want_all_types = not types
-
-    # support both "version" and "version_range"
-    version_query = (
-        payload.get("version") or payload.get("version_range") or ""
-    ).strip()
-
-    # pagination (1-based)
-    page = payload.get("page") or payload.get("page_num") or 1
-    page_size = payload.get("page_size") or payload.get("limit") or 50
+    
     try:
-        page = int(page)
+        offset_str = query_params.get("offset", "1")
+        page = int(offset_str)
     except (TypeError, ValueError):
         page = 1
-    try:
-        page_size = int(page_size)
-    except (TypeError, ValueError):
-        page_size = 50
-
+        
     if page < 1:
         page = 1
-    if page_size < 1:
-        page_size = 1
-    if page_size > 100:
-        page_size = 100
+    
+    # Spec doesn't define page size, so we'll pick one.
+    page_size = 50 
+    
+    if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
+        query = {}
+    else:
+        query = query_array[0] # Use the first query object
 
-    # table is tiny for this project, so a full scan is fine
+    name_query = (query.get("name") or "").strip()
+    types = query.get("types", [])
+    want_all_types = not types
+
+    # Handle the wildcard "*" search
+    if name_query == "*":
+        name_query = "" # This will match all names
+
+    version_query = (
+        query.get("version") or query.get("version_range") or ""
+    ).strip()
+    
+    
     tbl = dynamodb.Table(TABLE_NAME)
     scan_resp = tbl.scan()
     items = scan_resp.get("Items", [])
@@ -465,7 +487,6 @@ def search_artifacts(payload):
             if version_satisfies(str(it.get("version", "")), version_query)
         ]
 
-    # stable ordering so pagination is predictable
     def _sort_key(it):
         return (
             str(it.get("model_name", "")),
@@ -474,13 +495,14 @@ def search_artifacts(payload):
 
     items.sort(key=_sort_key)
 
-    # slice out just the requested page
     start_idx = (page - 1) * page_size
     end_idx = start_idx + page_size
     page_items = items[start_idx:end_idx]
 
-    # autograder expects {"items": [...]} and not much else
-    return make_response(200, {"items": page_items})
+    next_offset = str(page + 1)
+    headers = {"Offset": next_offset}
+
+    return make_response(200, page_items, headers=headers)
 
 
 def get_lineage_graph(start_art_id):
@@ -558,7 +580,7 @@ def handler(event, context):
     # Initialize the system on first run (ensures default user exists)
     initialize_system()
     
-    method, path, body = parse_event(event)
+    method, path, body, query_params = parse_event(event)
 
     if not TABLE_NAME or not BUCKET_NAME:
         return make_response(500, {"error": "missing env vars for table/bucket"})
@@ -569,7 +591,7 @@ def handler(event, context):
 
     # tracks
     if method == "GET" and path == "/tracks":
-        return make_response(200, {"tracks": ["Access control track"]})
+        return make_response(200, {"plannedTracks": ["Access control track"]})
 
     # authentication entry point
     if method == "PUT" and path == "/authenticate":
@@ -579,11 +601,10 @@ def handler(event, context):
             )
         return authenticate_user(body)
 
-    # everything else (except reset special-case below) is behind auth
-    user_payload = get_validated_user(event)
-
     # reset route: needed by the autograder and for local testing
-    if path == "/reset" and method in ("POST", "DELETE"):
+    if path == "/reset" and method == "DELETE":
+        # everything else (except reset special-case below) is behind auth
+        user_payload = get_validated_user(event)
         # for the class infrastructure, allow reset to work before we've
         # created any users so the default admin can be bootstrapped
         if not user_payload:
@@ -631,13 +652,26 @@ def handler(event, context):
         except Exception as e:
             return make_response(400, {"error": str(e)})
 
-    # GET /artifact/{id}
-    if method == "GET" and path.startswith("/artifact/") and path.count("/") == 2:
-        art_id = path.split("/artifact/", 1)[-1]
+    # GET /artifact/{type}/{id}
+    get_match = re.match(r"/artifacts/([^/]+)/([^/]+)", path)
+    if method == "GET" and get_match and path.count("/") == 3:
+        art_type = get_match.group(1)
+        art_id = get_match.group(2)
+        
         item = get_model_by_id(art_id)
         if not item:
-            return make_response(404, {"error": "Model not found"})
-        return make_response(200, item)
+            return make_response(404, {"error": "Artifact does not exist."})
+        
+        metadata = {
+            "name": item.get("model_name"),
+            "id": item.get("id"),
+            "type": item.get("type")
+        }
+        data = {
+            "url": item.get("source_url")
+            # "download_url" would go here if you had it
+        }
+        return make_response(200, {"metadata": metadata, "data": data})
 
     # GET /artifact/model/{id}/lineage
     lineage_match = re.match(r"/artifact/model/([^/]+)/lineage", path)
@@ -650,7 +684,7 @@ def handler(event, context):
     # POST /artifacts
     if method == "POST" and path == "/artifacts":
         try:
-            return search_artifacts(body or {})
+            return search_artifacts(body or [], query_params)
         except Exception as e:
             return make_response(400, {"error": str(e)})
 
