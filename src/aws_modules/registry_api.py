@@ -444,7 +444,6 @@ def search_artifacts(query_array, query_params):
     if page < 1:
         page = 1
     
-    # Spec doesn't define page size, so we'll pick one.
     page_size = 50 
     
     if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
@@ -587,6 +586,8 @@ def handler(event, context):
 
     if not TABLE_NAME or not BUCKET_NAME:
         return make_response(500, {"error": "missing env vars for table/bucket"})
+    
+    # Public Routes
 
     # basic health check
     if method == "GET" and path == "/health":
@@ -603,32 +604,35 @@ def handler(event, context):
                 501, {"error": "This system does not support authentication."}
             )
         return authenticate_user(body)
+    
+    # Authentication
+    user_payload = get_validated_user(event)
 
+    # Reset (admin only but has bypass)
     # reset route: needed by the autograder and for local testing
     if path == "/reset" and method == "DELETE":
-        # everything else (except reset special-case below) is behind auth
-        user_payload = get_validated_user(event)
-        # for the class infrastructure, allow reset to work before we've
-        # created any users so the default admin can be bootstrapped
         if not user_payload:
+            # This bypass is for the autograder/testing.
+            logger.warning("Allowing unauthenticated /reset")
             try:
                 out = reset_state()
                 return make_response(200, out)
             except Exception as e:
                 return make_response(500, {"error": str(e)})
 
-        # if we *do* have a user, enforce admin-only
+        # If we have a user, enforce admin role
         user_roles = user_payload.get("roles", [])
         if "admin" not in user_roles:
             return make_response(
                 401, {"error": "You do not have permission to reset the registry."}
             )
-
         try:
             out = reset_state()
             return make_response(200, out)
         except Exception as e:
             return make_response(500, {"error": str(e)})
+
+    # Main Authentication Check
 
     if not user_payload:
         return make_response(
@@ -638,6 +642,8 @@ def handler(event, context):
                 "missing AuthenticationToken."
             },
         )
+    
+    # Authenticated Routes
 
     user_roles = user_payload.get("roles", [])
     logger.info(f"Authenticated user {user_payload.get('sub')} with roles {user_roles}")
