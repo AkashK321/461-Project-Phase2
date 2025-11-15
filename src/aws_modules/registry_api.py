@@ -307,7 +307,7 @@ def ingest_artifact(art_type, payload):
         if response_payload.get("statusCode") == 200:
             scores_list = json.loads(response_payload["body"])
             if scores_list:
-                scores = scores_list[0]  # We only sent one URL
+                scorer_payload = json.dumps({"urls": urls})
         else:
             logger.error(f"Scorer function returned error: {response_payload}")
             return make_response(500, {"error": "Failed to calculate metrics"})
@@ -508,8 +508,9 @@ def search_artifacts(query_array, query_params):
     end_idx = start_idx + page_size
     page_items = items[start_idx:end_idx]
 
-    next_offset = str(page + 1)
-    headers = {"Offset": next_offset}
+    if end_idx < len(items):
+        next_offset = str(page + 1)
+        headers = {"Offset": next_offset}
 
     return make_response(200, page_items, headers=headers)
 
