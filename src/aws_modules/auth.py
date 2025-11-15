@@ -29,9 +29,9 @@ def check_password(pw, hashed_pw):
     """Checks a plaintext password against a stored hash."""
     if not hashed_pw:
         return False
-    
+
     result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
-    
+
     return result
 
 
@@ -43,19 +43,21 @@ def ensure_default_user():
     if not USER_TABLE_NAME:
         logger.error("User table not configured, cannot create default user")
         return False
-    
+
     try:
         user_table = dynamodb.Table(USER_TABLE_NAME)
-        
+
         # Check if default admin user already exists
         response = user_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(DEFAULT_ADMIN_USERNAME)
+            FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(
+                DEFAULT_ADMIN_USERNAME
+            )
         )
-        
+
         if response.get("Items"):
             logger.info(f"Default admin user '{DEFAULT_ADMIN_USERNAME}' already exists")
             return True
-        
+
         # Create the default admin user
         admin_id = str(uuid.uuid4())
         item = {
@@ -65,11 +67,13 @@ def ensure_default_user():
             "roles": ["admin", "upload", "search", "download"],
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         user_table.put_item(Item=item)
-        logger.info(f"Created default admin user '{DEFAULT_ADMIN_USERNAME}' with ID: {admin_id}")
+        logger.info(
+            f"Created default admin user '{DEFAULT_ADMIN_USERNAME}' with ID: {admin_id}"
+        )
         return True
-        
+
     except Exception as e:
         logger.error(f"Failed to create default user: {e}\n{traceback.format_exc()}")
         return False
@@ -143,15 +147,19 @@ def authenticate_user(body):
     try:
         username = body["user"]["name"]
         password = body["secret"]["password"]
-        
+
         # Basic input validation for security
         if not username or not password:
-            return make_response(400, {"error": "Username and password cannot be empty"})
-        
+            return make_response(
+                400, {"error": "Username and password cannot be empty"}
+            )
+
         # Sanitize username - only allow alphanumeric characters and specific special chars
         if not isinstance(username, str) or not isinstance(password, str):
-            return make_response(400, {"error": "Username and password must be strings"})
-            
+            return make_response(
+                400, {"error": "Username and password must be strings"}
+            )
+
         logger.info(f"Authenticating user: {username}")
 
         if not USER_TABLE_NAME:
@@ -221,4 +229,3 @@ def get_validated_user(event):
     except jwt.InvalidTokenError:
         logger.warning(f"Token invalid: {traceback.format_exc()}")
         return None
-    

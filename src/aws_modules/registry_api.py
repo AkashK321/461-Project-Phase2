@@ -14,10 +14,7 @@ from datetime import datetime, timezone
 
 import boto3
 from huggingface_hub import snapshot_download
-from aws_modules.s3_utils import (
-    upload_model, 
-    generate_presigned_download_url
-)
+from aws_modules.s3_utils import upload_model, generate_presigned_download_url
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
@@ -190,14 +187,14 @@ def initialize_system():
     This should be called once per Lambda container initialization.
     """
     global _initialized
-    
+
     if _initialized:
         return
-    
+
     # Only initialize if we have authentication support
     if USER_TABLE_NAME and JWT_SECRET_KEY:
         ensure_default_user()
-    
+
     _initialized = True
 
 
@@ -243,7 +240,9 @@ def reset_state():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
-        logger.info(f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}")
+        logger.info(
+            f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}"
+        )
 
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
@@ -262,7 +261,7 @@ def ingest_artifact(art_type, payload):
             return make_response(
                 400, {"error": "payload must have a non-empty 'url' string"}
             )
-        
+
         # Keep it as a list for internal functions that expect one
         urls = [url]
         # --- END FIX 1 ---
@@ -275,25 +274,27 @@ def ingest_artifact(art_type, payload):
                 break
             else:
                 repo = ""
-        
+
         if not repo:
-             return make_response(400, {"error": "unable to find model url in payload"})
-             
+            return make_response(400, {"error": "unable to find model url in payload"})
+
         parts = repo.split("/", 1)
         name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
-    
+
     except KeyError:
-        return make_response(400, {"error": "payload must have a non-empty 'url' string"})
+        return make_response(
+            400, {"error": "payload must have a non-empty 'url' string"}
+        )
     except Exception:
         return make_response(400, {"error": "unable to parse model url in payload"})
-   
+
     # --- First, invoke scorer_function to get scores before downloading ---
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
     if not scorer_function_name:
         logger.error("Scorer function not configured, cannot validate metrics")
         return make_response(500, {"error": "Metric scoring service not available"})
-    
+
     logger.info(f"Invoking scorer function: {scorer_function_name}")
     try:
         scorer_payload = json.dumps({"urls": payload["urls"]})
@@ -313,26 +314,35 @@ def ingest_artifact(art_type, payload):
     except Exception as e:
         logger.error(f"Failed to invoke or parse scorer response: {e}")
         return make_response(500, {"error": "Failed to calculate metrics"})
-    
+
     # Check if all non-latency metrics meet the 0.5 threshold
     non_latency_metrics = [
-        "bus_factor", "code_quality", "license", "ramp_up", 
-        "dataset_quality", "performance_claims", "dataset_and_code", "size"
+        "bus_factor",
+        "code_quality",
+        "license",
+        "ramp_up",
+        "dataset_quality",
+        "performance_claims",
+        "dataset_and_code",
+        "size",
     ]
-    
+
     failing_metrics = []
     for metric in non_latency_metrics:
         score = scores.get(metric, 0)
         if score < 0.5:
             failing_metrics.append(f"{metric}: {score}")
-    
+
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-        return make_response(424, {
-            "error": "Package is not uploaded due to insufficient quality metrics",
-            "failing_metrics": failing_metrics
-        })
-    
+        return make_response(
+            424,
+            {
+                "error": "Package is not uploaded due to insufficient quality metrics",
+                "failing_metrics": failing_metrics,
+            },
+        )
+
     logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
 
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
@@ -404,7 +414,7 @@ def ingest_artifact(art_type, payload):
         metadata = {
             "name": item.get("model_name"),
             "id": item.get("id"),
-            "type": item.get("type")
+            "type": item.get("type"),
         }
         data = {
             "url": item.get("source_url")
@@ -434,22 +444,22 @@ def search_artifacts(query_array, query_params):
     - query_array: The request body, which is a list of query objects.
     - query_params: The query string parameters, containing the 'offset'.
     """
-    
+
     try:
         offset_str = query_params.get("offset", "1")
         page = int(offset_str)
     except (TypeError, ValueError):
         page = 1
-        
+
     if page < 1:
         page = 1
-    
-    page_size = 50 
-    
+
+    page_size = 50
+
     if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
         query = {}
     else:
-        query = query_array[0] # Use the first query object
+        query = query_array[0]  # Use the first query object
 
     name_query = (query.get("name") or "").strip()
     types = query.get("types", [])
@@ -457,13 +467,10 @@ def search_artifacts(query_array, query_params):
 
     # Handle the wildcard "*" search
     if name_query == "*":
-        name_query = "" # This will match all names
+        name_query = ""  # This will match all names
 
-    version_query = (
-        query.get("version") or query.get("version_range") or ""
-    ).strip()
-    
-    
+    version_query = (query.get("version") or query.get("version_range") or "").strip()
+
     tbl = dynamodb.Table(TABLE_NAME)
     scan_resp = tbl.scan()
     items = scan_resp.get("Items", [])
@@ -581,12 +588,12 @@ def get_lineage_graph(start_art_id):
 def handler(event, context):
     # Initialize the system on first run (ensures default user exists)
     initialize_system()
-    
+
     method, path, body, query_params = parse_event(event)
 
     if not TABLE_NAME or not BUCKET_NAME:
         return make_response(500, {"error": "missing env vars for table/bucket"})
-    
+
     # Public Routes
 
     # basic health check
@@ -604,7 +611,7 @@ def handler(event, context):
                 501, {"error": "This system does not support authentication."}
             )
         return authenticate_user(body)
-    
+
     # Authentication
     user_payload = get_validated_user(event)
 
@@ -642,7 +649,7 @@ def handler(event, context):
                 "missing AuthenticationToken."
             },
         )
-    
+
     # Authenticated Routes
 
     user_roles = user_payload.get("roles", [])
@@ -666,31 +673,30 @@ def handler(event, context):
     if method == "GET" and get_match and path.count("/") == 3:
         art_type = get_match.group(1)
         art_id = get_match.group(2)
-        
+
         item = get_model_by_id(art_id)
         if not item:
             return make_response(404, {"error": "Artifact does not exist."})
-        
+
         metadata = {
             "name": item.get("model_name"),
             "id": item.get("id"),
-            "type": item.get("type")
+            "type": item.get("type"),
         }
         s3_key = item.get("s3_key")
         download_url = None
         if s3_key:
             download_url = generate_presigned_download_url(s3_key)
         else:
-            logger.warning(f"Artifact {art_id} has no 's3_key' to generate download URL")
+            logger.warning(
+                f"Artifact {art_id} has no 's3_key' to generate download URL"
+            )
 
-        data = {
-            "url": item.get("source_url")
-        }
-        
+        data = {"url": item.get("source_url")}
+
         if download_url:
             data["download_url"] = download_url
 
-            
         return make_response(200, {"metadata": metadata, "data": data})
 
     # GET /artifact/model/{id}/lineage

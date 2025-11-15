@@ -32,7 +32,7 @@ def upload_model(local_file_path, s3_object_key):
 def generate_presigned_download_url(s3_object_key, expiration=3600):
     """
     Generates a presigned URL to download a file from S3.
-    
+
     :param s3_object_key: The key of the object in S3.
     :param expiration: Time in seconds for the presigned URL to remain valid.
     :return: The presigned URL as a string, or None if an error occurred.
@@ -43,15 +43,16 @@ def generate_presigned_download_url(s3_object_key, expiration=3600):
 
     try:
         response = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET_NAME, 'Key': s3_object_key},
-            ExpiresIn=expiration
+            "get_object",
+            Params={"Bucket": S3_BUCKET_NAME, "Key": s3_object_key},
+            ExpiresIn=expiration,
         )
         logger.info(f"Generated presigned URL for {s3_object_key}")
         return response
     except ClientError as e:
         logger.error(f"Failed to generate presigned URL for {s3_object_key}: {e}")
         return None
+
 
 def delete_model(s3_object_key):
     """
