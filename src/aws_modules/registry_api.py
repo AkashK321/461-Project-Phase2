@@ -199,6 +199,7 @@ def parse_event(event):
             if username_match and password_match:
                 username = username_match.group(1)
                 password = password_match.group(1)
+                logger.info(f"Regex extracted password: {password}")
 
                 body = {"user": {"name": username}, "secret": {"password": password}}
             else:
