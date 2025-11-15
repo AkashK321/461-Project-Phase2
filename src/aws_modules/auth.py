@@ -154,7 +154,7 @@ def authenticate_user(body):
                 400, {"error": "Username and password cannot be empty"}
             )
 
-        # Sanitize username - only allow alphanumeric characters 
+        # Sanitize username - only allow alphanumeric characters
         # and specific special chars
         if not isinstance(username, str) or not isinstance(password, str):
             return make_response(
