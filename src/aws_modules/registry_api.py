@@ -255,16 +255,13 @@ def ingest_artifact(art_type, payload):
       - urls: a single URL string pointing at the model.
     """
     try:
-        # --- FIX 1: Spec uses "url" (string), not "urls" (list) ---
         url = payload.get("url")
         if not url or not isinstance(url, str):
             return make_response(
                 400, {"error": "payload must have a non-empty 'url' string"}
             )
 
-        # Keep it as a list for internal functions that expect one
         urls = [url]
-        # --- END FIX 1 ---
 
         repo = ""
         for u in urls:
@@ -297,7 +294,7 @@ def ingest_artifact(art_type, payload):
 
     logger.info(f"Invoking scorer function: {scorer_function_name}")
     try:
-        scorer_payload = json.dumps({"urls": payload["urls"]})
+        scorer_payload = json.dumps({"urls": urls})
         response = lambda_client.invoke(
             FunctionName=scorer_function_name,
             InvocationType="RequestResponse",
