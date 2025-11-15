@@ -98,7 +98,7 @@ def test_parse_event_plain_json():
         "body": json.dumps({"name": "bert"}),
         "isBase64Encoded": False,
     }
-    method, path, body = reg.parse_event(event)
+    method, path, body, _ = reg.parse_event(event)
     assert method == "POST"
     assert path == "/artifacts"
     assert body == {"name": "bert"}
@@ -113,7 +113,7 @@ def test_parse_event_base64():
         "body": encoded,
         "isBase64Encoded": True,
     }
-    method, path, body = reg.parse_event(event)
+    method, path, body, _ = reg.parse_event(event)
     assert method == "POST"
     assert path == "/artifacts"
     assert body == payload
@@ -154,14 +154,16 @@ def test_search_artifacts_pagination(monkeypatch):
     monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
     reg.TABLE_NAME = "dummy"
 
-    resp_page1 = reg.search_artifacts({"page": 1, "page_size": 2})
-    p1 = _get_items_from_response(resp_page1)
-    assert len(p1) == 2
+    resp_page1 = reg.search_artifacts([{"name": "*"}], {"offset": "1"})
+    status1, body1 = decode_body(resp_page1)
+    assert status1 == 200
+    assert len(body1) == 3
+    assert resp_page1["headers"].get("Offset") is None
 
-    resp_page2 = reg.search_artifacts({"page": 2, "page_size": 2})
-    p2 = _get_items_from_response(resp_page2)
-    assert len(p2) == 1
-    assert p2[0]["id"] == "3"
+    resp_page2 = reg.search_artifacts([{"name": "*"}], {"offset": "2"})
+    status2, body2 = decode_body(resp_page2)
+    assert status2 == 200
+    assert len(body2) == 0
 
 
 def test_search_artifacts_type_and_name_regex(monkeypatch):
@@ -174,7 +176,7 @@ def test_search_artifacts_type_and_name_regex(monkeypatch):
     monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
     reg.TABLE_NAME = "dummy"
 
-    resp = reg.search_artifacts({"types": ["hf"], "name": "bert"})
+    resp = reg.search_artifacts([{"types": ["hf"], "name": "bert"}], {})
     res_items = _get_items_from_response(resp)
     ids = {it["id"] for it in res_items}
     assert ids == {"1", "3"}
@@ -190,7 +192,7 @@ def test_search_artifacts_bad_regex_falls_back_to_substring(monkeypatch):
     reg.TABLE_NAME = "dummy"
 
     # '(' is invalid regex -> should fallback to substring search
-    resp = reg.search_artifacts({"name": "("})
+    resp = reg.search_artifacts([{"name": "("}], {})
     res_items = _get_items_from_response(resp)
     # neither name contains '(' so result is empty
     assert res_items == []
@@ -208,17 +210,17 @@ def test_search_artifacts_version_filters(monkeypatch):
     reg.TABLE_NAME = "dummy"
 
     # bounded
-    resp = reg.search_artifacts({"version": "1.2.0-1.5.0"})
+    resp = reg.search_artifacts([{"name": "m", "version": "1.2.0-1.5.0"}], {})
     ids = {it["id"] for it in _get_items_from_response(resp)}
     assert ids == {"2", "3"}
 
     # tilde
-    resp2 = reg.search_artifacts({"version_range": "~1.2.0"})
+    resp2 = reg.search_artifacts([{"version_range": "~1.2.0"}], {})
     ids2 = {it["id"] for it in _get_items_from_response(resp2)}
     assert ids2 == {"2"}
 
     # caret
-    resp3 = reg.search_artifacts({"version": "^1.0.0"})
+    resp3 = reg.search_artifacts([{"version": "^1.0.0"}], {})
     ids3 = {it["id"] for it in _get_items_from_response(resp3)}
     assert ids3 == {"1", "2", "3"}
 
@@ -283,7 +285,7 @@ def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
     monkeypatch.setattr(reg, "save_model_metadata", fake_save_model_metadata)
     monkeypatch.setattr(reg, "dynamodb", FakeDynamo2())
 
-    payload = {"urls": ["https://huggingface.co/org/my-model"]}
+    payload = {"url": "https://huggingface.co/org/my-model"}
     resp = reg.ingest_artifact("hf", payload)
     status, body = decode_body(resp)
     assert status == 201
@@ -325,7 +327,7 @@ def test_handler_tracks_ok():
     resp = reg.handler(event, None)
     status, body = decode_body(resp)
     assert status == 200
-    assert body["tracks"] == []
+    assert body["plannedTracks"] == ["Access control track"]
 
 
 def test_handler_missing_env_vars():
@@ -402,9 +404,9 @@ def test_handler_reset_admin_calls_reset_state(monkeypatch):
     monkeypatch.setattr(reg, "reset_state", fake_reset_state)
 
     event = {
-        "rawPath": "/reset",
-        "requestContext": {"http": {"method": "POST"}},
-        "body": "{}",
+    "rawPath": "/reset",
+    "requestContext": {"http": {"method": "DELETE"}},
+    "body": "{}",
     }
     resp = reg.handler(event, None)
     status, body = decode_body(resp)
@@ -481,7 +483,7 @@ def test_handler_get_artifact_found_and_not_found(monkeypatch):
 
     # found
     event_found = {
-        "rawPath": "/artifact/exists",
+        "rawPath": "/artifacts/model/exists",
         "requestContext": {"http": {"method": "GET"}},
     }
     resp_found = reg.handler(event_found, None)
@@ -490,11 +492,11 @@ def test_handler_get_artifact_found_and_not_found(monkeypatch):
     assert body_f["id"] == "exists"
 
     # not found
-    event_nf = {
-        "rawPath": "/artifact/missing",
+    event_not_found = {
+        "rawPath": "/artifacts/model/nope",
         "requestContext": {"http": {"method": "GET"}},
     }
-    resp_nf = reg.handler(event_nf, None)
+    resp_nf = reg.handler(event_not_found, None)
     status_nf, body_nf = decode_body(resp_nf)
     assert status_nf == 404
     assert "Model not found" in body_nf["error"]
@@ -506,9 +508,9 @@ def test_handler_artifacts_calls_search_artifacts(monkeypatch):
 
     called = {}
 
-    def fake_search_artifacts(payload):
-        called["payload"] = payload
-        return reg.make_response(200, {"items": [{"id": "x"}]})
+    def fake_search_artifacts(query_array, query_params):
+        called["payload"] = query_array[0] # Check the first query in the array
+        return reg.make_response(200, [{"id": "x"}])
 
     monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
     monkeypatch.setattr(reg, "search_artifacts", fake_search_artifacts)
@@ -516,7 +518,8 @@ def test_handler_artifacts_calls_search_artifacts(monkeypatch):
     event = {
         "rawPath": "/artifacts",
         "requestContext": {"http": {"method": "POST"}},
-        "body": json.dumps({"name": "bert"}),
+        "body": json.dumps([{"name": "bert"}]), # Pass a list
+        "queryStringParameters": {} # Add query params
     }
     resp = reg.handler(event, None)
     status, body = decode_body(resp)
