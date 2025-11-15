@@ -226,9 +226,6 @@ def authenticate_user(body):
             },
         )
     except Exception as e:
-        logger.error(
-            f"[AUTH] Unhandled exception in authenticate_user: {e}\n{traceback.format_exc()}"
-        )
         return make_response(500, {"error": str(e)})
 
     except KeyError:
