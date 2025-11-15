@@ -27,25 +27,21 @@ def hash_password(pw):
 
 def check_password(pw, hashed_pw):
     """Checks a plaintext password against a stored hash."""
-    
+
     logger.info("[CHECK_PW] Checking password...")
-    logger.info(f"[CHECK_PW] Plaintext password received (length): {len(pw)}")
-    logger.info(f"[CHECK_PW] Stored hash (length): {len(hashed_pw) if hashed_pw else 'None'}")
 
     if not hashed_pw:
         logger.warning("[CHECK_PW] Stored hash is None or empty.")
         return False
-    
+
     if not pw:
         logger.warning("[CHECK_PW] Plaintext password is None or empty.")
         return False
 
     try:
-        logger.info(f"[CHECK_PW] Plaintext password (first 5 chars): {pw[:5]}...")
-        logger.info(f"[CHECK_PW] Stored hash (first 5 chars): {hashed_pw[:5]}...")
 
         result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
-        
+
         logger.info(f"[CHECK_PW] bcrypt.checkpw result: {result}")
         return result
     except Exception as e:
@@ -178,7 +174,9 @@ def authenticate_user(body):
             )
 
         if not isinstance(username, str) or not isinstance(password, str):
-            logger.warning("[AUTH] Username or password was not a string. Returning 400.")
+            logger.warning(
+                "[AUTH] Username or password was not a string. Returning 400."
+            )
             return make_response(
                 400, {"error": "Username and password must be strings"}
             )
@@ -195,7 +193,9 @@ def authenticate_user(body):
         items = response.get("Items", [])
 
         if not items:
-            logger.warning(f"[AUTH] No user found in DB for username: '{username}'. Returning 401.")
+            logger.warning(
+                f"[AUTH] No user found in DB for username: '{username}'. Returning 401."
+            )
             return make_response(401, {"error": "Invalid credentials"})
 
         user = items[0]
@@ -205,11 +205,13 @@ def authenticate_user(body):
         logger.info(f"[AUTH] Stored hash from DB: {stored_hash}")
 
         if not check_password(password, stored_hash):
-            logger.warning(f"[AUTH] Password check FAILED for user: '{username}'. Returning 401.")
+            logger.warning(
+                f"[AUTH] Password check FAILED for user: '{username}'. Returning 401."
+            )
             return make_response(401, {"error": "Invalid credentials"})
 
         token = create_token(user["id"], user.get("roles", []))
-        
+
         logger.info(f"[AUTH] User '{username}' authenticated SUCCESSFULLY.")
 
         return make_response(200, token)
@@ -224,7 +226,9 @@ def authenticate_user(body):
             },
         )
     except Exception as e:
-        logger.error(f"[AUTH] Unhandled exception in authenticate_user: {e}\n{traceback.format_exc()}")
+        logger.error(
+            f"[AUTH] Unhandled exception in authenticate_user: {e}\n{traceback.format_exc()}"
+        )
         return make_response(500, {"error": str(e)})
 
     except KeyError:
