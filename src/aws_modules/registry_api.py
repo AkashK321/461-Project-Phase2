@@ -179,6 +179,8 @@ def parse_event(event):
             logger.error(f"Base64 decode failed: {e}")
             raw_body = ""
 
+    logger.info(f"Raw event body: {raw_body}")
+
     body = {}
 
     if not raw_body:
