@@ -141,7 +141,7 @@ class FakeDynamo:
 def _get_items_from_response(resp):
     status, body = decode_body(resp)
     assert status == 200
-    return body["items"]
+    return body
 
 
 def test_search_artifacts_pagination(monkeypatch):
@@ -475,31 +475,51 @@ def test_handler_get_artifact_found_and_not_found(monkeypatch):
 
     def fake_get_model_by_id(mid):
         if mid == "exists":
-            return {"id": "exists", "model_name": "m"}
+            # Add the fields your API handler expects
+            return {
+                "id": "exists",
+                "model_name": "m",
+                "type": "model",
+                "source_url": "http://example.com",
+                "s3_key": "models/exists/m.zip",  # Add s3_key for download_url
+            }
         return None
+
+    # Mock the new s3_utils function
+    def fake_generate_presigned_download_url(s3_key, expiration=3600):
+        return f"https://s3.signed.url/for/{s3_key}"
 
     monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
     monkeypatch.setattr(reg, "get_model_by_id", fake_get_model_by_id)
+    monkeypatch.setattr(
+        reg, "generate_presigned_download_url", fake_generate_presigned_download_url
+    )
 
     # found
     event_found = {
         "rawPath": "/artifacts/model/exists",
         "requestContext": {"http": {"method": "GET"}},
+        "queryStringParameters": {},  # Need to add this
     }
     resp_found = reg.handler(event_found, None)
     status_f, body_f = decode_body(resp_found)
     assert status_f == 200
-    assert body_f["id"] == "exists"
+    # Assert the spec-compliant structure
+    assert body_f["metadata"]["id"] == "exists"
+    assert body_f["metadata"]["name"] == "m"
+    assert body_f["data"]["url"] == "http://example.com"
+    assert "https://s3.signed.url" in body_f["data"]["download_url"]
 
     # not found
     event_not_found = {
         "rawPath": "/artifacts/model/nope",
         "requestContext": {"http": {"method": "GET"}},
+        "queryStringParameters": {},  # Need to add this
     }
-    resp_nf = reg.handler(event_not_found, None)
-    status_nf, body_nf = decode_body(resp_nf)
+    resp_not_found = reg.handler(event_not_found, None)
+    status_nf, body_nf = decode_body(resp_not_found)
     assert status_nf == 404
-    assert "Model not found" in body_nf["error"]
+    assert "not exist" in body_nf["error"]
 
 
 def test_handler_artifacts_calls_search_artifacts(monkeypatch):
@@ -524,7 +544,7 @@ def test_handler_artifacts_calls_search_artifacts(monkeypatch):
     resp = reg.handler(event, None)
     status, body = decode_body(resp)
     assert status == 200
-    assert body["items"] == [{"id": "x"}]
+    assert body == [{"id": "x"}]
     assert called["payload"] == {"name": "bert"}
 
 
