@@ -161,9 +161,9 @@ def handler(event, context):
     """
     body_str = event.get("body", "{}")
     body_dict = json.loads(body_str)
-    
+
     urls = body_dict.get("urls")
-    
+
     run_id = set_run_id(context.aws_request_id)
     log.info("Handler started", extra={"run_id": run_id, "event": event})
 
