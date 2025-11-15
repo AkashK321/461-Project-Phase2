@@ -508,6 +508,7 @@ def search_artifacts(query_array, query_params):
     end_idx = start_idx + page_size
     page_items = items[start_idx:end_idx]
 
+    headers = {}
     if end_idx < len(items):
         next_offset = str(page + 1)
         headers = {"Offset": next_offset}
