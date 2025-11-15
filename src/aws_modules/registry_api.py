@@ -307,7 +307,7 @@ def ingest_artifact(art_type, payload):
         if response_payload.get("statusCode") == 200:
             scores_list = json.loads(response_payload["body"])
             if scores_list:
-                scorer_payload = json.dumps({"urls": urls})
+                scores = scores_list[0]
         else:
             logger.error(f"Scorer function returned error: {response_payload}")
             return make_response(500, {"error": "Failed to calculate metrics"})
