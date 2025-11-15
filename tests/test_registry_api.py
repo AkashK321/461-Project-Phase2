@@ -404,9 +404,9 @@ def test_handler_reset_admin_calls_reset_state(monkeypatch):
     monkeypatch.setattr(reg, "reset_state", fake_reset_state)
 
     event = {
-    "rawPath": "/reset",
-    "requestContext": {"http": {"method": "DELETE"}},
-    "body": "{}",
+        "rawPath": "/reset",
+        "requestContext": {"http": {"method": "DELETE"}},
+        "body": "{}",
     }
     resp = reg.handler(event, None)
     status, body = decode_body(resp)
@@ -509,7 +509,7 @@ def test_handler_artifacts_calls_search_artifacts(monkeypatch):
     called = {}
 
     def fake_search_artifacts(query_array, query_params):
-        called["payload"] = query_array[0] # Check the first query in the array
+        called["payload"] = query_array[0]  # Check the first query in the array
         return reg.make_response(200, [{"id": "x"}])
 
     monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
@@ -518,8 +518,8 @@ def test_handler_artifacts_calls_search_artifacts(monkeypatch):
     event = {
         "rawPath": "/artifacts",
         "requestContext": {"http": {"method": "POST"}},
-        "body": json.dumps([{"name": "bert"}]), # Pass a list
-        "queryStringParameters": {} # Add query params
+        "body": json.dumps([{"name": "bert"}]),  # Pass a list
+        "queryStringParameters": {},  # Add query params
     }
     resp = reg.handler(event, None)
     status, body = decode_body(resp)
