@@ -90,7 +90,7 @@ def create_token(user_id, roles):
         "uses": 1000,
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
-    return f"bearer {token}"
+    return f"\"bearer {token}\""
 
 
 def register_user(body, current_user_roles=None):
