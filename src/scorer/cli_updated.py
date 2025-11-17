@@ -164,29 +164,24 @@ def main() -> None:
                 continue
 
             if url_type == "unknown":
-                log.warning("unknown url type", extra={"phase": "controller"})
-                continue
+                # Treat unknown URLs as dataset-like per Piazza guidance
+                # so that we still attempt to score them instead of dropping the line.
+                log.warning(
+                    "unknown url type, treating as dataset",
+                    extra={"phase": "controller"},
+                )
+                url_type = "dataset"
+
             if url_type == "model":
-                # try:
-                #     with redirect_stdout(io.StringIO()):
-                #         handle_model_url(url)
-                # except Exception:
-                #     log.exception("handle_model_url failed", extra={"url": url})
                 line_classifications[url] = url_type
             elif url_type == "dataset":
-                # try:
-                #     with redirect_stdout(io.StringIO()):
-                #         handle_dataset_url(url)
-                # except Exception:
-                #     log.exception("handle_dataset_url failed", extra={"url": url})
                 line_classifications[url] = url_type
             elif url_type == "code":
-                # try:
-                #     with redirect_stdout(io.StringIO()):
-                #         handle_code_url(url)
-                # except Exception:
-                #     log.exception("handle_code_url failed", extra={"url": url})
                 line_classifications[url] = url_type
+        if not line_classifications and line:
+            fallback_url = line[-1]
+            line_classifications[fallback_url] = "dataset"
+
         classifications.append(line_classifications)
 
     # Calculate metrics
