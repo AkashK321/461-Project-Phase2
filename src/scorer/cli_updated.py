@@ -92,6 +92,7 @@ def main() -> None:
     log = get_logger("cli")
 
     import logging
+
     for h in logging.getLogger().handlers:
         if isinstance(h, logging.StreamHandler):
             h.stream = sys.stderr
@@ -200,8 +201,8 @@ def main() -> None:
                     tasks["dataset_quality"] = lambda: get_dataset_quality_score(
                         url, url_type
                     )
-                    tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
-                        url, url_type
+                    tasks["dataset_and_code_score"] = (
+                        lambda: get_dataset_and_code_score(url, url_type)
                     )
                 elif url_type == "model":
                     tasks["size"] = lambda: get_size_score(url, url_type)
@@ -220,7 +221,9 @@ def main() -> None:
                             try:
                                 val, lat = fut.result()
                             except Exception:
-                                log.exception("metric failed", extra={"metric": metric_name})
+                                log.exception(
+                                    "metric failed", extra={"metric": metric_name}
+                                )
                                 val, lat = (0.0, 0)
 
                             if metric_name == "code_quality":
@@ -228,7 +231,10 @@ def main() -> None:
                             elif metric_name == "dataset_quality":
                                 dataset_quality, dataset_quality_latency = val, lat
                             elif metric_name == "dataset_and_code_score":
-                                dataset_and_code_score, dataset_and_code_score_latency = (
+                                (
+                                    dataset_and_code_score,
+                                    dataset_and_code_score_latency,
+                                ) = (
                                     val,
                                     lat,
                                 )
@@ -237,7 +243,10 @@ def main() -> None:
                             elif metric_name == "license":
                                 license, license_latency = val, lat
                             elif metric_name == "performance_claims":
-                                performance_claims, performance_claims_latency = val, lat
+                                performance_claims, performance_claims_latency = (
+                                    val,
+                                    lat,
+                                )
                             elif metric_name == "bus_factor":
                                 bus_factor, bus_factor_latency = val, lat
                             elif metric_name == "ramp_up":
