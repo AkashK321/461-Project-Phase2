@@ -15,7 +15,6 @@ import math
 import json
 from utils.logging import setup_logging, set_run_id, get_logger
 from url_handler.base import classify_url
-from urllib.parse import urlparse
 
 from metrics.size import get_size_score
 from metrics.license import get_license_score
