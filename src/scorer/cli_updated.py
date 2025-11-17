@@ -32,6 +32,59 @@ _BOOT_STDOUT = sys.stdout
 sys.stdout = io.StringIO()
 
 
+def safe_metric_value(val: float) -> float:
+    """
+    Normalize a metric value so that weird returns (None, NaN, inf, wrong type)
+    don't blow up the net score calculation.
+    """
+    try:
+        if val is None:
+            return 0.0
+        if isinstance(val, bool):
+            val = float(val)
+        if not isinstance(val, (int, float)):
+            return 0.0
+        if math.isnan(val) or math.isinf(val):
+            return 0.0
+        return float(val)
+    except Exception:
+        return 0.0
+
+
+def compute_size_score(size_dict: dict) -> float:
+    """
+    Compute an average size score from the per-device dict.
+    Be robust if the metric returns {}, None, or non-numeric values.
+    """
+    if not isinstance(size_dict, dict) or not size_dict:
+        return 0.0
+    vals = []
+    for v in size_dict.values():
+        if isinstance(v, (int, float)):
+            if not (math.isnan(v) or math.isinf(v)):
+                vals.append(float(v))
+    if not vals:
+        return 0.0
+    return sum(vals) / len(vals)
+
+
+def safe_round(val: float, ndigits: int = 2) -> float:
+    """
+    Round a metric to ndigits, clamping into [0, 1] and handling bad values.
+    For normal values in [0, 1] this behaves like round(val, ndigits).
+    """
+    try:
+        v = safe_metric_value(val)
+        # Clamp to [0, 1] because all metrics are defined in that range.
+        if v < 0.0:
+            v = 0.0
+        elif v > 1.0:
+            v = 1.0
+        return round(v, ndigits)
+    except Exception:
+        return 0.0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="CLI for scoring models, datasets, and code."
@@ -110,7 +163,7 @@ def main() -> None:
 
     classifications = []
     for line in urls:
-        line_classifications = {}
+        line_classifications: dict[str, str] = {}
 
         for url in line:
             log.info("processing url", extra={"phase": "controller", "url": url})
@@ -119,14 +172,8 @@ def main() -> None:
                     url_type = classify_url(url)
             except Exception:
                 log.exception("classification failed", extra={"url": url})
-
-                # -------------------------------
-                # ***** REQUIRED FIX HERE *****
-                # On any failure, still treat as dataset
+                # Treat any classification failure as dataset so the line is not dropped.
                 url_type = "dataset"
-                line_classifications[url] = url_type
-                continue
-                # -------------------------------
 
             if url_type == "unknown":
                 log.warning("unknown url type, treating as dataset")
@@ -135,6 +182,7 @@ def main() -> None:
             line_classifications[url] = url_type
 
         if not line_classifications and line:
+            # If for some reason everything failed, still score the last URL as a dataset.
             fallback_url = line[-1]
             line_classifications[fallback_url] = "dataset"
 
@@ -214,42 +262,52 @@ def main() -> None:
 
                 with redirect_stdout(io.StringIO()):
                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-                        futures = {ex.submit(fn): name for name, fn in tasks.items()}
+                        futures = {ex.submit(fn): mname for mname, fn in tasks.items()}
                         for fut in as_completed(futures):
                             metric_name = futures[fut]
                             try:
                                 val, lat = fut.result()
                             except Exception:
                                 log.exception(
-                                    "metric failed", extra={"metric": metric_name}
+                                    "metric failed",
+                                    extra={"metric": metric_name, "url": url},
                                 )
                                 val, lat = (0.0, 0)
 
+                            # Normalize latency in case a metric returns something odd.
+                            try:
+                                lat_int = int(lat)
+                                if lat_int < 0:
+                                    lat_int = 0
+                            except Exception:
+                                lat_int = 0
+
                             if metric_name == "code_quality":
-                                code_quality, code_quality_latency = val, lat
+                                code_quality = safe_metric_value(val)
+                                code_quality_latency = lat_int
                             elif metric_name == "dataset_quality":
-                                dataset_quality, dataset_quality_latency = val, lat
+                                dataset_quality = safe_metric_value(val)
+                                dataset_quality_latency = lat_int
                             elif metric_name == "dataset_and_code_score":
-                                (
-                                    dataset_and_code_score,
-                                    dataset_and_code_score_latency,
-                                ) = (
-                                    val,
-                                    lat,
-                                )
+                                dataset_and_code_score = safe_metric_value(val)
+                                dataset_and_code_score_latency = lat_int
                             elif metric_name == "size":
-                                size_dict, size_latency = val, lat
+                                # Guard against size metric returning None / wrong type.
+                                if isinstance(val, dict) and val is not None:
+                                    size_dict = val
+                                size_latency = lat_int
                             elif metric_name == "license":
-                                license, license_latency = val, lat
+                                license = safe_metric_value(val)
+                                license_latency = lat_int
                             elif metric_name == "performance_claims":
-                                performance_claims, performance_claims_latency = (
-                                    val,
-                                    lat,
-                                )
+                                performance_claims = safe_metric_value(val)
+                                performance_claims_latency = lat_int
                             elif metric_name == "bus_factor":
-                                bus_factor, bus_factor_latency = val, lat
+                                bus_factor = safe_metric_value(val)
+                                bus_factor_latency = lat_int
                             elif metric_name == "ramp_up":
-                                ramp_up, ramp_up_latency = val, lat
+                                ramp_up = safe_metric_value(val)
+                                ramp_up_latency = lat_int
 
             if not line:
                 output = {
@@ -283,7 +341,8 @@ def main() -> None:
                 sys.stdout.flush()
                 continue
 
-            size_score = sum(size_dict.values()) / len(size_dict)
+            # Compute net score using sanitized metric values.
+            size_score = compute_size_score(size_dict)
 
             net_score = (
                 0.15 * size_score
@@ -303,23 +362,32 @@ def main() -> None:
             output = {
                 "name": name,
                 "category": category,
-                "net_score": round(net_score, 2),
+                "net_score": safe_round(net_score),
                 "net_score_latency": net_score_latency,
-                "ramp_up_time": round(ramp_up, 2),
+                "ramp_up_time": safe_round(ramp_up),
                 "ramp_up_time_latency": ramp_up_latency,
-                "bus_factor": round(bus_factor, 2),
+                "bus_factor": safe_round(bus_factor),
                 "bus_factor_latency": bus_factor_latency,
-                "performance_claims": round(performance_claims, 2),
+                "performance_claims": safe_round(performance_claims),
                 "performance_claims_latency": performance_claims_latency,
-                "license": round(license, 2),
+                "license": safe_round(license),
                 "license_latency": license_latency,
-                "size_score": {k: round(v, 2) for k, v in size_dict.items()},
+                "size_score": (
+                    {k: safe_round(v) for k, v in size_dict.items()}
+                    if isinstance(size_dict, dict) and size_dict
+                    else {
+                        "raspberry_pi": 0.0,
+                        "jetson_nano": 0.0,
+                        "desktop_pc": 0.0,
+                        "aws_server": 0.0,
+                    }
+                ),
                 "size_score_latency": size_latency,
-                "dataset_and_code_score": round(dataset_and_code_score, 2),
+                "dataset_and_code_score": safe_round(dataset_and_code_score),
                 "dataset_and_code_score_latency": dataset_and_code_score_latency,
-                "dataset_quality": round(dataset_quality, 2),
+                "dataset_quality": safe_round(dataset_quality),
                 "dataset_quality_latency": dataset_quality_latency,
-                "code_quality": round(code_quality, 2),
+                "code_quality": safe_round(code_quality),
                 "code_quality_latency": code_quality_latency,
             }
 
