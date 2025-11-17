@@ -172,7 +172,7 @@ def main() -> None:
                     url_type = classify_url(url)
             except Exception:
                 log.exception("classification failed", extra={"url": url})
-                # Treat any classification failure as dataset so the line is not dropped.
+                # Treat any classification failure as dataset
                 url_type = "dataset"
 
             if url_type == "unknown":
@@ -182,7 +182,7 @@ def main() -> None:
             line_classifications[url] = url_type
 
         if not line_classifications and line:
-            # If for some reason everything failed, still score the last URL as a dataset.
+            # If everything failed, still score last URL as dataset.
             fallback_url = line[-1]
             line_classifications[fallback_url] = "dataset"
 
