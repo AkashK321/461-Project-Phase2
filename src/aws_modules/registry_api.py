@@ -656,7 +656,8 @@ def rate_model(art_id):
 
     logger.info(f"Invoking scorer function: {scorer_function_name}")
     try:
-        logger.info(f"Calculating scores for artifact {art_id} at URL {item.get('source_url')}")
+        logger.info(f"Calculating scores for artifact \
+                    {art_id} at URL {item.get('source_url')}")
         scorer_payload = json.dumps({"urls": [item.get("source_url")]})
         response = lambda_client.invoke(
             FunctionName=scorer_function_name,
