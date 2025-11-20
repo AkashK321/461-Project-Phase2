@@ -648,12 +648,6 @@ def rate_model(art_id):
     if not item:
         return make_response(404, {"error": "Artifact does not exist."})
 
-    # The OpenAPI spec implies this is for models, so we could add a type check
-    if item.get("type") != "model":
-        return make_response(
-            400, {"error": f"Artifact {art_id} is not of type 'model'."}
-        )
-
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
     if not scorer_function_name:
@@ -686,9 +680,22 @@ def rate_model(art_id):
         return make_response(
             500,
             {
-                "error": "The artifact rating system encountered an error while computing at least one metric."
+                "error": "The artifact rating system encountered an \
+                    error while computing at least one metric."
             },
         )
+    else:
+        for metric, score in scores.items():
+            logger.info(f"Metric: {metric}, Score: {score}")
+            if score is None:
+                logger.warning(f"Score for metric '{metric}' is None.")
+                return make_response(
+                    500,
+                    {
+                        "error": "The artifact rating system encountered an \
+                            error while computing at least one metric."
+                    },
+                )
 
     return make_response(200, scores)
 
@@ -820,7 +827,9 @@ def handler(event, context):
     if method == "GET" and rate_match:
         art_id = rate_match.group(1)
         if not art_id:
-            return make_response(400, {"error": "Missing artifact ID in path"})
+            return make_response(400, {"error": "There is missing field(s) in the \
+                                       artifact_id or it is formed improperly, \
+                                       or is invalid."})
         return rate_model(art_id)
 
     # POST /artifacts
