@@ -135,7 +135,7 @@ def main() -> None:
         r = requests.get(
             "https://api.github.com/user",
             headers={"Authorization": f"token {token}"},
-            timeout=3
+            timeout=3,
         )
         if r.status_code != 200:
             print("Error: invalid GitHub token", file=sys.stderr)
