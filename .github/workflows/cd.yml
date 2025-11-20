@@ -15,6 +15,7 @@ on:
       - authentication-and-registration
       - enhance-search-endpoints
       - uploads-and-downloads
+      - 31-reset-endpoint-not-working
 
 # Define the permissions the job will need
 permissions:

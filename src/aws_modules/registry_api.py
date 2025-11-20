@@ -269,6 +269,7 @@ def reset_state():
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
             objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
             if objs:
+                logger.info(f"Deleting S3 objects: {[o['Key'] for o in objs]}")
                 s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
     if USER_TABLE_NAME:
