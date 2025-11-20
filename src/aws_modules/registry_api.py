@@ -17,7 +17,6 @@ from huggingface_hub import snapshot_download
 from aws_modules.s3_utils import upload_model, generate_presigned_download_url
 from aws_modules.db_utils import (
     save_model_metadata,
-    get_model_scores,
     get_model_by_id,
 )
 from utils.lineage_utils import (
