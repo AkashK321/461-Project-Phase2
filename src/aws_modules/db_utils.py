@@ -66,6 +66,31 @@ def save_model_metadata(name, version, s3_key, scores):
         return None
 
 
+def update_model_scores(model_id, new_scores):
+    """
+    Updates the 'scores' attribute for a given model ID.
+    """
+    if not table:
+        logger.error("DynamoDB table is not initialized. Check env var.")
+        return False
+
+    try:
+        scores_with_decimal = floats_to_decimals(new_scores)
+
+        table.update_item(
+            Key={"id": model_id},
+            UpdateExpression="SET #s = :s",
+            ExpressionAttributeNames={"#s": "scores"},
+            ExpressionAttributeValues={":s": scores_with_decimal},
+        )
+        logger.info(f"Successfully updated scores for model ID: {model_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to update scores for model {model_id}: {e}")
+        return False
+
+
 def get_model_by_id(model_id):
     """
     Fetches a single model's metadata by its ID.
