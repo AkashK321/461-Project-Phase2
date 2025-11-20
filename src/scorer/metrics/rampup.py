@@ -362,9 +362,44 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
         if score is None:
             score = _heuristic_rampup(readme, tree)
 
+        readme_text = readme or ""
+        readme_len = len(readme_text)
+
+        # README length bonus: up to +0.10
+        length_boost = min(0.10, (readme_len / 15000) * 0.10)
+
+        # Documentation keyword bonus: up to +0.15
+        doc_keywords = [
+            "install",
+            "installation",
+            "usage",
+            "example",
+            "quickstart",
+            "tutorial",
+            "guide",
+            "requirements",
+            "pip",
+            "conda",
+        ]
+        hits = sum(1 for k in doc_keywords if k in readme_text.lower())
+        doc_boost = min(0.15, hits * 0.03)
+
+        # Repo structure bonus: up to +0.05
+        tree_lines = tree.split("\n")
+        structure_boost = 0.05 if len(tree_lines) > 15 else 0.0
+
+        # Tiny repo penalty: up to -0.20
+        tiny_penalty = -0.20 if len(tree_lines) < 6 else 0.0
+
+        # Apply combined adjustments
+        score = score + length_boost + doc_boost + structure_boost + tiny_penalty
+        score = max(0.0, min(1.0, score))
+
         latency_ms = int((time.time() - start) * 1000)
-        return max(0.0, min(1.0, float(score))), latency_ms
+        return float(score), latency_ms
+
     except Exception:
         return 0.0, int((time.time() - start) * 1000)
+
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
