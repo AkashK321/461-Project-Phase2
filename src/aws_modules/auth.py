@@ -22,10 +22,7 @@ DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
 
 def hash_password(pw):
     """Hashes password for secure storage."""
-    # return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    # bcrypt has a 72-byte limit. Truncate to avoid issues.
-    password_bytes = pw.encode("utf-8")[:72]
-    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def check_password(pw, hashed_pw):
@@ -42,11 +39,8 @@ def check_password(pw, hashed_pw):
         return False
 
     try:
-        # bcrypt has a 72-byte limit. Ensure we check against the same length.
-        password_bytes = pw.encode("utf-8")[:72]
-        result = bcrypt.checkpw(password_bytes, hashed_pw.encode("utf-8"))
 
-        # result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
+        result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
 
         logger.info(f"[CHECK_PW] bcrypt.checkpw result: {result}")
         return result
