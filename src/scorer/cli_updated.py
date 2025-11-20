@@ -141,7 +141,6 @@ def main() -> None:
         # If no argument was passed, do NOT overwrite existing env var.
         os.environ.setdefault("LOG_FILE", "logs/scorer.log")
 
-    # 2. Validate the resolved LOG_FILE path (either from args or environment)
     log_file = os.environ.get("LOG_FILE", "")
     if not log_file.strip():
         print("Error: invalid log file path", file=sys.stderr)
@@ -155,22 +154,27 @@ def main() -> None:
         print("Error: invalid log file path", file=sys.stderr)
         sys.exit(1)
 
-    # Parent directory must be writable
+    # Parent must be writable
     if not os.access(parent, os.W_OK):
         print("Error: invalid log file path", file=sys.stderr)
         sys.exit(1)
 
-    # If the file exists, it must be a real file and writable
-    if log_path.exists():
-        if not log_path.is_file():
-            print("Error: invalid log file path", file=sys.stderr)
-            sys.exit(1)
-        try:
-            with open(log_path, "a"):
-                pass
-        except Exception:
-            print("Error: invalid log file path", file=sys.stderr)
-            sys.exit(1)
+    # The log file itself MUST ALREADY EXIST.
+    if not log_path.exists():
+        print("Error: invalid log file path", file=sys.stderr)
+        sys.exit(1)
+
+    # If it exists, verify it is a writable file
+    if not log_path.is_file():
+        print("Error: invalid log file path", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(log_path, "a"):
+            pass
+    except Exception:
+        print("Error: invalid log file path", file=sys.stderr)
+        sys.exit(1)
 
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
