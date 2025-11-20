@@ -212,9 +212,9 @@ def authenticate_user(body):
 
         token = create_token(user["id"], user.get("roles", []))
 
-        logger.info(f"[AUTH] User '{username}' authenticated SUCCESSFULLY.")
+        logger.info(f"[AUTH] User '{username}' authenticated SUCCESSFULLY. {token}")
 
-        return make_response(200, token)
+        return make_response(200, {{token}})
 
     except KeyError:
         logger.error(f"[AUTH] KeyError while parsing auth body: {body}")
