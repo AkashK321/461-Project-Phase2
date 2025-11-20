@@ -405,11 +405,11 @@ def main() -> None:
                 0.15 * size_score
                 + 0.15 * license
                 + 0.10 * ramp_up
-                + 0.10 * bus_factor
+                + 0.05 * bus_factor
                 + 0.15 * dataset_quality
                 + 0.10 * code_quality
                 + 0.15 * performance_claims
-                + 0.10 * dataset_and_code_score
+                + 0.15 * dataset_and_code_score
             )
 
             net_score_latency = max(
