@@ -265,6 +265,7 @@ def reset_state():
 
     # and clear any model objects in S3 under models/
     if BUCKET_NAME:
+        logger.info(f"Clearing S3 bucket '{BUCKET_NAME}' under 'models/' prefix")
         paginator = s3.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
             objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
