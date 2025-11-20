@@ -132,6 +132,9 @@ def main() -> None:
         os.environ.setdefault("LOG_FILE", "logs/scorer.log")
 
     log_file = os.environ.get("LOG_FILE", "")
+    if not log_file.strip():
+        print("Error: invalid log file path", file=sys.stderr)
+        sys.exit(1)
     log_path = Path(log_file)
 
     # Parent must exist AND be a directory
