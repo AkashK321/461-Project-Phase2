@@ -214,7 +214,7 @@ def authenticate_user(body):
 
         logger.info(f"[AUTH] User '{username}' authenticated SUCCESSFULLY. {token}")
 
-        return make_response(200, {{token}})
+        return make_response(200, token)
 
     except KeyError:
         logger.error(f"[AUTH] KeyError while parsing auth body: {body}")
