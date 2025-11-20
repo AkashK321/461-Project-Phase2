@@ -126,24 +126,6 @@ def main() -> None:
     args = parse_args()
     url_file_path = args.url_file.resolve()
 
-    token = os.environ.get("GITHUB_TOKEN", "")
-    if not token:
-        print("Error: invalid GitHub token", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        r = requests.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"token {token}"},
-            timeout=3,
-        )
-        if r.status_code != 200:
-            print("Error: invalid GitHub token", file=sys.stderr)
-            sys.exit(1)
-    except Exception:
-        print("Error: invalid GitHub token", file=sys.stderr)
-        sys.exit(1)
-
     if args.log_file:
         os.environ["LOG_FILE"] = str(args.log_file)
     else:
@@ -174,6 +156,24 @@ def main() -> None:
         except Exception:
             print("Error: invalid log file path", file=sys.stderr)
             sys.exit(1)
+
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        print("Error: invalid GitHub token", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        r = requests.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {token}"},
+            timeout=3,
+        )
+        if r.status_code != 200:
+            print("Error: invalid GitHub token", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        print("Error: invalid GitHub token", file=sys.stderr)
+        sys.exit(1)
 
     os.environ["LOG_LEVEL"] = str(args.log_level)
     setup_logging(level=args.log_level, json_lines=not args.log_text)
