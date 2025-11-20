@@ -13,6 +13,7 @@ import os
 from contextlib import redirect_stdout
 import math
 import json
+import requests
 from utils.logging import setup_logging, set_run_id, get_logger
 from url_handler.base import classify_url
 
@@ -125,17 +126,54 @@ def main() -> None:
     args = parse_args()
     url_file_path = args.url_file.resolve()
 
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
-    if not GITHUB_TOKEN:
-        print(
-            "Warning: GITHUB_TOKEN environment variable is not set or empty.",
-            file=sys.stderr,
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        print("Error: invalid GitHub token", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        r = requests.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {token}"},
+            timeout=3
         )
+        if r.status_code != 200:
+            print("Error: invalid GitHub token", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        print("Error: invalid GitHub token", file=sys.stderr)
+        sys.exit(1)
 
     if args.log_file:
         os.environ["LOG_FILE"] = str(args.log_file)
     else:
         os.environ.setdefault("LOG_FILE", "logs/scorer.log")
+
+    log_file = os.environ.get("LOG_FILE", "")
+    log_path = Path(log_file)
+
+    # Parent must exist AND be a directory
+    parent = log_path.parent
+    if not parent.exists() or not parent.is_dir():
+        print("Error: invalid log file path", file=sys.stderr)
+        sys.exit(1)
+
+    # Parent directory must be writable
+    if not os.access(parent, os.W_OK):
+        print("Error: invalid log file path", file=sys.stderr)
+        sys.exit(1)
+
+    # If the file exists, it must be a real file and writable
+    if log_path.exists():
+        if not log_path.is_file():
+            print("Error: invalid log file path", file=sys.stderr)
+            sys.exit(1)
+        try:
+            with open(log_path, "a"):
+                pass
+        except Exception:
+            print("Error: invalid log file path", file=sys.stderr)
+            sys.exit(1)
 
     os.environ["LOG_LEVEL"] = str(args.log_level)
     setup_logging(level=args.log_level, json_lines=not args.log_text)
