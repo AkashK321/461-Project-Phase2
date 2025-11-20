@@ -29,20 +29,28 @@ def upload_model(local_file_path, s3_object_key):
         return False
 
 
-def download_model(s3_object_key, local_download_path):
+def generate_presigned_download_url(s3_object_key, expiration=3600):
     """
-    Downloads a model file from S3 to a local path.
+    Generates a presigned URL to download a file from S3.
+
+    :param s3_object_key: The key of the object in S3.
+    :param expiration: Time in seconds for the presigned URL to remain valid.
+    :return: The presigned URL as a string, or None if an error occurred.
     """
     if not S3_BUCKET_NAME:
         logger.error("S3_BUCKET_NAME environment variable not set.")
         return None
 
     try:
-        s3_client.download_file(S3_BUCKET_NAME, s3_object_key, local_download_path)
-        logger.info(f"Successfully downloaded {s3_object_key}")
-        return local_download_path
+        response = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET_NAME, "Key": s3_object_key},
+            ExpiresIn=expiration,
+        )
+        logger.info(f"Generated presigned URL for {s3_object_key}")
+        return response
     except ClientError as e:
-        logger.error(f"Failed to download {s3_object_key}: {e}")
+        logger.error(f"Failed to generate presigned URL for {s3_object_key}: {e}")
         return None
 
 

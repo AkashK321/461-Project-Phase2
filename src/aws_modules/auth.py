@@ -14,6 +14,11 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
 dynamodb = boto3.resource("dynamodb")
 logger = logging.getLogger()
 
+# Default admin user credentials from environment variables
+# Fall back to the specification defaults if not set
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+
 
 def hash_password(pw):
     """Hashes password for secure storage."""
@@ -22,9 +27,70 @@ def hash_password(pw):
 
 def check_password(pw, hashed_pw):
     """Checks a plaintext password against a stored hash."""
+
+    logger.info("[CHECK_PW] Checking password...")
+
     if not hashed_pw:
+        logger.warning("[CHECK_PW] Stored hash is None or empty.")
         return False
-    return bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
+
+    if not pw:
+        logger.warning("[CHECK_PW] Plaintext password is None or empty.")
+        return False
+
+    try:
+
+        result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
+
+        logger.info(f"[CHECK_PW] bcrypt.checkpw result: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"[CHECK_PW] bcrypt comparison failed with error: {e}")
+        return False
+
+
+def ensure_default_user():
+    """
+    Ensures the default admin user exists in the system.
+    This function should be called during system initialization.
+    """
+    if not USER_TABLE_NAME:
+        logger.error("User table not configured, cannot create default user")
+        return False
+
+    try:
+        user_table = dynamodb.Table(USER_TABLE_NAME)
+
+        # Check if default admin user already exists
+        response = user_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(
+                DEFAULT_ADMIN_USERNAME
+            )
+        )
+
+        if response.get("Items"):
+            logger.info(f"Default admin user '{DEFAULT_ADMIN_USERNAME}' already exists")
+            return True
+
+        # Create the default admin user
+        admin_id = str(uuid.uuid4())
+        item = {
+            "id": admin_id,
+            "username": DEFAULT_ADMIN_USERNAME,
+            "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+            "roles": ["admin", "upload", "search", "download"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        user_table.put_item(Item=item)
+        logger.info(
+            f"Created default admin user '{DEFAULT_ADMIN_USERNAME}' with ID: {admin_id}"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to create default user: {e}\n{traceback.format_exc()}")
+        return False
 
 
 def create_token(user_id, roles):
@@ -38,7 +104,7 @@ def create_token(user_id, roles):
         "uses": 1000,
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
-    return f"bearer {token}"
+    return f'"bearer {token}"'
 
 
 def register_user(body, current_user_roles=None):
@@ -95,9 +161,28 @@ def authenticate_user(body):
     try:
         username = body["user"]["name"]
         password = body["secret"]["password"]
-        logger.info(f"Authenticating user: {username}")
+
+        logger.info(f"[AUTH] Attempting authentication for user: '{username}'")
+        logger.info(f"[AUTH] Password received (length): {len(password)}")
+        logger.info(f"[AUTH] Full password string from parser: {password}")
+
+        # Basic input validation for security
+        if not username or not password:
+            logger.warning("[AUTH] Username or password was empty. Returning 400.")
+            return make_response(
+                400, {"error": "Username and password cannot be empty"}
+            )
+
+        if not isinstance(username, str) or not isinstance(password, str):
+            logger.warning(
+                "[AUTH] Username or password was not a string. Returning 400."
+            )
+            return make_response(
+                400, {"error": "Username and password must be strings"}
+            )
 
         if not USER_TABLE_NAME:
+            logger.error("[AUTH] User table not configured. Returning 500.")
             return make_response(500, {"error": "User table not configured"})
 
         user_table = dynamodb.Table(USER_TABLE_NAME)
@@ -108,19 +193,40 @@ def authenticate_user(body):
         items = response.get("Items", [])
 
         if not items:
-            # Spec code for invalid user/pass is 401
+            logger.warning(
+                f"[AUTH] No user found in DB for username: '{username}'. Returning 401."
+            )
             return make_response(401, {"error": "Invalid credentials"})
 
         user = items[0]
+        stored_hash = user.get("password_hash")
 
-        if not check_password(password, user.get("password_hash")):
+        logger.info(f"[AUTH] Found user in DB. User ID: {user.get('id')}")
+        logger.info(f"[AUTH] Stored hash from DB: {stored_hash}")
+
+        if not check_password(password, stored_hash):
+            logger.warning(
+                f"[AUTH] Password check FAILED for user: '{username}'. Returning 401."
+            )
             return make_response(401, {"error": "Invalid credentials"})
 
-        # --- Password is valid, create token ---
         token = create_token(user["id"], user.get("roles", []))
-        logger.info(f"User '{username}' authenticated successfully with token {token}")
+
+        logger.info(f"[AUTH] User '{username}' authenticated SUCCESSFULLY.")
 
         return make_response(200, token)
+
+    except KeyError:
+        logger.error(f"[AUTH] KeyError while parsing auth body: {body}")
+        return make_response(
+            400,
+            {
+                "error": "There is missing field(s) in the "
+                "AuthenticationRequest or it is formed improperly."
+            },
+        )
+    except Exception as e:
+        return make_response(500, {"error": str(e)})
 
     except KeyError:
         # Spec code for malformed body is 400
