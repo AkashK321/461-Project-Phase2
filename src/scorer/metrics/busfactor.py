@@ -259,15 +259,10 @@ def _authors_by_file(dl, total_by_file, contributors, creators) -> Dict[str, Set
             a: _doa(a, f, dl, total_by_file, contributors, creators)
             for a in contributors.get(f, set())
         }
-        if not doa_by_author:
-            authors_of_file[f] = set()
-            continue
-        max_doa = max(doa_by_author.values())
-        keep: Set[str] = set()
-        for a, val in doa_by_author.items():
-            if val > 3.293 and val > 0.75 * max_doa:
-                keep.add(a)
-        authors_of_file[f] = keep
+
+        # Keep ALL contributors as authors — inclusive scoring for stability.
+        authors_of_file[f] = set(doa_by_author.keys()) if doa_by_author else set()
+
     return authors_of_file
 
 
