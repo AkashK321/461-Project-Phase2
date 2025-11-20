@@ -126,19 +126,31 @@ def main() -> None:
     args = parse_args()
     url_file_path = args.url_file.resolve()
 
-    if args.log_file:
-        os.environ["LOG_FILE"] = str(args.log_file)
+    if args.log_file is not None:
+        raw_log = str(args.log_file)
+
+        # Reject empty, whitespace-only, or missing
+        if not raw_log.strip():
+            print("Error: invalid log file path", file=sys.stderr)
+            sys.exit(1)
+
+        # Use raw args.log_file unconditionally
+        os.environ["LOG_FILE"] = raw_log
+
     else:
+        # If no argument was passed, do NOT overwrite existing env var.
         os.environ.setdefault("LOG_FILE", "logs/scorer.log")
 
+    # 2. Validate the resolved LOG_FILE path (either from args or environment)
     log_file = os.environ.get("LOG_FILE", "")
     if not log_file.strip():
         print("Error: invalid log file path", file=sys.stderr)
         sys.exit(1)
-    log_path = Path(log_file)
 
-    # Parent must exist AND be a directory
+    log_path = Path(log_file)
     parent = log_path.parent
+
+    # Parent must exist and be a directory
     if not parent.exists() or not parent.is_dir():
         print("Error: invalid log file path", file=sys.stderr)
         sys.exit(1)
