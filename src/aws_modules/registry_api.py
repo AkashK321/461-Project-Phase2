@@ -656,8 +656,10 @@ def rate_model(art_id):
 
     logger.info(f"Invoking scorer function: {scorer_function_name}")
     try:
-        logger.info(f"Calculating scores for artifact \
-                    {art_id} at URL {item.get('source_url')}")
+        logger.info(
+            f"Calculating scores for artifact \
+                    {art_id} at URL {item.get('source_url')}"
+        )
         scorer_payload = json.dumps({"urls": [item.get("source_url")]})
         response = lambda_client.invoke(
             FunctionName=scorer_function_name,
@@ -828,9 +830,14 @@ def handler(event, context):
     if method == "GET" and rate_match:
         art_id = rate_match.group(1)
         if not art_id:
-            return make_response(400, {"error": "There is missing field(s) in the \
+            return make_response(
+                400,
+                {
+                    "error": "There is missing field(s) in the \
                                        artifact_id or it is formed improperly, \
-                                       or is invalid."})
+                                       or is invalid."
+                },
+            )
         return rate_model(art_id)
 
     # POST /artifacts
