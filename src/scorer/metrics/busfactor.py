@@ -307,11 +307,19 @@ def _compute_bus_factor(authors_of_file: Dict[str, Set[str]]) -> Tuple[int, List
 
 
 def _normalize_score(bus_factor: int, authors_of_file: Dict[str, Set[str]]) -> float:
-    active_authors: Set[str] = (
-        set().union(*authors_of_file.values()) if authors_of_file else set()
-    )
-    denom = max(1, len(active_authors))
-    return min(1.0, bus_factor / denom)
+    """
+    Normalize bus factor to [0.0, 1.0] scale:
+        bus_factor = 0 or 1  -> ~0.0-0.2 (very risky)
+        bus_factor = 2       -> ~0.4
+        bus_factor = 3       -> ~0.6
+        bus_factor = 4       -> ~0.8
+        bus_factor >= 5      -> 1.0 (very robust)
+    """
+    if bus_factor <= 0:
+        return 0.0
+
+    # Treat 5+ key maintainers as “fully safe”
+    return min(1.0, bus_factor / 5.0)
 
 
 # -------- public API --------
