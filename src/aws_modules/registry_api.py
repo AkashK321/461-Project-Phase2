@@ -180,7 +180,7 @@ def parse_event(event):
             raw_body = ""
 
     logger.info(f"Parsing event for: {method} {path}")
-    logger.info(f"Raw event body: {raw_body}")
+    logger.info(f"Raw event body: {raw_body}") # Optional: Comment out to hide passwords in logs
 
     body = {}
 
@@ -188,50 +188,24 @@ def parse_event(event):
         logger.info("Raw body is empty, returning empty dict.")
         return method, path, body, query_params
 
-    if method == "PUT" and path == "/authenticate":
-        logger.warning("Running HYBRID parser for /authenticate route.")
-        try:
-            username_match = re.search(r'"name"\s*:\s*"([^"]*)"', raw_body)
-            password_match = re.search(
-                r'"password"\s*:\s*"(.*)"\s*}\s*}', raw_body, re.DOTALL
-            )
+    # --- ALWAYS USE STANDARD JSON PARSER ---
+    # This ensures consistency between Frontend and Postman.
+    # Both send escaped quotes (\"), and this converts them back to quotes (").
+    logger.info(f"Using standard JSON parser for {path}.")
+    try:
+        body = json.loads(raw_body)
+        logger.info("JSON parsing SUCCEEDED.")
 
-            if username_match and password_match:
-                username = username_match.group(1)
-                password = password_match.group(1)
-                logger.info(f"Regex parser SUCCEEDED. Extracted password: {password}")
-                body = {"user": {"name": username}, "secret": {"password": password}}
-            else:
-                logger.warning(
-                    "Regex parser found no match, falling back to standard JSON parser."
-                )
-                body = json.loads(raw_body)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSONDecodeError on '{path}': {e}")
+        # distinct error lets you know the client sent bad JSON
+        return method, path, {}, query_params 
 
-        except Exception as e:
-            logger.error(
-                f"Hybrid parser failed: {e}. Trying standard JSON parse as last resort."
-            )
-            try:
-                body = json.loads(raw_body)
-            except Exception as e2:
-                logger.error(f"Last resort JSON parse failed: {e2}")
-                body = {}
-
-    else:
-        logger.info(f"Using standard JSON parser for {path}.")
-        try:
-            body = json.loads(raw_body)
-            logger.info("JSON parsing SUCCEEDED.")
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSONDecodeError on non-auth route '{path}': {e}")
-            body = {}
-
-        except Exception as e:
-            logger.error(
-                f"Unexpected error parsing body for {path}: {e}\nBody: {raw_body}"
-            )
-            body = {}
+    except Exception as e:
+        logger.error(
+            f"Unexpected error parsing body for {path}: {e}"
+        )
+        body = {}
 
     return method, path, body, query_params
 
