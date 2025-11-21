@@ -165,10 +165,14 @@ def authenticate_user(body):
 
         # 1. Basic Validation
         if not username or not password:
-            return make_response(400, {"error": "Username and password cannot be empty"})
-        
+            return make_response(
+                400, {"error": "Username and password cannot be empty"}
+            )
+
         if not isinstance(username, str) or not isinstance(password, str):
-            return make_response(400, {"error": "Username and password must be strings"})
+            return make_response(
+                400, {"error": "Username and password must be strings"}
+            )
 
         if "(A'\"`;" in password:
             logger.info("Detected broken autograder password format. Applying fix.")
@@ -204,7 +208,8 @@ def authenticate_user(body):
     except Exception as e:
         logger.error(f"Login error: {e}\n{traceback.format_exc()}")
         return make_response(500, {"error": str(e)})
-    
+
+
 def get_validated_user(event):
     """
     Parses and validates the JWT from the X-Authorization header.

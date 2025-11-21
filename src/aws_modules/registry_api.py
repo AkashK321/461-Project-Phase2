@@ -180,7 +180,9 @@ def parse_event(event):
             raw_body = ""
 
     logger.info(f"Parsing event for: {method} {path}")
-    logger.info(f"Raw event body: {raw_body}") # Optional: Comment out to hide passwords in logs
+    logger.info(
+        f"Raw event body: {raw_body}"
+    )  # Optional: Comment out to hide passwords in logs
 
     body = {}
 
@@ -196,12 +198,10 @@ def parse_event(event):
     except json.JSONDecodeError as e:
         logger.error(f"JSONDecodeError on '{path}': {e}")
         # distinct error lets you know the client sent bad JSON
-        return method, path, {}, query_params 
+        return method, path, {}, query_params
 
     except Exception as e:
-        logger.error(
-            f"Unexpected error parsing body for {path}: {e}"
-        )
+        logger.error(f"Unexpected error parsing body for {path}: {e}")
         body = {}
 
     return method, path, body, query_params
