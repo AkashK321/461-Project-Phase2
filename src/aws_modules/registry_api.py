@@ -274,12 +274,9 @@ def reset_state():
 
 
 def ingest_artifact(art_type, payload):
-    """
-    Handle POST /artifact/{type}.
-
-    Payload should have:
-      - urls: a single URL string pointing at the model.
-    """
+    logger.info(f"--- Starting Ingestion for {art_type} ---")
+    logger.info(f"Payload: {json.dumps(payload)}")
+    
     try:
         url = payload.get("url")
         if not url or not isinstance(url, str):
@@ -297,38 +294,50 @@ def ingest_artifact(art_type, payload):
                 break
             else:
                 repo = ""
+        
+        logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
         if not repo:
+            logger.error("Unable to find model url or repo_id in payload")
             return make_response(400, {"error": "unable to find model url in payload"})
 
         parts = repo.split("/", 1)
         name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        logger.info(f"Derived Model Name: {name}")
 
     except KeyError:
         return make_response(
             400, {"error": "payload must have a non-empty 'url' string"}
         )
-    except Exception:
+    except Exception as e:
+        logger.error(f"URL parsing error: {e}")
         return make_response(400, {"error": "unable to parse model url in payload"})
 
-    # --- First, invoke scorer_function to get scores before downloading ---
+    # --- Invoke Scorer ---
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
     if not scorer_function_name:
-        logger.error("Scorer function not configured, cannot validate metrics")
+        logger.error("Scorer function not configured")
         return make_response(500, {"error": "Metric scoring service not available"})
 
     logger.info(f"Invoking scorer function: {scorer_function_name}")
     try:
         scorer_payload = json.dumps({"urls": urls})
+        logger.info(f"Scorer Request Payload: {scorer_payload}")
+        
         response = lambda_client.invoke(
             FunctionName=scorer_function_name,
             InvocationType="RequestResponse",
             Payload=scorer_payload,
         )
-        response_payload = json.loads(response["Payload"].read().decode())
+        raw_response = response["Payload"].read().decode()
+        logger.info(f"Scorer Raw Response: {raw_response}")
+        
+        response_payload = json.loads(raw_response)
+        
         if response_payload.get("statusCode") == 200:
             scores_list = json.loads(response_payload["body"])
+            logger.info(f"Parsed Scores List: {json.dumps(scores_list)}")
             if scores_list:
                 scores = scores_list[0]
         else:
@@ -338,7 +347,9 @@ def ingest_artifact(art_type, payload):
         logger.error(f"Failed to invoke or parse scorer response: {e}")
         return make_response(500, {"error": "Failed to calculate metrics"})
 
-    # Check if all non-latency metrics meet the 0.5 threshold
+    logger.info(f"Final Scores Object: {json.dumps(scores)}")
+
+    # --- Validate Metrics ---
     non_latency_metrics = [
         "bus_factor",
         "code_quality",
@@ -353,17 +364,20 @@ def ingest_artifact(art_type, payload):
     failing_metrics = []
     for metric in non_latency_metrics:
         score = scores.get(metric, 0)
-
-        if metric == "size" and isinstance(score, dict):
-            avg_size_score = sum(score.values()) / len(score) if score else 0
-            if avg_size_score < 0.5:
-                failing_metrics.append(f"{metric}: {avg_size_score}")
-            continue
-        if score < 0.5:
-            failing_metrics.append(f"{metric}: {score}")
+        
+        if isinstance(score, dict):
+             val = sum(score.values()) / len(score) if score else 0
+             logger.info(f"Metric {metric} is dict, avg value: {val}")
+             if val < 0.5:
+                 failing_metrics.append(f"{metric}: {val}")
+        else:
+            if score < 0.5:
+                failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
+        
+        # --- IMPORTANT: TO TEST UPLOAD DESPITE LOW SCORES, COMMENT OUT THE RETURN BELOW ---
         return make_response(
             424,
             {
@@ -371,46 +385,59 @@ def ingest_artifact(art_type, payload):
                 "failing_metrics": failing_metrics,
             },
         )
+        # ----------------------------------------------------------------------------------
 
     logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
 
+    # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
     base_model_repo, lineage_type, source = get_base_model_from_card(repo)
-    logger.info(f"Base model repo from card: {base_model_repo}-{lineage_type}")
 
     try:
-        # pull the full repo contents down locally
         logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
         snapshot_download(
             repo_id=repo,
             local_dir=tmp_dir,
         )
+        
+        # Log download success by listing files
+        files_downloaded = []
+        for root, dirs, files in os.walk(tmp_dir):
+            for file in files:
+                files_downloaded.append(os.path.join(root, file))
+        logger.info(f"Downloaded {len(files_downloaded)} files. First few: {files_downloaded[:3]}")
 
-        # zip up what we just downloaded
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
+        logger.info(f"Zipping directory to {tmp_zip_path_base}.zip")
+        
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
+        
+        zip_size = os.path.getsize(tmp_zip_file)
+        logger.info(f"Zip created: {tmp_zip_file} (Size: {zip_size} bytes)")
 
-        # push to S3 and record metadata
         model_id = str(uuid.uuid4())
         s3_key = f"models/{model_id}/{final_zip_name}"
 
         logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
         ok = upload_model(tmp_zip_file, s3_key)
         if ok is False:
+            logger.error("S3 Upload returned False")
             return make_response(500, {"error": "S3 upload failed"})
+        
+        logger.info("S3 Upload successful")
 
-        version = "v1"  # could be pulled from HF metadata later
-
+        version = "v1"
         created_at = datetime.now(timezone.utc).isoformat()
 
+        # Save metadata to DynamoDB
+        logger.info("Saving metadata to DynamoDB")
         item = save_model_metadata(name, version, s3_key, scores)
         if not item:
             return make_response(500, {"error": "failed to store metadata"})
 
-        # attach extra fields the base helper doesn't know about
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
@@ -447,21 +474,18 @@ def ingest_artifact(art_type, payload):
         }
         data = {
             "url": item.get("source_url")
-            # "download_url" would go here
         }
         return make_response(201, {"metadata": metadata, "data": data})
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        logger.error(f"Ingestion processing failed: {e}")
+        # logger.error(traceback.format_exc()) # requires import traceback
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
-        # keep /tmp from filling up between invocations
         try:
             if os.path.exists(tmp_dir):
                 shutil.rmtree(tmp_dir)
-                logger.info(f"Cleaned up temp dir: {tmp_dir}")
             if os.path.exists(tmp_zip_file):
                 os.remove(tmp_zip_file)
-                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
