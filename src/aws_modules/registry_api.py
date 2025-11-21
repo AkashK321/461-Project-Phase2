@@ -188,9 +188,6 @@ def parse_event(event):
         logger.info("Raw body is empty, returning empty dict.")
         return method, path, body, query_params
 
-    # --- ALWAYS USE STANDARD JSON PARSER ---
-    # This ensures consistency between Frontend and Postman.
-    # Both send escaped quotes (\"), and this converts them back to quotes (").
     logger.info(f"Using standard JSON parser for {path}.")
     try:
         body = json.loads(raw_body)

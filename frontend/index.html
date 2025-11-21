@@ -103,7 +103,7 @@
             const url = document.getElementById('package-url').value;
             
             try {
-                const res = await fetch(`${API_URL}/artifact/package`, {
+                const res = await fetch(`${API_URL}/artifact/model`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
