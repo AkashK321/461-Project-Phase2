@@ -15,6 +15,7 @@ on:
       - authentication-and-registration
       - enhance-search-endpoints
       - uploads-and-downloads
+      - 32-rate-models
 
 # Define the permissions the job will need
 permissions:
