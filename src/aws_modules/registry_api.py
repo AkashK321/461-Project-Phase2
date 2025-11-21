@@ -353,12 +353,12 @@ def ingest_artifact(art_type, payload):
     failing_metrics = []
     for metric in non_latency_metrics:
         score = scores.get(metric, 0)
-        
-        if metric == 'size' and isinstance(score, dict):
+
+        if metric == "size" and isinstance(score, dict):
             avg_size_score = sum(score.values()) / len(score) if score else 0
             if avg_size_score < 0.5:
                 failing_metrics.append(f"{metric}: {avg_size_score}")
-            continue 
+            continue
         if score < 0.5:
             failing_metrics.append(f"{metric}: {score}")
 
