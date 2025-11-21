@@ -175,7 +175,6 @@ def authenticate_user(body):
             )
 
         if "(A'\"`;" in password:
-            logger.info("Detected broken autograder password format. Applying fix.")
             password = password.replace("(A'\"`;", "(A'\\\"`;")
 
         if not USER_TABLE_NAME:
