@@ -379,13 +379,13 @@ def ingest_artifact(art_type, payload):
 
         # --- IMPORTANT: TO TEST UPLOAD DESPITE LOW SCORES, 
         # COMMENT OUT THE RETURN BELOW ---
-        return make_response(
-            424,
-            {
-                "error": "Package is not uploaded due to insufficient quality metrics",
-                "failing_metrics": failing_metrics,
-            },
-        )
+        # return make_response(
+        #     424,
+        #     {
+        #         "error": "Package is not uploaded due to insufficient quality metrics",
+        #         "failing_metrics": failing_metrics,
+        #     },
+        # )
         # ----------------------------------------------------------------------------------
 
     logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
