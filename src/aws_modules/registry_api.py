@@ -276,7 +276,7 @@ def reset_state():
 def ingest_artifact(art_type, payload):
     logger.info(f"--- Starting Ingestion for {art_type} ---")
     logger.info(f"Payload: {json.dumps(payload)}")
-    
+
     try:
         url = payload.get("url")
         if not url or not isinstance(url, str):
@@ -294,7 +294,7 @@ def ingest_artifact(art_type, payload):
                 break
             else:
                 repo = ""
-        
+
         logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
         if not repo:
@@ -324,7 +324,7 @@ def ingest_artifact(art_type, payload):
     try:
         scorer_payload = json.dumps({"urls": urls})
         logger.info(f"Scorer Request Payload: {scorer_payload}")
-        
+
         response = lambda_client.invoke(
             FunctionName=scorer_function_name,
             InvocationType="RequestResponse",
@@ -332,9 +332,9 @@ def ingest_artifact(art_type, payload):
         )
         raw_response = response["Payload"].read().decode()
         logger.info(f"Scorer Raw Response: {raw_response}")
-        
+
         response_payload = json.loads(raw_response)
-        
+
         if response_payload.get("statusCode") == 200:
             scores_list = json.loads(response_payload["body"])
             logger.info(f"Parsed Scores List: {json.dumps(scores_list)}")
@@ -364,19 +364,19 @@ def ingest_artifact(art_type, payload):
     failing_metrics = []
     for metric in non_latency_metrics:
         score = scores.get(metric, 0)
-        
+
         if isinstance(score, dict):
-             val = sum(score.values()) / len(score) if score else 0
-             logger.info(f"Metric {metric} is dict, avg value: {val}")
-             if val < 0.5:
-                 failing_metrics.append(f"{metric}: {val}")
+            val = sum(score.values()) / len(score) if score else 0
+            logger.info(f"Metric {metric} is dict, avg value: {val}")
+            if val < 0.5:
+                failing_metrics.append(f"{metric}: {val}")
         else:
             if score < 0.5:
                 failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-        
+
         # --- IMPORTANT: TO TEST UPLOAD DESPITE LOW SCORES, COMMENT OUT THE RETURN BELOW ---
         return make_response(
             424,
@@ -400,21 +400,23 @@ def ingest_artifact(art_type, payload):
             repo_id=repo,
             local_dir=tmp_dir,
         )
-        
+
         # Log download success by listing files
         files_downloaded = []
         for root, dirs, files in os.walk(tmp_dir):
             for file in files:
                 files_downloaded.append(os.path.join(root, file))
-        logger.info(f"Downloaded {len(files_downloaded)} files. First few: {files_downloaded[:3]}")
+        logger.info(
+            f"Downloaded {len(files_downloaded)} files. First few: {files_downloaded[:3]}"
+        )
 
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         logger.info(f"Zipping directory to {tmp_zip_path_base}.zip")
-        
+
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
-        
+
         zip_size = os.path.getsize(tmp_zip_file)
         logger.info(f"Zip created: {tmp_zip_file} (Size: {zip_size} bytes)")
 
@@ -426,7 +428,7 @@ def ingest_artifact(art_type, payload):
         if ok is False:
             logger.error("S3 Upload returned False")
             return make_response(500, {"error": "S3 upload failed"})
-        
+
         logger.info("S3 Upload successful")
 
         version = "v1"
@@ -472,9 +474,7 @@ def ingest_artifact(art_type, payload):
             "id": item.get("id"),
             "type": item.get("type"),
         }
-        data = {
-            "url": item.get("source_url")
-        }
+        data = {"url": item.get("source_url")}
         return make_response(201, {"metadata": metadata, "data": data})
     except Exception as e:
         logger.error(f"Ingestion processing failed: {e}")
