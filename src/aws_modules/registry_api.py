@@ -377,7 +377,8 @@ def ingest_artifact(art_type, payload):
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
 
-        # --- IMPORTANT: TO TEST UPLOAD DESPITE LOW SCORES, COMMENT OUT THE RETURN BELOW ---
+        # --- IMPORTANT: TO TEST UPLOAD DESPITE LOW SCORES, 
+        # COMMENT OUT THE RETURN BELOW ---
         return make_response(
             424,
             {
@@ -407,7 +408,8 @@ def ingest_artifact(art_type, payload):
             for file in files:
                 files_downloaded.append(os.path.join(root, file))
         logger.info(
-            f"Downloaded {len(files_downloaded)} files. First few: {files_downloaded[:3]}"
+            f"Downloaded {len(files_downloaded)} "
+            f"files. First few: {files_downloaded[:3]}"
         )
 
         zip_name = f"{name}"
