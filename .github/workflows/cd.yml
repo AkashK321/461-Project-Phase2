@@ -16,6 +16,7 @@ on:
       - enhance-search-endpoints
       - uploads-and-downloads
       - 32-rate-models
+      - frontend
 
 # Define the permissions the job will need
 permissions:
@@ -70,3 +71,7 @@ jobs:
 
           echo "Waiting for registry_api function update to complete..."
           aws lambda wait function-updated --function-name "registry_api"
+
+      - name: Sync Frontend to S3
+        run: |
+          aws s3 sync ./frontend s3://ece461team11-frontend --delete
