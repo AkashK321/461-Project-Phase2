@@ -554,7 +554,6 @@ def search_artifacts(query_array, query_params):
         next_offset = str(page + 1)
         headers = {"Offset": next_offset}
 
-<<<<<<< HEAD
     artifacts = []
 
     for it in page_items:
@@ -568,11 +567,6 @@ def search_artifacts(query_array, query_params):
     logger.info(f"Returning {artifacts} items for page {page}")
 
     return make_response(200, artifacts, headers)
-=======
-    logger.info(f"Returning {page_items} items for page {page}")
-
-    return make_response(200, page_items, headers=headers)
->>>>>>> 9023e07 (debugging post artifacts search)
 
 
 def get_lineage_graph(start_art_id):
