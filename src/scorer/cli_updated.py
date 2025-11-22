@@ -250,7 +250,7 @@ def main() -> None:
         start_time = time.perf_counter_ns()
         try:
             name = "unknown-model"
-            category = "MODEL"
+            category = "model"
 
             net_score = 0.0
             ramp_up = 0.0
@@ -456,7 +456,7 @@ def main() -> None:
                 json.dumps(
                     {
                         "name": "unknown-model",
-                        "category": "MODEL",
+                        "category": "model",
                         "net_score": 0.0,
                         "net_score_latency": 0,
                         "ramp_up_time": 0.0,
