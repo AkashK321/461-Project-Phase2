@@ -301,7 +301,8 @@ def ingest_artifact(artifact_type, payload):
             # If the content is clearly specific (e.g. GitHub -> code), use that
             if detected_type != artifact_type:
                 logger.info(
-                    f"Overriding path type '{artifact_type}' with detected type '{detected_type}'."
+                    f"Overriding path type '{artifact_type}' "
+                    f"with detected type '{detected_type}'."
                 )
                 artifact_type = detected_type
         else:
