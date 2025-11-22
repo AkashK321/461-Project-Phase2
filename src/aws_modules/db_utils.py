@@ -105,6 +105,23 @@ def get_model_by_id(model_id):
     except Exception as e:
         logger.error(f"Failed to get item {model_id}: {e}")
         return None
+    
+
+def get_model_by_model_name(name):
+    """
+    Finds a model in DynamoDB by its 'model_name' using a scan.
+    Note: A scan is inefficient on large tables. A GSI would be better.
+    """
+    try:
+        tbl = dynamodb.Table(TABLE_NAME)
+        response = tbl.scan(FilterExpression=Attr("model_name").eq(name))
+        items = response.get("Items", [])
+        if items:
+            return items  # Assume model_name is unique
+        return None
+    except Exception as e:
+        logger.error(f"Error scanning for model_name '{name}': {e}")
+        return None
 
 
 def get_model_by_repo_id(repo_id):

@@ -18,6 +18,7 @@ from aws_modules.s3_utils import upload_model, generate_presigned_download_url
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
+    get_model_by_model_name,
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -681,6 +682,29 @@ def rate_model(art_id):
     return make_response(200, scores)
 
 
+def get_artifacts_by_name(name):
+    """
+    Handle GET /artifact/byName/{name}
+    Finds and returns metadata for all artifacts matching a given name.
+    """
+    items = get_model_by_model_name(name)
+
+    if not items:
+        return make_response(404, {"error": "No such artifact."})
+
+    # Format the items into the ArtifactMetadata schema
+    metadata_list = [
+        {
+            "name": item.get("model_name"),
+            "id": item.get("id"),
+            "type": item.get("type"),
+        }
+        for item in items
+    ]
+
+    return make_response(200, metadata_list)
+
+
 def handler(event, context):
     # Initialize the system on first run (ensures default user exists)
     initialize_system()
@@ -820,6 +844,14 @@ def handler(event, context):
                 },
             )
         return rate_model(art_id)
+
+    # GET /artifact/byName/{name}
+    by_name_match = re.match(r"/artifact/byName/([^/]+)", path)
+    if method == "GET" and by_name_match:
+        name = by_name_match.group(1)
+        if not name:
+            return make_response(400, {"error": "Missing artifact name in path"})
+        return get_artifacts_by_name(name)
 
     # POST /artifacts
     if method == "POST" and path == "/artifacts":
