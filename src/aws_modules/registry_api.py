@@ -865,7 +865,7 @@ def handler(event, context):
     if method == "POST" and path == "/artifacts":
         try:
             items, headers = search_artifacts(body or [], query_params)
-            return make_response(200, {items}, headers)
+            return make_response(200, list(items), headers)
         except Exception as e:
             return make_response(400, {"error": str(e)})
 
