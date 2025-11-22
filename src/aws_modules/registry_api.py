@@ -374,7 +374,7 @@ def ingest_artifact(artifact_type, payload):
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
         # Uncomment to enforce quality gates:
-        # return make_response(424, {"error": "Insufficient quality metrics", "failing_metrics": failing_metrics})
+        return make_response(424, {"error": "Insufficient quality metrics", "failing_metrics": failing_metrics})
 
     # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
