@@ -552,7 +552,7 @@ def search_artifacts(query_array, query_params):
 
     logger.info(f"Returning {page_items} items for page {page}")
 
-    return make_response(200, page_items, headers=headers)
+    return page_items, headers
 
 
 def get_lineage_graph(start_art_id):
@@ -864,7 +864,8 @@ def handler(event, context):
     # POST /artifacts
     if method == "POST" and path == "/artifacts":
         try:
-            return search_artifacts(body or [], query_params)
+            items, headers = search_artifacts(body or [], query_params)
+            return make_response(200, {items}, headers)
         except Exception as e:
             return make_response(400, {"error": str(e)})
 
