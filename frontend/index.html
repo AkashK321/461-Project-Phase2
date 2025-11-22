@@ -200,40 +200,26 @@
             border-bottom: 2px solid #dee2e6;
         }
 
-        /* Interactive Rows */
         .main-row {
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
-
-        .main-row:hover {
-            background-color: var(--row-hover);
-        }
-
-        .main-row.expanded {
-            background-color: var(--row-active);
-        }
+        .main-row:hover { background-color: var(--row-hover); }
+        .main-row.expanded { background-color: var(--row-active); }
         
-        /* Updated Expand Icon Styling */
         .expand-icon {
             display: inline-block;
-            margin-right: 0.5rem; /* Space between arrow and name */
+            margin-right: 0.5rem;
             font-size: 0.8em;
             color: #555;
             transition: transform 0.2s ease;
-            /* Default: pointing right */
             transform: rotate(0deg); 
         }
+        .main-row.expanded .expand-icon { transform: rotate(90deg); }
 
-        /* When expanded, rotate down */
-        .main-row.expanded .expand-icon {
-            transform: rotate(90deg);
-        }
-
-        /* Detail Row Styling */
         .detail-row td {
             background-color: var(--detail-bg);
-            padding: 0; /* Remove default padding to let inner div control it */
+            padding: 0;
             border-bottom: 1px solid #ccc;
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
         }
@@ -248,6 +234,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 1rem;
+            margin-bottom: 1.5rem;
         }
 
         .detail-item {
@@ -272,7 +259,54 @@
             word-break: break-all;
         }
 
-        /* Success Card for Upload */
+        /* --- Scores Dropdown & Table --- */
+        details.scores-dropdown {
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        details.scores-dropdown summary {
+            padding: 0.75rem 1rem;
+            background-color: #f1f3f5;
+            cursor: pointer;
+            font-weight: bold;
+            user-select: none;
+            outline: none;
+        }
+        
+        details.scores-dropdown summary:hover {
+            background-color: #e9ecef;
+        }
+        
+        details.scores-dropdown summary:focus {
+            box-shadow: inset 0 0 0 2px var(--focus-ring);
+        }
+
+        .scores-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .scores-table th, .scores-table td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+        }
+
+        .scores-table th {
+            background-color: #fff;
+            color: #555;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .scores-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        /* Success Card */
         .success-card {
             background-color: var(--success-bg);
             color: var(--success-text);
@@ -280,19 +314,10 @@
             border-radius: 0.5rem;
             border: 1px solid #c3e6cb;
         }
+        .success-card h4 { margin: 0 0 0.5rem 0; }
+        .success-card p { margin: 0.25rem 0; }
 
-        .success-card h4 {
-            margin-top: 0;
-            margin-bottom: 0.5rem;
-        }
-        
-        .success-card p {
-            margin: 0.25rem 0;
-        }
-
-        .hidden {
-            display: none !important;
-        }
+        .hidden { display: none !important; }
 
         /* Modal Styles */
         dialog {
@@ -305,10 +330,7 @@
             background: var(--card-bg);
             color: var(--text-color);
         }
-
-        dialog::backdrop {
-            background: rgba(0, 0, 0, 0.5);
-        }
+        dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 
         @media (max-width: 40rem) {
             .section { padding: 1rem; }
@@ -379,7 +401,6 @@
         const adminModal = document.getElementById('admin-modal');
 
         // --- Helpers ---
-
         function clearResult(elementId) {
             const el = document.getElementById(elementId);
             el.innerHTML = '';
@@ -407,45 +428,84 @@
             return `<div style="background:#333; color:#fff; padding:1rem;">${JSON.stringify(data, null, 2)}</div>`;
         }
 
-        // Helper to format keys like "repo_id" -> "Repo Id"
         function formatKey(key) {
             return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         }
 
-        // Converts item object into a nice HTML grid
+        // --- Modified Detail View: Separates Scores ---
         function renderDetailView(item) {
-            const excludedKeys = ['model_name', 'Name', 'version', 'id']; // Already shown in main row
-            let gridHtml = '';
+            const excludedKeys = ['model_name', 'Name', 'version', 'id']; 
+            
+            const scoreKeywords = [
+                'net_score', 'ramp_up', 'correctness', 'bus_factor', 
+                'responsive_maintainer', 'license', 'dependency_pinning', 
+                'code_review', 'code_quality', 'dataset_quality', 
+                'performance_claims', 'dataset_and_code', 'size',
+                'netscore'
+            ];
+
+            let generalHtml = '';
+            let scoresRows = '';
 
             for (const [key, value] of Object.entries(item)) {
                 if (excludedKeys.includes(key)) continue;
 
-                let displayValue = value;
+                const isScore = scoreKeywords.some(keyword => key.toLowerCase().includes(keyword));
 
-                // Handle objects/arrays roughly
+                let displayValue = value;
                 if (typeof value === 'object' && value !== null) {
                     displayValue = JSON.stringify(value); 
                 } else if (String(value).startsWith('http')) {
                     displayValue = `<a href="${value}" target="_blank" rel="noopener noreferrer">Link</a>`;
                 }
 
-                gridHtml += `
-                    <div class="detail-item">
-                        <div class="detail-label">${formatKey(key)}</div>
-                        <div class="detail-value">${displayValue}</div>
-                    </div>
+                if (isScore) {
+                    scoresRows += `
+                        <tr>
+                            <td><strong>${formatKey(key)}</strong></td>
+                            <td>${displayValue}</td>
+                        </tr>
+                    `;
+                } else {
+                    generalHtml += `
+                        <div class="detail-item">
+                            <div class="detail-label">${formatKey(key)}</div>
+                            <div class="detail-value">${displayValue}</div>
+                        </div>
+                    `;
+                }
+            }
+
+            let output = '';
+
+            if (generalHtml) {
+                output += `<div class="detail-grid">${generalHtml}</div>`;
+            } else {
+                output += '<p style="color:#666; font-style:italic;">No general details available.</p>';
+            }
+
+            if (scoresRows) {
+                output += `
+                    <details class="scores-dropdown">
+                        <summary>📊 Quality Scores (Click to Expand)</summary>
+                        <table class="scores-table">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${scoresRows}
+                            </tbody>
+                        </table>
+                    </details>
                 `;
             }
 
-            if (!gridHtml) {
-                return '<p style="color:#666; font-style:italic;">No additional details available.</p>';
-            }
-
-            return `<div class="detail-grid">${gridHtml}</div>`;
+            return output;
         }
 
-        // --- Search Result Logic with Expansion ---
-        
         function renderSearchResult(data) {
             if (Array.isArray(data)) {
                 if (data.length === 0) {
@@ -522,7 +582,6 @@
         }
 
         // --- Modal & Auth Logic ---
-
         function openAdminModal() { adminModal.showModal(); }
         function closeAdminModal() { adminModal.close(); }
         
@@ -602,7 +661,6 @@
         }
 
         // --- Feature Logic ---
-
         async function uploadPackage() {
             const container = document.getElementById('upload-result');
             clearResult('upload-result');
