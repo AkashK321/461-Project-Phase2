@@ -8,6 +8,8 @@
         :root {
             --primary-color: #004494;
             --primary-hover: #003377;
+            --secondary-color: #5a6268; 
+            --secondary-hover: #4e555b;
             --danger-color: #a71d2a;
             --danger-hover: #8c1823;
             --text-color: #212529;
@@ -17,6 +19,7 @@
             --focus-ring: #0056b3;
             --radius: 0.75rem;
         }
+
         *, *::before, *::after {
             box-sizing: border-box;
         }
@@ -27,9 +30,9 @@
             color: var(--text-color);
             margin: 0;
             padding: 1rem;
-            line-height: 1.6; 
+            line-height: 1.6;
             font-size: 100%;
-            overflow-wrap: break-word; 
+            overflow-wrap: break-word;
             word-wrap: break-word;
         }
 
@@ -50,16 +53,35 @@
 
         main {
             width: 100%;
-            max-width: 50rem; 
+            max-width: 50rem;
             margin: 0 auto;
+        }
+
+        .nav-header {
+            display: flex;
+            justify-content: flex-start; 
+            align-items: center;
+            min-height: 3rem; 
+            margin-bottom: 1rem;
+        }
+
+        #logout-btn {
+            width: auto; 
+            margin: 0;
+            background-color: var(--secondary-color);
+            padding: 0.5rem 1.2rem;
+            font-size: 1rem;
+        }
+        #logout-btn:hover {
+            background-color: var(--secondary-hover);
         }
 
         h1 {
             text-align: center;
             margin-bottom: 2rem;
-            font-size: 2rem; 
+            font-size: 2rem;
             color: #111;
-            line-height: 1.3; 
+            line-height: 1.3;
         }
 
         h2, h3 {
@@ -68,20 +90,14 @@
             line-height: 1.4;
         }
 
-        p {
-            margin-bottom: 1.5rem; 
-        }
-
-        /* Card/Section Styling */
         .section {
             background: var(--card-bg);
-            border: 0.125rem solid var(--input-border); 
+            border: 0.125rem solid var(--input-border);
             padding: 1.5rem;
-            margin-bottom: 2rem; 
+            margin-bottom: 2rem;
             border-radius: var(--radius);
             box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.05);
-            height: auto; 
-            min-height: 0; 
+            height: auto;
         }
 
         label {
@@ -92,16 +108,15 @@
             line-height: 1.5;
         }
 
-        /* Inputs and Buttons must expand vertically */
         input {
             width: 100%;
             padding: 0.8rem;
             border: 0.125rem solid var(--input-border);
             border-radius: 0.5rem;
-            font-size: 1rem; 
+            font-size: 1rem;
             background-color: #fff;
             color: var(--text-color);
-            min-height: 3rem; 
+            min-height: 3rem;
             line-height: 1.5;
         }
 
@@ -120,7 +135,7 @@
             transition: background-color 0.2s ease;
             height: auto;
             min-height: 3rem;
-            white-space: normal; 
+            white-space: normal;
             line-height: 1.5;
         }
 
@@ -131,7 +146,6 @@
         button.delete {
             background-color: var(--danger-color);
         }
-
         button.delete:hover {
             background-color: var(--danger-hover);
         }
@@ -142,27 +156,26 @@
             border-color: transparent;
         }
 
-        /* Output Area */
         .output-container {
             background: #2d2d2d;
             color: #fff;
             padding: 1rem;
             border-radius: 0.5rem;
-            overflow-x: auto; 
+            overflow-x: auto;
             border: 0.0625rem solid #000;
         }
 
         pre {
             margin: 0;
-            white-space: pre-wrap; 
-            word-break: break-all; 
+            white-space: pre-wrap;
+            word-break: break-all;
             font-family: monospace;
             font-size: 0.9rem;
             line-height: 1.5;
         }
 
         .hidden {
-            display: none;
+            display: none !important; /* Force hide */
         }
 
         @media (max-width: 40rem) {
@@ -175,6 +188,10 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
 
     <main id="main-content">
+        <nav class="nav-header" aria-label="User Account">
+            <button id="logout-btn" class="hidden" onclick="handleLogout()">Log Out</button>
+        </nav>
+
         <h1>Package Registry UI</h1>
 
         <section id="login-section" class="section" aria-labelledby="login-heading">
@@ -262,6 +279,9 @@
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('dashboard').classList.remove('hidden');
                     
+                    // Show logout button
+                    document.getElementById('logout-btn').classList.remove('hidden');
+
                     const firstInput = document.getElementById('package-url');
                     if(firstInput) firstInput.focus();
 
@@ -272,6 +292,23 @@
             } catch (err) {
                 log({ error: err.message });
             }
+        }
+
+        function handleLogout() {
+
+            authToken = null;
+
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('logout-btn').classList.add('hidden');
+
+            document.getElementById('login-section').classList.remove('hidden');
+
+            document.getElementById('password').value = '';
+            document.getElementById('username').value = '';
+
+            document.getElementById('output').textContent = "Logged out.";
+
+            document.getElementById('username').focus();
         }
 
         async function uploadPackage() {
