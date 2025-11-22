@@ -432,10 +432,32 @@
             return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         }
 
-        // --- Modified Detail View: Separates Scores ---
+        // --- Logic to parse both nested and flat scores ---
+        function extractScores(item, excludedKeys, scoreKeywords) {
+            const foundScores = {};
+
+            // 1. Check for a dedicated "scores" object (likely where the data is hiding)
+            if (item.scores && typeof item.scores === 'object' && !Array.isArray(item.scores)) {
+                for (const [sKey, sVal] of Object.entries(item.scores)) {
+                    foundScores[sKey] = sVal;
+                }
+            }
+
+            // 2. Also check for root-level keys that look like scores
+            for (const [key, value] of Object.entries(item)) {
+                if (excludedKeys.includes(key) || key === 'scores') continue;
+                if (scoreKeywords.some(kw => key.toLowerCase().includes(kw))) {
+                    foundScores[key] = value;
+                }
+            }
+            return foundScores;
+        }
+
         function renderDetailView(item) {
+            // Keys to hide from general view
             const excludedKeys = ['model_name', 'Name', 'version', 'id']; 
             
+            // Keywords to identify scores if they are flattened
             const scoreKeywords = [
                 'net_score', 'ramp_up', 'correctness', 'bus_factor', 
                 'responsive_maintainer', 'license', 'dependency_pinning', 
@@ -444,13 +466,16 @@
                 'netscore'
             ];
 
-            let generalHtml = '';
-            let scoresRows = '';
+            // Extract scores using both methods
+            const scoresObj = extractScores(item, excludedKeys, scoreKeywords);
+            const scoreKeys = Object.keys(scoresObj);
 
+            // Build General HTML (excluding keys that are in scoresObj or excluded)
+            let generalHtml = '';
             for (const [key, value] of Object.entries(item)) {
                 if (excludedKeys.includes(key)) continue;
-
-                const isScore = scoreKeywords.some(keyword => key.toLowerCase().includes(keyword));
+                if (key === 'scores') continue; // Don't print the raw scores object
+                if (scoreKeys.includes(key)) continue; // Don't duplicate score if found at root
 
                 let displayValue = value;
                 if (typeof value === 'object' && value !== null) {
@@ -459,23 +484,29 @@
                     displayValue = `<a href="${value}" target="_blank" rel="noopener noreferrer">Link</a>`;
                 }
 
-                if (isScore) {
+                generalHtml += `
+                    <div class="detail-item">
+                        <div class="detail-label">${formatKey(key)}</div>
+                        <div class="detail-value">${displayValue}</div>
+                    </div>
+                `;
+            }
+
+            // Build Scores Table Rows
+            let scoresRows = '';
+            if (scoreKeys.length > 0) {
+                // Sort keys alphabetically for cleaner table
+                scoreKeys.sort().forEach(key => {
                     scoresRows += `
                         <tr>
                             <td><strong>${formatKey(key)}</strong></td>
-                            <td>${displayValue}</td>
+                            <td>${scoresObj[key]}</td>
                         </tr>
                     `;
-                } else {
-                    generalHtml += `
-                        <div class="detail-item">
-                            <div class="detail-label">${formatKey(key)}</div>
-                            <div class="detail-value">${displayValue}</div>
-                        </div>
-                    `;
-                }
+                });
             }
 
+            // Assemble Output
             let output = '';
 
             if (generalHtml) {
