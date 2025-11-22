@@ -5,54 +5,167 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Package Registry</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        .section { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 5px; }
-        label { display: block; margin-top: 0.5rem; }
-        input, button { margin-top: 0.5rem; padding: 0.5rem; width: 100%; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; border: none; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        button.delete { background-color: #dc3545; }
-        button.delete:hover { background-color: #a71d2a; }
-        pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; }
-        .hidden { display: none; }
+        :root {
+            --primary-color: #0056b3;
+            --primary-hover: #004494;
+            --danger-color: #c82333;
+            --danger-hover: #bd2130;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #212529;
+            --border-color: #dee2e6;
+            --radius: 12px;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.6;
+        }
+
+        h1, h2, h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        /* Card Styling */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        /* Form Elements */
+        label {
+            display: block;
+            margin-top: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 0.25rem;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 8px; 
+            font-size: 1rem;
+        }
+
+        input:focus, button:focus {
+            outline: 3px solid var(--primary-color);
+            outline-offset: 2px;
+            border-color: var(--primary-color);
+        }
+
+        button {
+            margin-top: 1.5rem;
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: bold;
+            color: white;
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 8px; 
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.delete {
+            background-color: var(--danger-color);
+        }
+
+        button.delete:hover {
+            background-color: var(--danger-hover);
+        }
+
+      
+        .output-container {
+            background: #2d2d2d;
+            color: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        pre {
+            margin: 0;
+            white-space: pre-wrap; 
+        }
+
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
 
-    <h1>Package Registry UI</h1>
+    <main>
+        <h1>Package Registry UI</h1>
 
-    <div id="login-section" class="section">
-        <h2>Login</h2>
-        <label>Username: <input type="text" id="username" placeholder="Enter username"></label>
-        <label>Password: <input type="password" id="password" placeholder="Enter password"></label>
-        <button onclick="handleLogin()">Login</button>
-    </div>
+        <section id="login-section" class="card" aria-labelledby="login-heading">
+            <h2 id="login-heading">Login</h2>
+            
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username" autocomplete="username">
+            
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+            
+            <button onclick="handleLogin()">Login</button>
+        </section>
 
-    <div id="dashboard" class="section hidden">
-        <p>Welcome! Token: <span id="token-display">...</span></p>
-        
-        <div class="section">
-            <h3>Upload Package</h3>
-            <label>Package URL (GitHub/npm): <input type="text" id="package-url" placeholder="https://github.com/user/repo"></label>
-            <button onclick="uploadPackage()">Upload</button>
+        <div id="dashboard" class="hidden">
+            <section class="card">
+                <p><strong>Status:</strong> <span id="token-display">Authentication active</span></p>
+            </section>
+
+            <section class="card" aria-labelledby="upload-heading">
+                <h3 id="upload-heading">Upload Package</h3>
+                <label for="package-url">Package URL (GitHub/npm)</label>
+                <input type="url" id="package-url" placeholder="https://github.com/user/repo">
+                <button onclick="uploadPackage()">Upload</button>
+            </section>
+
+            <section class="card" aria-labelledby="search-heading">
+                <h3 id="search-heading">Search Packages</h3>
+                <label for="search-query">Query (Regex)</label>
+                <input type="text" id="search-query" value="*">
+                <button onclick="searchPackages()">Search</button>
+            </section>
+
+            <section class="card" aria-labelledby="admin-heading">
+                <h3 id="admin-heading">Admin Actions</h3>
+                <button class="delete" onclick="resetRegistry()">Reset Registry</button>
+            </section>
+
+            <section class="card" aria-labelledby="output-heading">
+                <h3 id="output-heading">System Output</h3>
+                <div class="output-container" aria-live="polite" id="output-region">
+                    <pre id="output">Waiting for action...</pre>
+                </div>
+            </section>
         </div>
-
-        <div class="section">
-            <h3>Search Packages</h3>
-            <label>Query (Regex): <input type="text" id="search-query" value="*"></label>
-            <button onclick="searchPackages()">Search</button>
-        </div>
-
-        <div class="section">
-            <h3>Admin</h3>
-            <button class="delete" onclick="resetRegistry()">Reset Registry</button>
-        </div>
-
-        <div class="section">
-            <h3>Output</h3>
-            <pre id="output">Waiting for action...</pre>
-        </div>
-    </div>
+    </main>
 
     <script>
         const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
@@ -60,14 +173,14 @@
         let authToken = null;
 
         function log(data) {
-            document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+            const output = document.getElementById('output');
+            output.textContent = JSON.stringify(data, null, 2);
         }
 
         async function handleLogin() {
             const name = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
-            // Match structure expected by registry_api.py and auth.py
             const payload = {
                 user: { name: name, is_admin: true },
                 secret: { password: password }
@@ -83,13 +196,12 @@
                 const data = await res.json();
                 
                 if (res.ok) {
-                    // Your API returns specific string format: "bearer <token>"
-                    // We need to clean it up to use in headers
                     authToken = data.replace(/"/g, '').split(' ')[1]; 
                     
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('dashboard').classList.remove('hidden');
-                    document.getElementById('token-display').textContent = "Active";
+                    // Focus on the first input of dashboard for accessibility
+                    document.getElementById('package-url').focus();
                     log("Login Successful");
                 } else {
                     log(data);
@@ -109,7 +221,7 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    body: JSON.stringify({ url: url }) // Matches ingest_artifact payload
+                    body: JSON.stringify({ url: url }) 
                 });
                 const data = await res.json();
                 log(data);
@@ -128,7 +240,7 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    body: JSON.stringify([{ name: queryName }]) // Matches search_artifacts payload
+                    body: JSON.stringify([{ name: queryName }]) 
                 });
                 const data = await res.json();
                 log(data);
