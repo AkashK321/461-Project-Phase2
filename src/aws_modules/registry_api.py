@@ -492,9 +492,13 @@ def search_artifacts(query_array, query_params):
     else:
         query = query_array[0]  # Use the first query object
 
+    logger.info(f"Using query: {query}")
+
     name_query = (query.get("name") or "").strip()
     types = query.get("types", [])
     want_all_types = not types
+
+    logger.info(f"name_query: {name_query}, types: {types}, want_all_types: {want_all_types}")
 
     # Handle the wildcard "*" search
     if name_query == "*":
@@ -518,6 +522,8 @@ def search_artifacts(query_array, query_params):
             items = [it for it in items if rx.search(str(it.get("model_name", "")))]
         except re.error:
             items = [it for it in items if name_query in str(it.get("model_name", ""))]
+
+    logger.info(f"Items after name/type filtering: {len(items)}")
 
     # filter by version constraint (if any)
     if version_query:
