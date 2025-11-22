@@ -24,6 +24,7 @@
             --success-text: #155724;
             --row-hover: #f1f3f5;
             --row-active: #e2e6ea;
+            --detail-bg: #f8f9fa;
         }
 
         *, *::before, *::after {
@@ -213,35 +214,62 @@
             background-color: var(--row-active);
         }
         
+        /* Updated Expand Icon Styling */
         .expand-icon {
-            float: right;
+            display: inline-block;
+            margin-right: 0.5rem; /* Space between arrow and name */
             font-size: 0.8em;
-            color: #666;
-            transition: transform 0.2s;
+            color: #555;
+            transition: transform 0.2s ease;
+            /* Default: pointing right */
+            transform: rotate(0deg); 
         }
 
+        /* When expanded, rotate down */
         .main-row.expanded .expand-icon {
-            transform: rotate(180deg);
+            transform: rotate(90deg);
         }
 
-        /* Hidden Detail Row */
+        /* Detail Row Styling */
         .detail-row td {
-            background-color: #fcfcfc;
-            padding: 1rem;
+            background-color: var(--detail-bg);
+            padding: 0; /* Remove default padding to let inner div control it */
             border-bottom: 1px solid #ccc;
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
         }
 
         .detail-content {
-            font-family: monospace;
-            white-space: pre-wrap;
+            padding: 1.5rem;
+            color: #333;
+        }
+
+        /* Detail Grid Layout */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .detail-item {
+            background: #fff;
+            padding: 0.75rem;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+
+        .detail-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+            font-weight: 700;
+        }
+
+        .detail-value {
+            font-size: 0.95rem;
+            font-weight: 500;
             word-break: break-all;
-            background: #2d2d2d;
-            color: #fff;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            max-height: 300px;
-            overflow-y: auto;
         }
 
         /* Success Card for Upload */
@@ -260,17 +288,6 @@
         
         .success-card p {
             margin: 0.25rem 0;
-        }
-
-        .json-dump {
-            background: #2d2d2d;
-            color: #fff;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            overflow-x: auto;
-            font-family: monospace;
-            white-space: pre-wrap;
-            word-break: break-all;
         }
 
         .hidden {
@@ -296,6 +313,7 @@
         @media (max-width: 40rem) {
             .section { padding: 1rem; }
             .result-table th, .result-table td { padding: 0.5rem; font-size: 0.85rem; }
+            .detail-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -386,7 +404,44 @@
                     </div>
                 `;
             } 
-            return `<div class="json-dump">${JSON.stringify(data, null, 2)}</div>`;
+            return `<div style="background:#333; color:#fff; padding:1rem;">${JSON.stringify(data, null, 2)}</div>`;
+        }
+
+        // Helper to format keys like "repo_id" -> "Repo Id"
+        function formatKey(key) {
+            return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        // Converts item object into a nice HTML grid
+        function renderDetailView(item) {
+            const excludedKeys = ['model_name', 'Name', 'version', 'id']; // Already shown in main row
+            let gridHtml = '';
+
+            for (const [key, value] of Object.entries(item)) {
+                if (excludedKeys.includes(key)) continue;
+
+                let displayValue = value;
+
+                // Handle objects/arrays roughly
+                if (typeof value === 'object' && value !== null) {
+                    displayValue = JSON.stringify(value); 
+                } else if (String(value).startsWith('http')) {
+                    displayValue = `<a href="${value}" target="_blank" rel="noopener noreferrer">Link</a>`;
+                }
+
+                gridHtml += `
+                    <div class="detail-item">
+                        <div class="detail-label">${formatKey(key)}</div>
+                        <div class="detail-value">${displayValue}</div>
+                    </div>
+                `;
+            }
+
+            if (!gridHtml) {
+                return '<p style="color:#666; font-style:italic;">No additional details available.</p>';
+            }
+
+            return `<div class="detail-grid">${gridHtml}</div>`;
         }
 
         // --- Search Result Logic with Expansion ---
@@ -399,7 +454,7 @@
 
                 const rows = data.map((item, index) => {
                     const detailId = `detail-${index}`;
-                    const rowJson = JSON.stringify(item, null, 2);
+                    const formattedDetails = renderDetailView(item);
                     
                     return `
                         <tr class="main-row" 
@@ -411,13 +466,13 @@
                             aria-expanded="false" 
                             aria-controls="${detailId}">
                             
-                            <td>${item.model_name || item.Name || 'Unknown'} <span class="expand-icon">▼</span></td>
+                            <td><span class="expand-icon">▶</span> ${item.model_name || item.Name || 'Unknown'}</td>
                             <td>${item.version || 'N/A'}</td>
                             <td><code>${item.id}</code></td>
                         </tr>
                         <tr id="${detailId}" class="detail-row hidden">
                             <td colspan="3">
-                                <div class="detail-content">${rowJson}</div>
+                                <div class="detail-content">${formattedDetails}</div>
                             </td>
                         </tr>
                     `;
@@ -439,10 +494,9 @@
                     <p style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Tip: Click a row to see full details.</p>
                 `;
             }
-            return `<div class="json-dump">${JSON.stringify(data, null, 2)}</div>`;
+            return `<div style="background:#333; color:#fff; padding:1rem;">${JSON.stringify(data, null, 2)}</div>`;
         }
 
-        // Toggle function for the dropdowns
         function toggleRow(detailId, mainRowId) {
             const detailRow = document.getElementById(detailId);
             const mainRow = document.getElementById(mainRowId);
@@ -450,12 +504,10 @@
             const isHidden = detailRow.classList.contains('hidden');
 
             if (isHidden) {
-                // Show
                 detailRow.classList.remove('hidden');
                 mainRow.classList.add('expanded');
                 mainRow.setAttribute('aria-expanded', 'true');
             } else {
-                // Hide
                 detailRow.classList.add('hidden');
                 mainRow.classList.remove('expanded');
                 mainRow.setAttribute('aria-expanded', 'false');
