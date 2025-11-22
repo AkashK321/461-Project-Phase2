@@ -524,11 +524,7 @@ def search_artifacts(query_array, query_params):
     if not want_all_types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
-
-    # filter by name (exact match on model_name)
-    if name_query:
-        items = [it for it in items if str(it.get("model_name", "")) == name_query]
-
+    
     logger.info(f"Items after name/type filtering: {len(items)}")
 
     # filter by version constraint (if any)
