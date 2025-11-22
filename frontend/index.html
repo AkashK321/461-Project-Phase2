@@ -20,8 +20,8 @@
             --radius: 0.75rem;
             --error-bg: #f8d7da;
             --error-text: #721c24;
-            --result-bg: #2d2d2d;
-            --result-text: #ffffff;
+            --success-bg: #d4edda;
+            --success-text: #155724;
         }
 
         *, *::before, *::after {
@@ -170,19 +170,64 @@
             border-color: transparent;
         }
 
-        /* Result Box Styling */
-        .result-box {
-            background: var(--result-bg);
-            color: var(--result-text);
+        /* Result Area Styling */
+        .result-container {
+            margin-top: 1.5rem;
+            border-top: 1px solid #ccc;
+            padding-top: 1rem;
+        }
+
+        /* Table Styling for Search Results */
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.95rem;
+        }
+        
+        .result-table th, .result-table td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .result-table th {
+            background-color: #f1f1f1;
+            font-weight: bold;
+        }
+
+        .result-table tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        /* Success Card for Upload */
+        .success-card {
+            background-color: var(--success-bg);
+            color: var(--success-text);
             padding: 1rem;
             border-radius: 0.5rem;
-            margin-top: 1rem;
+            border: 1px solid #c3e6cb;
+        }
+
+        .success-card h4 {
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+        }
+        
+        .success-card p {
+            margin: 0.25rem 0;
+        }
+
+        /* Raw JSON fallback */
+        .json-dump {
+            background: #2d2d2d;
+            color: #fff;
+            padding: 1rem;
+            border-radius: 0.5rem;
             overflow-x: auto;
-            border: 0.0625rem solid #000;
-            white-space: pre-wrap; /* Preserve formatting but wrap lines */
-            word-break: break-all;
             font-family: monospace;
-            font-size: 0.9rem;
+            white-space: pre-wrap;
+            word-break: break-all;
         }
 
         .hidden {
@@ -207,6 +252,7 @@
 
         @media (max-width: 40rem) {
             .section { padding: 1rem; }
+            .result-table th, .result-table td { padding: 0.5rem; font-size: 0.85rem; }
         }
     </style>
 </head>
@@ -244,7 +290,7 @@
                 <input type="url" id="package-url" placeholder="https://github.com/user/repo" autocomplete="url">
                 <button onclick="uploadPackage()">Upload</button>
                 
-                <div id="upload-result" class="result-box hidden" aria-live="polite"></div>
+                <div id="upload-result" class="result-container hidden" aria-live="polite"></div>
             </section>
 
             <section class="section" aria-labelledby="search-heading">
@@ -253,7 +299,7 @@
                 <input type="text" id="search-query" value="*" autocomplete="off">
                 <button onclick="searchPackages()">Search</button>
                 
-                <div id="search-result" class="result-box hidden" aria-live="polite"></div>
+                <div id="search-result" class="result-container hidden" aria-live="polite"></div>
             </section>
         </div>
     </main>
@@ -271,19 +317,82 @@
         let authToken = null;
         const adminModal = document.getElementById('admin-modal');
 
-        // Helper to display data in a specific result box
-        function displayResult(elementId, data) {
+        // --- Helpers ---
+
+        function clearResult(elementId) {
             const el = document.getElementById(elementId);
-            el.textContent = JSON.stringify(data, null, 2);
+            el.innerHTML = '';
+            el.classList.add('hidden');
+        }
+
+        // Generic error formatter
+        function displayError(elementId, errorMsg) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = `<div class="error-msg">${errorMsg}</div>`;
             el.classList.remove('hidden');
         }
 
-        // Helper to clear a result box
-        function clearResult(elementId) {
-            const el = document.getElementById(elementId);
-            el.textContent = '';
-            el.classList.add('hidden');
+        // Formats the upload success JSON into a nice card
+        function renderUploadResult(data) {
+            // Check if metadata exists (success case)
+            if (data.metadata) {
+                const meta = data.metadata;
+                return `
+                    <div class="success-card">
+                        <h4>✅ Upload Successful</h4>
+                        <p><strong>Name:</strong> ${meta.name || 'N/A'}</p>
+                        <p><strong>Version:</strong> ${meta.version || '1.0.0'}</p>
+                        <p><strong>ID:</strong> ${meta.id}</p>
+                    </div>
+                `;
+            } 
+            // Fallback for errors or unexpected format
+            return `<div class="json-dump">${JSON.stringify(data, null, 2)}</div>`;
         }
+
+        // Formats the search array into a table
+        function renderSearchResult(data) {
+            // If data is array (search results)
+            if (Array.isArray(data)) {
+                if (data.length === 0) {
+                    return `<p>No packages found matching your query.</p>`;
+                }
+
+                let rows = data.map(item => `
+                    <tr>
+                        <td>${item.model_name || item.Name || 'Unknown'}</td>
+                        <td>${item.version || 'N/A'}</td>
+                        <td><code>${item.id}</code></td>
+                    </tr>
+                `).join('');
+
+                return `
+                    <table class="result-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Version</th>
+                                <th>ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                `;
+            }
+            // Fallback
+            return `<div class="json-dump">${JSON.stringify(data, null, 2)}</div>`;
+        }
+
+        // --- Modal & Auth Logic ---
+
+        function openAdminModal() { adminModal.showModal(); }
+        function closeAdminModal() { adminModal.close(); }
+        
+        adminModal.addEventListener('click', (event) => {
+            if (event.target === adminModal) adminModal.close();
+        });
 
         function showLoginError(msg) {
             const el = document.getElementById('login-error');
@@ -297,25 +406,8 @@
             el.classList.add('hidden');
         }
 
-        // --- Modal Logic ---
-        function openAdminModal() {
-            adminModal.showModal();
-        }
-
-        function closeAdminModal() {
-            adminModal.close();
-        }
-
-        adminModal.addEventListener('click', (event) => {
-            if (event.target === adminModal) {
-                adminModal.close();
-            }
-        });
-
-        // --- Auth Logic ---
         async function handleLogin() {
             clearLoginError();
-
             const name = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
@@ -356,9 +448,7 @@
         }
 
         function handleLogout() {
-            if (!confirm("Are you sure you want to log out?")) {
-                return;
-            }
+            if (!confirm("Are you sure you want to log out?")) return;
 
             authToken = null;
             clearLoginError();
@@ -368,20 +458,22 @@
             document.getElementById('dashboard').classList.add('hidden');
             document.getElementById('logout-btn').classList.add('hidden');
             document.getElementById('admin-btn').classList.add('hidden');
-            
             document.getElementById('login-section').classList.remove('hidden');
+            
             document.getElementById('password').value = '';
             document.getElementById('username').value = '';
             document.getElementById('username').focus();
         }
 
-        // --- Package Logic ---
+        // --- Feature Logic ---
+
         async function uploadPackage() {
+            const container = document.getElementById('upload-result');
             clearResult('upload-result');
-            const url = document.getElementById('package-url').value;
             
+            const url = document.getElementById('package-url').value;
             if(!url) {
-                displayResult('upload-result', { error: "URL is required." });
+                displayError('upload-result', "URL is required.");
                 return;
             }
             
@@ -395,14 +487,20 @@
                     body: JSON.stringify({ url: url })
                 });
                 const data = await res.json();
-                displayResult('upload-result', data);
+                
+                // Use innerHTML to render the formatted HTML string
+                container.innerHTML = renderUploadResult(data);
+                container.classList.remove('hidden');
+
             } catch (err) {
-                displayResult('upload-result', { error: err.message });
+                displayError('upload-result', err.message);
             }
         }
 
         async function searchPackages() {
+            const container = document.getElementById('search-result');
             clearResult('search-result');
+            
             const queryName = document.getElementById('search-query').value;
 
             try {
@@ -415,9 +513,13 @@
                     body: JSON.stringify([{ name: queryName }])
                 });
                 const data = await res.json();
-                displayResult('search-result', data);
+                
+                // Use innerHTML to render the formatted table
+                container.innerHTML = renderSearchResult(data);
+                container.classList.remove('hidden');
+
             } catch (err) {
-                displayResult('search-result', { error: err.message });
+                displayError('search-result', err.message);
             }
         }
 
