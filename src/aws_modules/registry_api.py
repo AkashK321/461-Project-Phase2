@@ -180,7 +180,9 @@ def parse_event(event):
             raw_body = ""
 
     logger.info(f"Parsing event for: {method} {path}")
-    logger.info(f"Raw event body: {raw_body}")
+    logger.info(
+        f"Raw event body: {raw_body}"
+    )  # Optional: Comment out to hide passwords in logs
 
     body = {}
 
@@ -188,50 +190,19 @@ def parse_event(event):
         logger.info("Raw body is empty, returning empty dict.")
         return method, path, body, query_params
 
-    if method == "PUT" and path == "/authenticate":
-        logger.warning("Running HYBRID parser for /authenticate route.")
-        try:
-            username_match = re.search(r'"name"\s*:\s*"([^"]*)"', raw_body)
-            password_match = re.search(
-                r'"password"\s*:\s*"(.*)"\s*}\s*}', raw_body, re.DOTALL
-            )
+    logger.info(f"Using standard JSON parser for {path}.")
+    try:
+        body = json.loads(raw_body)
+        logger.info("JSON parsing SUCCEEDED.")
 
-            if username_match and password_match:
-                username = username_match.group(1)
-                password = password_match.group(1)
-                logger.info(f"Regex parser SUCCEEDED. Extracted password: {password}")
-                body = {"user": {"name": username}, "secret": {"password": password}}
-            else:
-                logger.warning(
-                    "Regex parser found no match, falling back to standard JSON parser."
-                )
-                body = json.loads(raw_body)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSONDecodeError on '{path}': {e}")
+        # distinct error lets you know the client sent bad JSON
+        return method, path, {}, query_params
 
-        except Exception as e:
-            logger.error(
-                f"Hybrid parser failed: {e}. Trying standard JSON parse as last resort."
-            )
-            try:
-                body = json.loads(raw_body)
-            except Exception as e2:
-                logger.error(f"Last resort JSON parse failed: {e2}")
-                body = {}
-
-    else:
-        logger.info(f"Using standard JSON parser for {path}.")
-        try:
-            body = json.loads(raw_body)
-            logger.info("JSON parsing SUCCEEDED.")
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSONDecodeError on non-auth route '{path}': {e}")
-            body = {}
-
-        except Exception as e:
-            logger.error(
-                f"Unexpected error parsing body for {path}: {e}\nBody: {raw_body}"
-            )
-            body = {}
+    except Exception as e:
+        logger.error(f"Unexpected error parsing body for {path}: {e}")
+        body = {}
 
     return method, path, body, query_params
 
@@ -302,13 +273,15 @@ def reset_state():
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
 
-def ingest_artifact(art_type, payload):
+def ingest_artifact(artifact_type, payload):
     """
-    Handle POST /artifact/{type}.
+    Ingests an artifact.
+    'artifact_type' is initially passed from the URL path (e.g., 'model'),
+    but we verify the URL content and update 'artifact_type' if it detects a mismatch.
+    """
+    logger.info(f"--- Starting Ingestion (Path Type: {artifact_type}) ---")
+    logger.info(f"Payload: {json.dumps(payload)}")
 
-    Payload should have:
-      - urls: a single URL string pointing at the model.
-    """
     try:
         url = payload.get("url")
         if not url or not isinstance(url, str):
@@ -318,33 +291,48 @@ def ingest_artifact(art_type, payload):
 
         urls = [url]
 
-        repo = ""
-        for u in urls:
-            url_type = classify_url(u)
-            if url_type == "model":
-                repo = get_repo_id(u, url_type) or ""
-                break
-            else:
-                repo = ""
+        # 1. Classify the URL
+        detected_type = classify_url(url)
+
+        logger.info(f"URL: {url} | Classified as: {detected_type}")
+
+        if detected_type != "unknown":
+            if detected_type != artifact_type:
+                logger.info(
+                    f"Overriding path type '{artifact_type}' "
+                    f"with detected type '{detected_type}'."
+                )
+                artifact_type = detected_type
+        else:
+            logger.info(
+                f"URL classification unknown. Keeping path type '{artifact_type}'."
+            )
+
+        # 2. Extract Repo ID using the resolved artifact_type
+        repo = get_repo_id(url, artifact_type) or ""
+        logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
         if not repo:
-            return make_response(400, {"error": "unable to find model url in payload"})
+            parts = url.strip("/").split("/")
+            repo = parts[-1] if parts else "unknown_repo"
 
         parts = repo.split("/", 1)
         name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        logger.info(f"Derived Artifact Name: {name}")
 
     except KeyError:
         return make_response(
             400, {"error": "payload must have a non-empty 'url' string"}
         )
-    except Exception:
+    except Exception as e:
+        logger.error(f"URL parsing error: {e}")
         return make_response(400, {"error": "unable to parse model url in payload"})
 
-    # --- First, invoke scorer_function to get scores before downloading ---
+    # --- Invoke Scorer ---
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
     if not scorer_function_name:
-        logger.error("Scorer function not configured, cannot validate metrics")
+        logger.error("Scorer function not configured")
         return make_response(500, {"error": "Metric scoring service not available"})
 
     logger.info(f"Invoking scorer function: {scorer_function_name}")
@@ -355,7 +343,9 @@ def ingest_artifact(art_type, payload):
             InvocationType="RequestResponse",
             Payload=scorer_payload,
         )
-        response_payload = json.loads(response["Payload"].read().decode())
+        raw_response = response["Payload"].read().decode()
+        response_payload = json.loads(raw_response)
+
         if response_payload.get("statusCode") == 200:
             scores_list = json.loads(response_payload["body"])
             if scores_list:
@@ -367,7 +357,7 @@ def ingest_artifact(art_type, payload):
         logger.error(f"Failed to invoke or parse scorer response: {e}")
         return make_response(500, {"error": "Failed to calculate metrics"})
 
-    # Check if all non-latency metrics meet the 0.5 threshold
+    # --- Validate Metrics ---
     non_latency_metrics = [
         "bus_factor",
         "code_quality",
@@ -382,58 +372,53 @@ def ingest_artifact(art_type, payload):
     failing_metrics = []
     for metric in non_latency_metrics:
         score = scores.get(metric, 0)
-        if score < 0.5:
-            failing_metrics.append(f"{metric}: {score}")
+        if isinstance(score, dict):
+            val = sum(score.values()) / len(score) if score else 0
+            if val < 0.5:
+                failing_metrics.append(f"{metric}: {val}")
+        else:
+            if score < 0.5:
+                failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
+        # Uncomment to enforce quality gates:
         return make_response(
             424,
             {
-                "error": "Package is not uploaded due to insufficient quality metrics",
+                "error": "Insufficient quality metrics",
                 "failing_metrics": failing_metrics,
             },
         )
 
-    logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
-
+    # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
     base_model_repo, lineage_type, source = get_base_model_from_card(repo)
-    logger.info(f"Base model repo from card: {base_model_repo}-{lineage_type}")
 
     try:
-        # pull the full repo contents down locally
-        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
-        snapshot_download(
-            repo_id=repo,
-            local_dir=tmp_dir,
-        )
+        logger.info(f"Downloading artifact '{repo}' to '{tmp_dir}'")
+        snapshot_download(repo_id=repo, local_dir=tmp_dir)
 
-        # zip up what we just downloaded
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
 
-        # push to S3 and record metadata
         model_id = str(uuid.uuid4())
         s3_key = f"models/{model_id}/{final_zip_name}"
 
-        logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
-        ok = upload_model(tmp_zip_file, s3_key)
-        if ok is False:
+        if upload_model(tmp_zip_file, s3_key) is False:
             return make_response(500, {"error": "S3 upload failed"})
 
-        version = "v1"  # could be pulled from HF metadata later
-
+        version = "v1"
         created_at = datetime.now(timezone.utc).isoformat()
 
+        # Save metadata to DynamoDB
         item = save_model_metadata(name, version, s3_key, scores)
         if not item:
             return make_response(500, {"error": "failed to store metadata"})
 
-        # attach extra fields the base helper doesn't know about
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
@@ -451,7 +436,7 @@ def ingest_artifact(art_type, payload):
                 "#linsrc": "lineage_source",
             },
             ExpressionAttributeValues={
-                ":t": art_type,
+                ":t": artifact_type,  # Uses the correctly resolved type
                 ":c": created_at,
                 ":fn": final_zip_name,
                 ":url": url,
@@ -462,31 +447,24 @@ def ingest_artifact(art_type, payload):
             },
         )
 
-        logger.info(f"Successfully ingested model {model_id} from {url}")
+        logger.info(f"Successfully ingested {artifact_type} {model_id}")
+
         metadata = {
             "name": item.get("model_name"),
             "id": item.get("id"),
-            "type": item.get("type"),
+            "type": artifact_type,
         }
-        data = {
-            "url": item.get("source_url")
-            # "download_url" would go here
-        }
+        data = {"url": item.get("source_url")}
         return make_response(201, {"metadata": metadata, "data": data})
+
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        logger.error(f"Ingestion processing failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
-        # keep /tmp from filling up between invocations
-        try:
-            if os.path.exists(tmp_dir):
-                shutil.rmtree(tmp_dir)
-                logger.info(f"Cleaned up temp dir: {tmp_dir}")
-            if os.path.exists(tmp_zip_file):
-                os.remove(tmp_zip_file)
-                logger.info(f"Cleaned up temp zip: {tmp_zip_file}")
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        if os.path.exists(tmp_zip_file):
+            os.remove(tmp_zip_file)
 
 
 def search_artifacts(query_array, query_params):
@@ -708,6 +686,9 @@ def handler(event, context):
     initialize_system()
 
     method, path, body, query_params = parse_event(event)
+
+    if method == "OPTIONS":
+        return make_response(200, {"message": "CORS preflight successful"})
 
     if not TABLE_NAME or not BUCKET_NAME:
         return make_response(500, {"error": "missing env vars for table/bucket"})
