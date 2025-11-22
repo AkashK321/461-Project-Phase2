@@ -380,7 +380,7 @@ def ingest_artifact(artifact_type, payload):
         else:
             if score < 0.5:
                 failing_metrics.append(f"{metric}: {score}")
-
+    
     # if failing_metrics:
     #     logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
     #     # Uncomment to enforce quality gates:
