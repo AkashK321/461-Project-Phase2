@@ -22,6 +22,8 @@
             --error-text: #721c24;
             --success-bg: #d4edda;
             --success-text: #155724;
+            --row-hover: #f1f3f5;
+            --row-active: #e2e6ea;
         }
 
         *, *::before, *::after {
@@ -177,7 +179,7 @@
             padding-top: 1rem;
         }
 
-        /* Table Styling for Search Results */
+        /* --- Search Table Styling --- */
         .result-table {
             width: 100%;
             border-collapse: collapse;
@@ -192,12 +194,54 @@
         }
 
         .result-table th {
-            background-color: #f1f1f1;
+            background-color: #f8f9fa;
             font-weight: bold;
+            border-bottom: 2px solid #dee2e6;
         }
 
-        .result-table tr:hover {
-            background-color: #f9f9f9;
+        /* Interactive Rows */
+        .main-row {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .main-row:hover {
+            background-color: var(--row-hover);
+        }
+
+        .main-row.expanded {
+            background-color: var(--row-active);
+        }
+        
+        .expand-icon {
+            float: right;
+            font-size: 0.8em;
+            color: #666;
+            transition: transform 0.2s;
+        }
+
+        .main-row.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Hidden Detail Row */
+        .detail-row td {
+            background-color: #fcfcfc;
+            padding: 1rem;
+            border-bottom: 1px solid #ccc;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .detail-content {
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            background: #2d2d2d;
+            color: #fff;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            max-height: 300px;
+            overflow-y: auto;
         }
 
         /* Success Card for Upload */
@@ -218,7 +262,6 @@
             margin: 0.25rem 0;
         }
 
-        /* Raw JSON fallback */
         .json-dump {
             background: #2d2d2d;
             color: #fff;
@@ -325,16 +368,13 @@
             el.classList.add('hidden');
         }
 
-        // Generic error formatter
         function displayError(elementId, errorMsg) {
             const el = document.getElementById(elementId);
             el.innerHTML = `<div class="error-msg">${errorMsg}</div>`;
             el.classList.remove('hidden');
         }
 
-        // Formats the upload success JSON into a nice card
         function renderUploadResult(data) {
-            // Check if metadata exists (success case)
             if (data.metadata) {
                 const meta = data.metadata;
                 return `
@@ -346,28 +386,45 @@
                     </div>
                 `;
             } 
-            // Fallback for errors or unexpected format
             return `<div class="json-dump">${JSON.stringify(data, null, 2)}</div>`;
         }
 
-        // Formats the search array into a table
+        // --- Search Result Logic with Expansion ---
+        
         function renderSearchResult(data) {
-            // If data is array (search results)
             if (Array.isArray(data)) {
                 if (data.length === 0) {
                     return `<p>No packages found matching your query.</p>`;
                 }
 
-                let rows = data.map(item => `
-                    <tr>
-                        <td>${item.model_name || item.Name || 'Unknown'}</td>
-                        <td>${item.version || 'N/A'}</td>
-                        <td><code>${item.id}</code></td>
-                    </tr>
-                `).join('');
+                const rows = data.map((item, index) => {
+                    const detailId = `detail-${index}`;
+                    const rowJson = JSON.stringify(item, null, 2);
+                    
+                    return `
+                        <tr class="main-row" 
+                            id="row-${index}"
+                            onclick="toggleRow('${detailId}', 'row-${index}')" 
+                            onkeydown="handleRowKey(event, '${detailId}', 'row-${index}')"
+                            tabindex="0" 
+                            role="button" 
+                            aria-expanded="false" 
+                            aria-controls="${detailId}">
+                            
+                            <td>${item.model_name || item.Name || 'Unknown'} <span class="expand-icon">▼</span></td>
+                            <td>${item.version || 'N/A'}</td>
+                            <td><code>${item.id}</code></td>
+                        </tr>
+                        <tr id="${detailId}" class="detail-row hidden">
+                            <td colspan="3">
+                                <div class="detail-content">${rowJson}</div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
 
                 return `
-                    <table class="result-table">
+                    <table class="result-table" role="grid">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -379,10 +436,37 @@
                             ${rows}
                         </tbody>
                     </table>
+                    <p style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Tip: Click a row to see full details.</p>
                 `;
             }
-            // Fallback
             return `<div class="json-dump">${JSON.stringify(data, null, 2)}</div>`;
+        }
+
+        // Toggle function for the dropdowns
+        function toggleRow(detailId, mainRowId) {
+            const detailRow = document.getElementById(detailId);
+            const mainRow = document.getElementById(mainRowId);
+            
+            const isHidden = detailRow.classList.contains('hidden');
+
+            if (isHidden) {
+                // Show
+                detailRow.classList.remove('hidden');
+                mainRow.classList.add('expanded');
+                mainRow.setAttribute('aria-expanded', 'true');
+            } else {
+                // Hide
+                detailRow.classList.add('hidden');
+                mainRow.classList.remove('expanded');
+                mainRow.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function handleRowKey(event, detailId, mainRowId) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleRow(detailId, mainRowId);
+            }
         }
 
         // --- Modal & Auth Logic ---
@@ -487,8 +571,6 @@
                     body: JSON.stringify({ url: url })
                 });
                 const data = await res.json();
-                
-                // Use innerHTML to render the formatted HTML string
                 container.innerHTML = renderUploadResult(data);
                 container.classList.remove('hidden');
 
@@ -514,7 +596,6 @@
                 });
                 const data = await res.json();
                 
-                // Use innerHTML to render the formatted table
                 container.innerHTML = renderSearchResult(data);
                 container.classList.remove('hidden');
 
