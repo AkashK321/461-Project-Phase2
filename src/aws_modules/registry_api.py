@@ -527,6 +527,8 @@ def search_artifacts(query_array, query_params):
     
     logger.info(f"Items after name/type filtering: {len(items)}")
 
+    logger.info(f"Items after name/type filtering: {len(items)}")
+
     # filter by version constraint (if any)
     if version_query:
         items = [
