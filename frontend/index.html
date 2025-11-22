@@ -258,6 +258,18 @@
             font-weight: 500;
             word-break: break-all;
         }
+        
+        /* Special link style for S3 key */
+        .download-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .download-link:hover {
+            text-decoration: underline;
+            color: var(--primary-hover);
+        }
 
         /* --- Scores Dropdown & Table --- */
         details.scores-dropdown {
@@ -294,7 +306,7 @@
             padding: 0.6rem 1rem;
             border-bottom: 1px solid #eee;
             text-align: left;
-            vertical-align: top; /* Ensure nested lists start at top */
+            vertical-align: top;
         }
 
         .scores-table th {
@@ -433,18 +445,13 @@
             return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         }
 
-        // --- Logic to parse both nested and flat scores ---
         function extractScores(item, excludedKeys, scoreKeywords) {
             const foundScores = {};
-
-            // 1. Check for a dedicated "scores" object
             if (item.scores && typeof item.scores === 'object' && !Array.isArray(item.scores)) {
                 for (const [sKey, sVal] of Object.entries(item.scores)) {
                     foundScores[sKey] = sVal;
                 }
             }
-
-            // 2. Also check for root-level keys that look like scores
             for (const [key, value] of Object.entries(item)) {
                 if (excludedKeys.includes(key) || key === 'scores') continue;
                 if (scoreKeywords.some(kw => key.toLowerCase().includes(kw))) {
@@ -454,11 +461,36 @@
             return foundScores;
         }
 
+        // --- Logic to Download Artifact ---
+        async function downloadArtifact(type, id) {
+            const artifactType = type || 'model'; 
+
+            try {
+                const res = await fetch(`${API_URL}/artifacts/${artifactType}/${id}`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Authorization': `bearer ${authToken}`
+                    }
+                });
+
+                if (!res.ok) throw new Error("Failed to fetch download URL");
+                
+                const json = await res.json();
+                const downloadUrl = json.data && json.data.download_url;
+
+                if (downloadUrl) {
+                    window.open(downloadUrl, '_blank');
+                } else {
+                    alert("No download URL available for this artifact.");
+                }
+
+            } catch (err) {
+                alert("Download failed: " + err.message);
+            }
+        }
+
         function renderDetailView(item) {
-            // Keys to hide from general view
             const excludedKeys = ['model_name', 'Name', 'version', 'id']; 
-            
-            // Keywords to identify scores if they are flattened
             const scoreKeywords = [
                 'net_score', 'ramp_up', 'correctness', 'bus_factor', 
                 'responsive_maintainer', 'license', 'dependency_pinning', 
@@ -467,11 +499,9 @@
                 'netscore'
             ];
 
-            // Extract scores using both methods
             const scoresObj = extractScores(item, excludedKeys, scoreKeywords);
             const scoreKeys = Object.keys(scoresObj);
 
-            // Build General HTML
             let generalHtml = '';
             for (const [key, value] of Object.entries(item)) {
                 if (excludedKeys.includes(key)) continue;
@@ -479,9 +509,15 @@
                 if (scoreKeys.includes(key)) continue; 
 
                 let displayValue = value;
-                if (typeof value === 'object' && value !== null) {
+                
+                if (key === 's3_key') {
+                    const safeType = item.type || 'model';
+                    displayValue = `<a href="#" class="download-link" onclick="downloadArtifact('${safeType}', '${item.id}'); return false;">${value} ⬇</a>`;
+                }
+                else if (typeof value === 'object' && value !== null) {
                     displayValue = JSON.stringify(value); 
-                } else if (String(value).startsWith('http')) {
+                } 
+                else if (String(value).startsWith('http')) {
                     displayValue = `<a href="${value}" target="_blank" rel="noopener noreferrer">Link</a>`;
                 }
 
@@ -493,7 +529,6 @@
                 `;
             }
 
-            // Build Scores Table Rows (Handle Objects nested in scores)
             let scoresRows = '';
             if (scoreKeys.length > 0) {
                 scoreKeys.sort().forEach(key => {
@@ -516,7 +551,6 @@
                 });
             }
 
-            // Assemble Output
             let output = '';
 
             if (generalHtml) {
@@ -528,7 +562,7 @@
             if (scoresRows) {
                 output += `
                     <details class="scores-dropdown">
-                        <summary>Quality Scores</summary>
+                        <summary>📊 Quality Scores (Click to Expand)</summary>
                         <table class="scores-table">
                             <thead>
                                 <tr>
