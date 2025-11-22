@@ -294,6 +294,7 @@
             padding: 0.6rem 1rem;
             border-bottom: 1px solid #eee;
             text-align: left;
+            vertical-align: top; /* Ensure nested lists start at top */
         }
 
         .scores-table th {
@@ -436,7 +437,7 @@
         function extractScores(item, excludedKeys, scoreKeywords) {
             const foundScores = {};
 
-            // 1. Check for a dedicated "scores" object (likely where the data is hiding)
+            // 1. Check for a dedicated "scores" object
             if (item.scores && typeof item.scores === 'object' && !Array.isArray(item.scores)) {
                 for (const [sKey, sVal] of Object.entries(item.scores)) {
                     foundScores[sKey] = sVal;
@@ -470,12 +471,12 @@
             const scoresObj = extractScores(item, excludedKeys, scoreKeywords);
             const scoreKeys = Object.keys(scoresObj);
 
-            // Build General HTML (excluding keys that are in scoresObj or excluded)
+            // Build General HTML
             let generalHtml = '';
             for (const [key, value] of Object.entries(item)) {
                 if (excludedKeys.includes(key)) continue;
-                if (key === 'scores') continue; // Don't print the raw scores object
-                if (scoreKeys.includes(key)) continue; // Don't duplicate score if found at root
+                if (key === 'scores') continue; 
+                if (scoreKeys.includes(key)) continue; 
 
                 let displayValue = value;
                 if (typeof value === 'object' && value !== null) {
@@ -492,15 +493,24 @@
                 `;
             }
 
-            // Build Scores Table Rows
+            // Build Scores Table Rows (Handle Objects nested in scores)
             let scoresRows = '';
             if (scoreKeys.length > 0) {
-                // Sort keys alphabetically for cleaner table
                 scoreKeys.sort().forEach(key => {
+                    let val = scoresObj[key];
+                    let displayVal = val;
+
+                    if (typeof val === 'object' && val !== null) {
+                         const subEntries = Object.entries(val).map(([k, v]) => {
+                            return `<li><span style="color:#555; font-weight:500;">${formatKey(k)}:</span> ${v}</li>`;
+                        }).join('');
+                        displayVal = `<ul style="margin:0; padding-left:1.2rem; font-size:0.85rem;">${subEntries}</ul>`;
+                    }
+
                     scoresRows += `
                         <tr>
-                            <td><strong>${formatKey(key)}</strong></td>
-                            <td>${scoresObj[key]}</td>
+                            <td style="width: 40%;"><strong>${formatKey(key)}</strong></td>
+                            <td>${displayVal}</td>
                         </tr>
                     `;
                 });
@@ -518,7 +528,7 @@
             if (scoresRows) {
                 output += `
                     <details class="scores-dropdown">
-                        <summary>📊 Quality Scores (Click to Expand)</summary>
+                        <summary>Quality Scores</summary>
                         <table class="scores-table">
                             <thead>
                                 <tr>
