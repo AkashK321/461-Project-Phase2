@@ -503,22 +503,24 @@ def search_artifacts(query_array, query_params):
     # Handle the wildcard "*" search
     if name_query == "*":
         name_query = ""  # This will match all names
-
+    
     version_query = (query.get("version") or query.get("version_range") or "").strip()
-
-    tbl = dynamodb.Table(TABLE_NAME)
-    scan_resp = tbl.scan()
-    items = scan_resp.get("Items", [])
-
+    
+    items = []
+    # If a specific name is given, use the optimized query.
+    # Otherwise, scan the whole table (for wildcard or no-name queries).
+    if name_query:
+        items = get_model_by_model_name(name_query) or []
+    else:
+        tbl = dynamodb.Table(TABLE_NAME)
+        scan_resp = tbl.scan()
+        items = scan_resp.get("Items", [])
+    
     # filter by type (if provided)
     if not want_all_types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
-
-    # filter by name (exact match on model_name)
-    if name_query:
-        items = [it for it in items if str(it.get("model_name", "")) == name_query]
-
+    
     logger.info(f"Items after name/type filtering: {len(items)}")
 
     # filter by version constraint (if any)
