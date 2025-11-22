@@ -273,8 +273,8 @@ def reset_state():
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
 
-def ingest_artifact(art_type, payload):
-    logger.info(f"--- Starting Ingestion for {art_type} ---")
+def ingest_artifact(artifact_type, payload):
+    logger.info(f"--- Starting Ingestion (Path Type: {artifact_type}) ---")
     logger.info(f"Payload: {json.dumps(payload)}")
 
     try:
@@ -286,24 +286,30 @@ def ingest_artifact(art_type, payload):
 
         urls = [url]
 
-        repo = ""
-        for u in urls:
-            url_type = classify_url(u)
-            if url_type == "model":
-                repo = get_repo_id(u, url_type) or ""
-                break
-            else:
-                repo = ""
+        # 1. Classify the URL to see if we should override the artifact_type
+        detected_type = classify_url(url)
+        
+        if detected_type != "unknown":
+            # If we detected a specific type, use it (e.g. treating a GitHub link as 'code')
+            logger.info(f"Classified URL as '{detected_type}'. Overriding path type '{artifact_type}'.")
+            artifact_type = detected_type
+        else:
+            # If unknown, we stick with whatever the user put in the URL path
+            logger.info(f"URL classification unknown. Keeping path type '{artifact_type}'.")
 
+        # 2. Extract Repo ID using the resolved artifact_type
+        # (This ensures we parse GitHub URLs for 'code' correctly, etc.)
+        repo = get_repo_id(url, artifact_type) or ""
         logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
         if not repo:
-            logger.error("Unable to find model url or repo_id in payload")
-            return make_response(400, {"error": "unable to find model url in payload"})
+            # Fallback for direct file links that don't have a clear 'repo_id'
+            parts = url.strip("/").split("/")
+            repo = parts[-1] if parts else "unknown_repo"
 
         parts = repo.split("/", 1)
         name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
-        logger.info(f"Derived Model Name: {name}")
+        logger.info(f"Derived Artifact Name: {name}")
 
     except KeyError:
         return make_response(
@@ -367,7 +373,6 @@ def ingest_artifact(art_type, payload):
 
         if isinstance(score, dict):
             val = sum(score.values()) / len(score) if score else 0
-            logger.info(f"Metric {metric} is dict, avg value: {val}")
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
         else:
@@ -376,17 +381,14 @@ def ingest_artifact(art_type, payload):
 
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-
-        # --- IMPORTANT: TO TEST UPLOAD DESPITE LOW SCORES,
-        # COMMENT OUT THE RETURN BELOW ---
+        # If you want to reject uploads with low scores, uncomment the return below:
         return make_response(
-            424,
-            {
-                "error": "Package is not uploaded due to insufficient quality metrics",
-                "failing_metrics": failing_metrics,
-            },
+           424,
+           {
+               "error": "Package is not uploaded due to insufficient quality metrics",
+               "failing_metrics": failing_metrics,
+           },
         )
-        # ----------------------------------------------------------------------------------
 
     logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
 
@@ -396,21 +398,18 @@ def ingest_artifact(art_type, payload):
     base_model_repo, lineage_type, source = get_base_model_from_card(repo)
 
     try:
-        logger.info(f"Downloading model '{repo}' to '{tmp_dir}'")
+        logger.info(f"Downloading artifact '{repo}' to '{tmp_dir}'")
         snapshot_download(
             repo_id=repo,
             local_dir=tmp_dir,
+            # You might want to filter allow_patterns based on artifact_type here if needed
         )
 
-        # Log download success by listing files
         files_downloaded = []
         for root, dirs, files in os.walk(tmp_dir):
             for file in files:
                 files_downloaded.append(os.path.join(root, file))
-        logger.info(
-            f"Downloaded {len(files_downloaded)} "
-            f"files. First few: {files_downloaded[:3]}"
-        )
+        logger.info(f"Downloaded {len(files_downloaded)} files.")
 
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
@@ -418,11 +417,12 @@ def ingest_artifact(art_type, payload):
 
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
-
-        zip_size = os.path.getsize(tmp_zip_file)
-        logger.info(f"Zip created: {tmp_zip_file} (Size: {zip_size} bytes)")
-
+        
+        # Use UUID for model ID to ensure uniqueness
         model_id = str(uuid.uuid4())
+        s3_key = f"{artifact_type}s/{model_id}/{final_zip_name}"  # Store in models/, datasets/, etc?
+        # Or keep strict "models/" prefix if your S3 policy requires it. 
+        # For now, keeping consistent with original "models/" path usually helps avoid permission errors:
         s3_key = f"models/{model_id}/{final_zip_name}"
 
         logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
@@ -459,7 +459,7 @@ def ingest_artifact(art_type, payload):
                 "#linsrc": "lineage_source",
             },
             ExpressionAttributeValues={
-                ":t": art_type,
+                ":t": artifact_type,  # Uses the correctly resolved type
                 ":c": created_at,
                 ":fn": final_zip_name,
                 ":url": url,
@@ -470,17 +470,16 @@ def ingest_artifact(art_type, payload):
             },
         )
 
-        logger.info(f"Successfully ingested model {model_id} from {url}")
+        logger.info(f"Successfully ingested {artifact_type} {model_id} from {url}")
         metadata = {
             "name": item.get("model_name"),
             "id": item.get("id"),
-            "type": item.get("type"),
+            "type": artifact_type,
         }
         data = {"url": item.get("source_url")}
         return make_response(201, {"metadata": metadata, "data": data})
     except Exception as e:
         logger.error(f"Ingestion processing failed: {e}")
-        # logger.error(traceback.format_exc()) # requires import traceback
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
         try:

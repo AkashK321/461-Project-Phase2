@@ -17,6 +17,7 @@ on:
       - uploads-and-downloads
       - 32-rate-models
       - frontend
+      - dataset-and-code-urls
 
 # Define the permissions the job will need
 permissions:
