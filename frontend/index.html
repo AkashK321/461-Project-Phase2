@@ -61,20 +61,20 @@
 
         .nav-header {
             display: flex;
-            justify-content: flex-start; 
+            justify-content: space-between; 
             align-items: center;
             min-height: 3rem; 
             margin-bottom: 1rem;
         }
 
-        #logout-btn {
+        .nav-btn {
             width: auto;
             margin: 0;
             background-color: var(--secondary-color);
             padding: 0.5rem 1.2rem;
             font-size: 1rem;
         }
-        #logout-btn:hover {
+        .nav-btn:hover {
             background-color: var(--secondary-hover);
         }
 
@@ -102,7 +102,6 @@
             height: auto;
         }
 
-        /* Error Message Styling */
         .error-msg {
             background-color: var(--error-bg);
             color: var(--error-text);
@@ -191,6 +190,22 @@
             display: none !important;
         }
 
+        /* Modal Styles */
+        dialog {
+            border: none;
+            border-radius: var(--radius);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 2rem;
+            max-width: 90%;
+            width: 400px;
+            background: var(--card-bg);
+            color: var(--text-color);
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
         @media (max-width: 40rem) {
             .section { padding: 1rem; }
         }
@@ -202,7 +217,9 @@
 
     <main id="main-content">
         <nav class="nav-header" aria-label="User Account">
-            <button id="logout-btn" class="hidden" onclick="handleLogout()">Log Out</button>
+            <button id="logout-btn" class="nav-btn hidden" onclick="handleLogout()">Log Out</button>
+            
+            <button id="admin-btn" class="nav-btn hidden" onclick="openAdminModal()">Admin Actions</button>
         </nav>
 
         <h1>Package Registry UI</h1>
@@ -222,11 +239,6 @@
         </section>
 
         <div id="dashboard" class="hidden">
-            <section class="section" aria-labelledby="status-heading">
-                <h2 id="status-heading" class="visually-hidden">Authentication Status</h2>
-                <p role="status"><strong>Status:</strong> <span id="token-display">Authentication active</span></p>
-            </section>
-
             <section class="section" aria-labelledby="upload-heading">
                 <h3 id="upload-heading">Upload Package</h3>
                 <label for="package-url">Package URL (GitHub/npm)</label>
@@ -241,11 +253,6 @@
                 <button onclick="searchPackages()">Search</button>
             </section>
 
-            <section class="section" aria-labelledby="admin-heading">
-                <h3 id="admin-heading">Admin Actions</h3>
-                <button class="delete" onclick="resetRegistry()">Reset Registry</button>
-            </section>
-
             <section class="section" aria-labelledby="output-heading">
                 <h3 id="output-heading">System Output</h3>
                 <div class="output-container" aria-live="polite" id="output-region">
@@ -255,10 +262,18 @@
         </div>
     </main>
 
+    <dialog id="admin-modal">
+        <h3 id="admin-modal-title">Admin Actions</h3>
+        <p>Warning: These actions affect the entire registry.</p>
+        <button class="delete" onclick="resetRegistry()">Reset Registry</button>
+        <button onclick="closeAdminModal()" style="background-color: var(--secondary-color); margin-top: 1rem;">Close</button>
+    </dialog>
+
     <script>
         const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
         
         let authToken = null;
+        const adminModal = document.getElementById('admin-modal');
 
         function log(data) {
             const output = document.getElementById('output');
@@ -276,6 +291,20 @@
             el.textContent = '';
             el.classList.add('hidden');
         }
+
+        function openAdminModal() {
+            adminModal.showModal();
+        }
+
+        function closeAdminModal() {
+            adminModal.close();
+        }
+
+        adminModal.addEventListener('click', (event) => {
+            if (event.target === adminModal) {
+                adminModal.close();
+            }
+        });
 
         async function handleLogin() {
             clearLoginError();
@@ -306,7 +335,9 @@
                     
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('dashboard').classList.remove('hidden');
+                    
                     document.getElementById('logout-btn').classList.remove('hidden');
+                    document.getElementById('admin-btn').classList.remove('hidden');
 
                     const firstInput = document.getElementById('package-url');
                     if(firstInput) firstInput.focus();
@@ -329,7 +360,10 @@
             clearLoginError();
 
             document.getElementById('dashboard').classList.add('hidden');
+            
             document.getElementById('logout-btn').classList.add('hidden');
+            document.getElementById('admin-btn').classList.add('hidden');
+            
             document.getElementById('login-section').classList.remove('hidden');
 
             document.getElementById('password').value = '';
@@ -394,6 +428,7 @@
                 });
                 const data = await res.json();
                 log(data);
+                closeAdminModal(); 
             } catch (err) {
                 log({ error: err.message });
             }
