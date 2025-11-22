@@ -18,6 +18,8 @@
             --input-border: #595959;
             --focus-ring: #0056b3;
             --radius: 0.75rem;
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
         }
 
         *, *::before, *::after {
@@ -57,7 +59,6 @@
             margin: 0 auto;
         }
 
-        /* Navigation Header */
         .nav-header {
             display: flex;
             justify-content: flex-start; 
@@ -99,6 +100,17 @@
             border-radius: var(--radius);
             box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.05);
             height: auto;
+        }
+
+        /* Error Message Styling */
+        .error-msg {
+            background-color: var(--error-bg);
+            color: var(--error-text);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--error-text);
+            margin-bottom: 1rem;
+            font-weight: bold;
         }
 
         label {
@@ -198,6 +210,8 @@
         <section id="login-section" class="section" aria-labelledby="login-heading">
             <h2 id="login-heading">Login</h2>
             
+            <div id="login-error" class="error-msg hidden" role="alert"></div>
+
             <label for="username">Username</label>
             <input type="text" id="username" placeholder="Enter username" autocomplete="username" required>
             
@@ -251,12 +265,26 @@
             output.textContent = JSON.stringify(data, null, 2);
         }
 
+        function showLoginError(msg) {
+            const el = document.getElementById('login-error');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+        }
+
+        function clearLoginError() {
+            const el = document.getElementById('login-error');
+            el.textContent = '';
+            el.classList.add('hidden');
+        }
+
         async function handleLogin() {
+            clearLoginError();
+
             const name = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
             if(!name || !password) {
-                log({ error: "Username and password are required." });
+                showLoginError("Username and password are required.");
                 return;
             }
 
@@ -285,21 +313,20 @@
 
                     log("Login Successful");
                 } else {
-                    // Specific error message for failed login
-                    log({ error: "Incorrect username or password" });
+                    showLoginError("Incorrect username or password");
                 }
             } catch (err) {
-                log({ error: "Failed to connect to authentication service." });
+                showLoginError("Failed to connect to authentication service.");
             }
         }
 
         function handleLogout() {
-            // Confirmation popup before logging out
             if (!confirm("Are you sure you want to log out?")) {
                 return;
             }
 
             authToken = null;
+            clearLoginError();
 
             document.getElementById('dashboard').classList.add('hidden');
             document.getElementById('logout-btn').classList.add('hidden');
