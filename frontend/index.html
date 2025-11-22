@@ -6,82 +6,104 @@
     <title>Package Registry</title>
     <style>
         :root {
-            --primary-color: #0056b3;
-            --primary-hover: #004494;
-            --danger-color: #c82333;
-            --danger-hover: #bd2130;
-            --bg-color: #f8f9fa;
+            --primary-color: #004494;
+            --primary-hover: #003377;
+            --danger-color: #a71d2a; 
+            --danger-hover: #8c1823;
+            --text-color: #212529; 
+            --bg-color: #f4f4f4;
             --card-bg: #ffffff;
-            --text-color: #212529;
-            --border-color: #dee2e6;
+            --input-border: #595959;
+            --focus-ring: #0056b3;
             --radius: 12px;
-            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--primary-color);
+            color: white;
+            padding: 8px;
+            z-index: 100;
+            transition: top 0.2s;
+            text-decoration: none;
+            border-radius: 0 0 8px 0;
+        }
+        .skip-link:focus {
+            top: 0;
         }
 
         body {
             font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
-            max-width: 800px;
-            margin: 2rem auto;
-            padding: 0 1rem;
+            margin: 0;
+            padding: 2rem 1rem;
             line-height: 1.6;
         }
 
-        h1, h2, h3 {
-            margin-top: 0;
-            color: #333;
+        main {
+            max-width: 800px;
+            margin: 0 auto;
         }
 
         h1 {
             text-align: center;
             margin-bottom: 2rem;
+            color: #111;
         }
 
-        /* Card Styling */
-        .card {
+        h2, h3 {
+            color: #333;
+            margin-top: 0;
+        }
+
+        .section {
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
+            border: 1px solid #ccc; 
+            border: 1px solid var(--input-border); 
             padding: 2rem;
             margin-bottom: 1.5rem;
             border-radius: var(--radius);
-            box-shadow: var(--shadow);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
         }
 
-        /* Form Elements */
+        
         label {
             display: block;
             margin-top: 1rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
+            font-weight: 700;
+            margin-bottom: 0.35rem;
         }
 
         input {
             width: 100%;
-            padding: 0.75rem;
-            margin-top: 0.25rem;
+            padding: 0.8rem;
             box-sizing: border-box;
-            border: 1px solid #ccc;
-            border-radius: 8px; 
+            border: 2px solid var(--input-border); 
+            border-radius: 8px;
             font-size: 1rem;
+            background-color: #fff;
+            color: var(--text-color);
         }
 
         input:focus, button:focus {
-            outline: 3px solid var(--primary-color);
+            outline: 4px solid var(--focus-ring);
             outline-offset: 2px;
-            border-color: var(--primary-color);
+            border-color: transparent;
         }
 
         button {
             margin-top: 1.5rem;
             width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
+            padding: 0.8rem;
+            font-size: 1.1rem;
             font-weight: bold;
             color: white;
             background-color: var(--primary-color);
             border: none;
-            border-radius: 8px; 
+            border-radius: 8px;
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
@@ -98,18 +120,20 @@
             background-color: var(--danger-hover);
         }
 
-      
+        /* Output Area */
         .output-container {
             background: #2d2d2d;
             color: #fff;
-            padding: 1rem;
+            padding: 1.5rem;
             border-radius: 8px;
             overflow-x: auto;
+            border: 1px solid #000;
         }
 
         pre {
             margin: 0;
-            white-space: pre-wrap; 
+            white-space: pre-wrap;
+            font-family: monospace;
         }
 
         .hidden {
@@ -119,46 +143,49 @@
 </head>
 <body>
 
-    <main>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <main id="main-content">
         <h1>Package Registry UI</h1>
 
-        <section id="login-section" class="card" aria-labelledby="login-heading">
+        <section id="login-section" class="section" aria-labelledby="login-heading">
             <h2 id="login-heading">Login</h2>
             
             <label for="username">Username</label>
-            <input type="text" id="username" placeholder="Enter username" autocomplete="username">
+            <input type="text" id="username" placeholder="Enter username" autocomplete="username" required>
             
             <label for="password">Password</label>
-            <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+            <input type="password" id="password" placeholder="Enter password" autocomplete="current-password" required>
             
             <button onclick="handleLogin()">Login</button>
         </section>
 
         <div id="dashboard" class="hidden">
-            <section class="card">
-                <p><strong>Status:</strong> <span id="token-display">Authentication active</span></p>
+            <section class="section" aria-labelledby="status-heading">
+                <h2 id="status-heading" class="visually-hidden">Authentication Status</h2>
+                <p role="status"><strong>Status:</strong> <span id="token-display">Authentication active</span></p>
             </section>
 
-            <section class="card" aria-labelledby="upload-heading">
+            <section class="section" aria-labelledby="upload-heading">
                 <h3 id="upload-heading">Upload Package</h3>
                 <label for="package-url">Package URL (GitHub/npm)</label>
-                <input type="url" id="package-url" placeholder="https://github.com/user/repo">
+                <input type="url" id="package-url" placeholder="https://github.com/user/repo" autocomplete="url">
                 <button onclick="uploadPackage()">Upload</button>
             </section>
 
-            <section class="card" aria-labelledby="search-heading">
+            <section class="section" aria-labelledby="search-heading">
                 <h3 id="search-heading">Search Packages</h3>
                 <label for="search-query">Query (Regex)</label>
-                <input type="text" id="search-query" value="*">
+                <input type="text" id="search-query" value="*" autocomplete="off">
                 <button onclick="searchPackages()">Search</button>
             </section>
 
-            <section class="card" aria-labelledby="admin-heading">
+            <section class="section" aria-labelledby="admin-heading">
                 <h3 id="admin-heading">Admin Actions</h3>
                 <button class="delete" onclick="resetRegistry()">Reset Registry</button>
             </section>
 
-            <section class="card" aria-labelledby="output-heading">
+            <section class="section" aria-labelledby="output-heading">
                 <h3 id="output-heading">System Output</h3>
                 <div class="output-container" aria-live="polite" id="output-region">
                     <pre id="output">Waiting for action...</pre>
@@ -181,6 +208,12 @@
             const name = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
+            // Basic feedback for empty fields
+            if(!name || !password) {
+                log({ error: "Username and password are required." });
+                return;
+            }
+
             const payload = {
                 user: { name: name, is_admin: true },
                 secret: { password: password }
@@ -200,8 +233,11 @@
                     
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('dashboard').classList.remove('hidden');
-                    // Focus on the first input of dashboard for accessibility
-                    document.getElementById('package-url').focus();
+                    
+                    // Move focus to the dashboard for accessibility
+                    const firstInput = document.getElementById('package-url');
+                    if(firstInput) firstInput.focus();
+
                     log("Login Successful");
                 } else {
                     log(data);
@@ -213,6 +249,10 @@
 
         async function uploadPackage() {
             const url = document.getElementById('package-url').value;
+            if(!url) {
+                log({ error: "URL is required." });
+                return;
+            }
             
             try {
                 const res = await fetch(`${API_URL}/artifact/model`, {
@@ -221,7 +261,7 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    body: JSON.stringify({ url: url }) 
+                    body: JSON.stringify({ url: url })
                 });
                 const data = await res.json();
                 log(data);
@@ -240,7 +280,7 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    body: JSON.stringify([{ name: queryName }]) 
+                    body: JSON.stringify([{ name: queryName }])
                 });
                 const data = await res.json();
                 log(data);
