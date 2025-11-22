@@ -475,7 +475,7 @@ def search_artifacts(query_array, query_params):
     - query_array: The request body, which is a list of query objects.
     - query_params: The query string parameters, containing the 'offset'.
     """
-
+    logger.info(f"Searching artifacts with queries: {query_array} and params: {query_params}")
     try:
         offset_str = query_params.get("offset", "1")
         page = int(offset_str)
