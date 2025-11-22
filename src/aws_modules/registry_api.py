@@ -274,6 +274,11 @@ def reset_state():
 
 
 def ingest_artifact(artifact_type, payload):
+    """
+    Ingests an artifact. 
+    'artifact_type' is initially passed from the URL path (e.g., 'model'),
+    but we verify the URL content and update 'artifact_type' if it detects a mismatch.
+    """
     logger.info(f"--- Starting Ingestion (Path Type: {artifact_type}) ---")
     logger.info(f"Payload: {json.dumps(payload)}")
 
@@ -289,21 +294,24 @@ def ingest_artifact(artifact_type, payload):
         # 1. Classify the URL to see if we should override the artifact_type
         detected_type = classify_url(url)
         
+        # --- ADDED LOGGING HERE ---
+        logger.info(f"URL: {url} | Classified as: {detected_type}")
+        
         if detected_type != "unknown":
-            # If we detected a specific type, use it (e.g. treating a GitHub link as 'code')
-            logger.info(f"Classified URL as '{detected_type}'. Overriding path type '{artifact_type}'.")
-            artifact_type = detected_type
+            # If the content is clearly specific (e.g. GitHub -> code), use that
+            if detected_type != artifact_type:
+                logger.info(f"Overriding path type '{artifact_type}' with detected type '{detected_type}'.")
+                artifact_type = detected_type
         else:
-            # If unknown, we stick with whatever the user put in the URL path
+            # If unknown, rely on what the user specified in the API path
             logger.info(f"URL classification unknown. Keeping path type '{artifact_type}'.")
 
         # 2. Extract Repo ID using the resolved artifact_type
-        # (This ensures we parse GitHub URLs for 'code' correctly, etc.)
         repo = get_repo_id(url, artifact_type) or ""
         logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
         if not repo:
-            # Fallback for direct file links that don't have a clear 'repo_id'
+            # Fallback for direct file links that don't have a standard 'repo_id'
             parts = url.strip("/").split("/")
             repo = parts[-1] if parts else "unknown_repo"
 
@@ -329,21 +337,16 @@ def ingest_artifact(artifact_type, payload):
     logger.info(f"Invoking scorer function: {scorer_function_name}")
     try:
         scorer_payload = json.dumps({"urls": urls})
-        logger.info(f"Scorer Request Payload: {scorer_payload}")
-
         response = lambda_client.invoke(
             FunctionName=scorer_function_name,
             InvocationType="RequestResponse",
             Payload=scorer_payload,
         )
         raw_response = response["Payload"].read().decode()
-        logger.info(f"Scorer Raw Response: {raw_response}")
-
         response_payload = json.loads(raw_response)
 
         if response_payload.get("statusCode") == 200:
             scores_list = json.loads(response_payload["body"])
-            logger.info(f"Parsed Scores List: {json.dumps(scores_list)}")
             if scores_list:
                 scores = scores_list[0]
         else:
@@ -353,44 +356,25 @@ def ingest_artifact(artifact_type, payload):
         logger.error(f"Failed to invoke or parse scorer response: {e}")
         return make_response(500, {"error": "Failed to calculate metrics"})
 
-    logger.info(f"Final Scores Object: {json.dumps(scores)}")
-
     # --- Validate Metrics ---
     non_latency_metrics = [
-        "bus_factor",
-        "code_quality",
-        "license",
-        "ramp_up",
-        "dataset_quality",
-        "performance_claims",
-        "dataset_and_code",
-        "size",
+        "bus_factor", "code_quality", "license", "ramp_up", 
+        "dataset_quality", "performance_claims", "dataset_and_code", "size"
     ]
 
     failing_metrics = []
     for metric in non_latency_metrics:
         score = scores.get(metric, 0)
-
         if isinstance(score, dict):
             val = sum(score.values()) / len(score) if score else 0
-            if val < 0.5:
-                failing_metrics.append(f"{metric}: {val}")
+            if val < 0.5: failing_metrics.append(f"{metric}: {val}")
         else:
-            if score < 0.5:
-                failing_metrics.append(f"{metric}: {score}")
+            if score < 0.5: failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-        # If you want to reject uploads with low scores, uncomment the return below:
-        return make_response(
-           424,
-           {
-               "error": "Package is not uploaded due to insufficient quality metrics",
-               "failing_metrics": failing_metrics,
-           },
-        )
-
-    logger.info("All non-latency metrics passed threshold, proceeding with ingestion")
+        # Uncomment to enforce quality gates:
+        # return make_response(424, {"error": "Insufficient quality metrics", "failing_metrics": failing_metrics})
 
     # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
@@ -399,45 +383,23 @@ def ingest_artifact(artifact_type, payload):
 
     try:
         logger.info(f"Downloading artifact '{repo}' to '{tmp_dir}'")
-        snapshot_download(
-            repo_id=repo,
-            local_dir=tmp_dir,
-            # You might want to filter allow_patterns based on artifact_type here if needed
-        )
-
-        files_downloaded = []
-        for root, dirs, files in os.walk(tmp_dir):
-            for file in files:
-                files_downloaded.append(os.path.join(root, file))
-        logger.info(f"Downloaded {len(files_downloaded)} files.")
+        snapshot_download(repo_id=repo, local_dir=tmp_dir)
 
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
-        logger.info(f"Zipping directory to {tmp_zip_path_base}.zip")
-
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
         
-        # Use UUID for model ID to ensure uniqueness
         model_id = str(uuid.uuid4())
-        s3_key = f"{artifact_type}s/{model_id}/{final_zip_name}"  # Store in models/, datasets/, etc?
-        # Or keep strict "models/" prefix if your S3 policy requires it. 
-        # For now, keeping consistent with original "models/" path usually helps avoid permission errors:
         s3_key = f"models/{model_id}/{final_zip_name}"
 
-        logger.info(f"Uploading '{tmp_zip_file}' to S3 key '{s3_key}'")
-        ok = upload_model(tmp_zip_file, s3_key)
-        if ok is False:
-            logger.error("S3 Upload returned False")
+        if upload_model(tmp_zip_file, s3_key) is False:
             return make_response(500, {"error": "S3 upload failed"})
-
-        logger.info("S3 Upload successful")
 
         version = "v1"
         created_at = datetime.now(timezone.utc).isoformat()
 
         # Save metadata to DynamoDB
-        logger.info("Saving metadata to DynamoDB")
         item = save_model_metadata(name, version, s3_key, scores)
         if not item:
             return make_response(500, {"error": "failed to store metadata"})
@@ -470,7 +432,8 @@ def ingest_artifact(artifact_type, payload):
             },
         )
 
-        logger.info(f"Successfully ingested {artifact_type} {model_id} from {url}")
+        logger.info(f"Successfully ingested {artifact_type} {model_id}")
+        
         metadata = {
             "name": item.get("model_name"),
             "id": item.get("id"),
@@ -478,18 +441,13 @@ def ingest_artifact(artifact_type, payload):
         }
         data = {"url": item.get("source_url")}
         return make_response(201, {"metadata": metadata, "data": data})
+
     except Exception as e:
         logger.error(f"Ingestion processing failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
-        try:
-            if os.path.exists(tmp_dir):
-                shutil.rmtree(tmp_dir)
-            if os.path.exists(tmp_zip_file):
-                os.remove(tmp_zip_file)
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
-
+        if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
+        if os.path.exists(tmp_zip_file): os.remove(tmp_zip_file)
 
 def search_artifacts(query_array, query_params):
     """
