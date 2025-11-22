@@ -291,14 +291,12 @@ def ingest_artifact(artifact_type, payload):
 
         urls = [url]
 
-        # 1. Classify the URL to see if we should override the artifact_type
+        # 1. Classify the URL
         detected_type = classify_url(url)
 
-        # --- ADDED LOGGING HERE ---
         logger.info(f"URL: {url} | Classified as: {detected_type}")
 
         if detected_type != "unknown":
-            # If the content is clearly specific (e.g. GitHub -> code), use that
             if detected_type != artifact_type:
                 logger.info(
                     f"Overriding path type '{artifact_type}' "
@@ -306,7 +304,6 @@ def ingest_artifact(artifact_type, payload):
                 )
                 artifact_type = detected_type
         else:
-            # If unknown, rely on what the user specified in the API path
             logger.info(
                 f"URL classification unknown. Keeping path type '{artifact_type}'."
             )
@@ -316,7 +313,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
         if not repo:
-            # Fallback for direct file links that don't have a standard 'repo_id'
             parts = url.strip("/").split("/")
             repo = parts[-1] if parts else "unknown_repo"
 
