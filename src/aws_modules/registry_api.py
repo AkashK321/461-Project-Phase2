@@ -712,6 +712,9 @@ def handler(event, context):
 
     method, path, body, query_params = parse_event(event)
 
+    if method == "OPTIONS":
+        return make_response(200, {"message": "CORS preflight successful"})
+
     if not TABLE_NAME or not BUCKET_NAME:
         return make_response(500, {"error": "missing env vars for table/bucket"})
 
