@@ -275,7 +275,7 @@ def reset_state():
 
 def ingest_artifact(artifact_type, payload):
     """
-    Ingests an artifact. 
+    Ingests an artifact.
     'artifact_type' is initially passed from the URL path (e.g., 'model'),
     but we verify the URL content and update 'artifact_type' if it detects a mismatch.
     """
@@ -293,18 +293,22 @@ def ingest_artifact(artifact_type, payload):
 
         # 1. Classify the URL to see if we should override the artifact_type
         detected_type = classify_url(url)
-        
+
         # --- ADDED LOGGING HERE ---
         logger.info(f"URL: {url} | Classified as: {detected_type}")
-        
+
         if detected_type != "unknown":
             # If the content is clearly specific (e.g. GitHub -> code), use that
             if detected_type != artifact_type:
-                logger.info(f"Overriding path type '{artifact_type}' with detected type '{detected_type}'.")
+                logger.info(
+                    f"Overriding path type '{artifact_type}' with detected type '{detected_type}'."
+                )
                 artifact_type = detected_type
         else:
             # If unknown, rely on what the user specified in the API path
-            logger.info(f"URL classification unknown. Keeping path type '{artifact_type}'.")
+            logger.info(
+                f"URL classification unknown. Keeping path type '{artifact_type}'."
+            )
 
         # 2. Extract Repo ID using the resolved artifact_type
         repo = get_repo_id(url, artifact_type) or ""
@@ -358,8 +362,14 @@ def ingest_artifact(artifact_type, payload):
 
     # --- Validate Metrics ---
     non_latency_metrics = [
-        "bus_factor", "code_quality", "license", "ramp_up", 
-        "dataset_quality", "performance_claims", "dataset_and_code", "size"
+        "bus_factor",
+        "code_quality",
+        "license",
+        "ramp_up",
+        "dataset_quality",
+        "performance_claims",
+        "dataset_and_code",
+        "size",
     ]
 
     failing_metrics = []
@@ -367,14 +377,22 @@ def ingest_artifact(artifact_type, payload):
         score = scores.get(metric, 0)
         if isinstance(score, dict):
             val = sum(score.values()) / len(score) if score else 0
-            if val < 0.5: failing_metrics.append(f"{metric}: {val}")
+            if val < 0.5:
+                failing_metrics.append(f"{metric}: {val}")
         else:
-            if score < 0.5: failing_metrics.append(f"{metric}: {score}")
+            if score < 0.5:
+                failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
         # Uncomment to enforce quality gates:
-        return make_response(424, {"error": "Insufficient quality metrics", "failing_metrics": failing_metrics})
+        return make_response(
+            424,
+            {
+                "error": "Insufficient quality metrics",
+                "failing_metrics": failing_metrics,
+            },
+        )
 
     # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
@@ -389,7 +407,7 @@ def ingest_artifact(artifact_type, payload):
         tmp_zip_path_base = f"/tmp/{zip_name}"
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
-        
+
         model_id = str(uuid.uuid4())
         s3_key = f"models/{model_id}/{final_zip_name}"
 
@@ -433,7 +451,7 @@ def ingest_artifact(artifact_type, payload):
         )
 
         logger.info(f"Successfully ingested {artifact_type} {model_id}")
-        
+
         metadata = {
             "name": item.get("model_name"),
             "id": item.get("id"),
@@ -446,8 +464,11 @@ def ingest_artifact(artifact_type, payload):
         logger.error(f"Ingestion processing failed: {e}")
         return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
-        if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
-        if os.path.exists(tmp_zip_file): os.remove(tmp_zip_file)
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        if os.path.exists(tmp_zip_file):
+            os.remove(tmp_zip_file)
+
 
 def search_artifacts(query_array, query_params):
     """
