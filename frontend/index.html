@@ -20,6 +20,8 @@
             --radius: 0.75rem;
             --error-bg: #f8d7da;
             --error-text: #721c24;
+            --result-bg: #2d2d2d;
+            --result-text: #ffffff;
         }
 
         *, *::before, *::after {
@@ -168,22 +170,19 @@
             border-color: transparent;
         }
 
-        .output-container {
-            background: #2d2d2d;
-            color: #fff;
+        /* Result Box Styling */
+        .result-box {
+            background: var(--result-bg);
+            color: var(--result-text);
             padding: 1rem;
             border-radius: 0.5rem;
+            margin-top: 1rem;
             overflow-x: auto;
             border: 0.0625rem solid #000;
-        }
-
-        pre {
-            margin: 0;
-            white-space: pre-wrap;
+            white-space: pre-wrap; /* Preserve formatting but wrap lines */
             word-break: break-all;
             font-family: monospace;
             font-size: 0.9rem;
-            line-height: 1.5;
         }
 
         .hidden {
@@ -218,7 +217,6 @@
     <main id="main-content">
         <nav class="nav-header" aria-label="User Account">
             <button id="logout-btn" class="nav-btn hidden" onclick="handleLogout()">Log Out</button>
-            
             <button id="admin-btn" class="nav-btn hidden" onclick="openAdminModal()">Admin Actions</button>
         </nav>
 
@@ -239,11 +237,14 @@
         </section>
 
         <div id="dashboard" class="hidden">
+            
             <section class="section" aria-labelledby="upload-heading">
                 <h3 id="upload-heading">Upload Package</h3>
                 <label for="package-url">Package URL (GitHub/npm)</label>
                 <input type="url" id="package-url" placeholder="https://github.com/user/repo" autocomplete="url">
                 <button onclick="uploadPackage()">Upload</button>
+                
+                <div id="upload-result" class="result-box hidden" aria-live="polite"></div>
             </section>
 
             <section class="section" aria-labelledby="search-heading">
@@ -251,13 +252,8 @@
                 <label for="search-query">Query (Regex)</label>
                 <input type="text" id="search-query" value="*" autocomplete="off">
                 <button onclick="searchPackages()">Search</button>
-            </section>
-
-            <section class="section" aria-labelledby="output-heading">
-                <h3 id="output-heading">System Output</h3>
-                <div class="output-container" aria-live="polite" id="output-region">
-                    <pre id="output">Waiting for action...</pre>
-                </div>
+                
+                <div id="search-result" class="result-box hidden" aria-live="polite"></div>
             </section>
         </div>
     </main>
@@ -275,9 +271,18 @@
         let authToken = null;
         const adminModal = document.getElementById('admin-modal');
 
-        function log(data) {
-            const output = document.getElementById('output');
-            output.textContent = JSON.stringify(data, null, 2);
+        // Helper to display data in a specific result box
+        function displayResult(elementId, data) {
+            const el = document.getElementById(elementId);
+            el.textContent = JSON.stringify(data, null, 2);
+            el.classList.remove('hidden');
+        }
+
+        // Helper to clear a result box
+        function clearResult(elementId) {
+            const el = document.getElementById(elementId);
+            el.textContent = '';
+            el.classList.add('hidden');
         }
 
         function showLoginError(msg) {
@@ -292,6 +297,7 @@
             el.classList.add('hidden');
         }
 
+        // --- Modal Logic ---
         function openAdminModal() {
             adminModal.showModal();
         }
@@ -306,6 +312,7 @@
             }
         });
 
+        // --- Auth Logic ---
         async function handleLogin() {
             clearLoginError();
 
@@ -335,14 +342,11 @@
                     
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('dashboard').classList.remove('hidden');
-                    
                     document.getElementById('logout-btn').classList.remove('hidden');
                     document.getElementById('admin-btn').classList.remove('hidden');
 
                     const firstInput = document.getElementById('package-url');
                     if(firstInput) firstInput.focus();
-
-                    log("Login Successful");
                 } else {
                     showLoginError("Incorrect username or password");
                 }
@@ -358,25 +362,26 @@
 
             authToken = null;
             clearLoginError();
+            clearResult('upload-result');
+            clearResult('search-result');
 
             document.getElementById('dashboard').classList.add('hidden');
-            
             document.getElementById('logout-btn').classList.add('hidden');
             document.getElementById('admin-btn').classList.add('hidden');
             
             document.getElementById('login-section').classList.remove('hidden');
-
             document.getElementById('password').value = '';
             document.getElementById('username').value = '';
-            document.getElementById('output').textContent = "Logged out.";
-
             document.getElementById('username').focus();
         }
 
+        // --- Package Logic ---
         async function uploadPackage() {
+            clearResult('upload-result');
             const url = document.getElementById('package-url').value;
+            
             if(!url) {
-                log({ error: "URL is required." });
+                displayResult('upload-result', { error: "URL is required." });
                 return;
             }
             
@@ -390,13 +395,14 @@
                     body: JSON.stringify({ url: url })
                 });
                 const data = await res.json();
-                log(data);
+                displayResult('upload-result', data);
             } catch (err) {
-                log({ error: err.message });
+                displayResult('upload-result', { error: err.message });
             }
         }
 
         async function searchPackages() {
+            clearResult('search-result');
             const queryName = document.getElementById('search-query').value;
 
             try {
@@ -409,9 +415,9 @@
                     body: JSON.stringify([{ name: queryName }])
                 });
                 const data = await res.json();
-                log(data);
+                displayResult('search-result', data);
             } catch (err) {
-                log({ error: err.message });
+                displayResult('search-result', { error: err.message });
             }
         }
 
@@ -427,10 +433,10 @@
                     }
                 });
                 const data = await res.json();
-                log(data);
-                closeAdminModal(); 
+                alert(JSON.stringify(data, null, 2)); 
+                closeAdminModal();
             } catch (err) {
-                log({ error: err.message });
+                alert("Error: " + err.message);
             }
         }
     </script>
