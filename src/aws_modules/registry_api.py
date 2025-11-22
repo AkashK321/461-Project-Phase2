@@ -550,6 +550,8 @@ def search_artifacts(query_array, query_params):
         next_offset = str(page + 1)
         headers = {"Offset": next_offset}
 
+    logger.info(f"Returning {page_items} items for page {page}")
+
     return make_response(200, page_items, headers=headers)
 
 
