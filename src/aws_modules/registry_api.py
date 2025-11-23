@@ -57,6 +57,7 @@ SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 # Fall back to the specification defaults if not set
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "10"))
 
 FEATURE_FLAG_FORCE_INGESTION = os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
 
@@ -487,7 +488,7 @@ def search_artifacts(query_array, query_params):
     if page < 1:
         page = 1
 
-    page_size = 3
+    page_size = DEFAULT_PAGE_SIZE
 
     if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
         query = {}
