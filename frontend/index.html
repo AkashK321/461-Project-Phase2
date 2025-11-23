@@ -789,17 +789,8 @@
                 container.innerHTML = renderSearchResult(data);
                 container.classList.remove('hidden');
 
-<<<<<<< HEAD
             } catch (err) {
                 displayError('search-result', err.message);
-=======
-            if (res.headers.has('Offset')) {
-                nextSearchOffset = res.headers.get('Offset');
-                nextPageButton.classList.remove('hidden');
-            } else {
-                nextSearchOffset = null;
-                nextPageButton.classList.add('hidden');
->>>>>>> 08e970c (case issue)
             }
             log(res)
         }
