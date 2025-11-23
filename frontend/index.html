@@ -769,12 +769,7 @@
             clearResult('search-result');
             
             const queryName = document.getElementById('search-query').value;
-            const nextPageButton = document.getElementById('next-page-button');
-
-            if (isFirstPage) {
-                nextSearchOffset = null; // Reset pagination
-            }
-
+            
             try {
                 const res = await fetch(`${API_URL}/artifacts`, {
                     method: 'POST',
