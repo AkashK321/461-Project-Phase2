@@ -61,6 +61,8 @@ DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "10"))
 
 FEATURE_FLAG_FORCE_INGESTION = os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
 
+FEATURE_FLAG_FORCE_INGESTION = os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
+
 # Global flag to track if initialization has been performed
 _initialized = False
 
