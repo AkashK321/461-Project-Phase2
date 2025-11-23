@@ -59,6 +59,8 @@
         const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
         
         let authToken = null;
+        // pagination state for search results
+        let nextSearchOffset = null;
 
         function log(data) {
             document.getElementById('output').textContent = JSON.stringify(data, null, 2);
@@ -138,12 +140,11 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    queryStringParameters: nextSearchOffset ? { offset: nextSearchOffset } : {},
                     body: JSON.stringify([{ name: queryName }]) // Matches search_artifacts payload
                 });
                 const data = await res.json();
                 const offsetHeader = res.headers.get('Offset') || res.headers.get('offset');
-                log("OffserHeader is " + offsetHeader);
+                console.log("OffserHeader is " + offsetHeader);
 
                 if (offsetHeader) {
                     nextSearchOffset = offsetHeader;
