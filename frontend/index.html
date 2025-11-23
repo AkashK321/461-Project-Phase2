@@ -151,7 +151,7 @@
                     nextSearchOffset = null;
                     nextPageButton.classList.add('hidden');
                 }
-                log(data + offsetHeader ? ` (Next Offset: ${offsetHeader})` : '');
+                log(res.headers);
             } catch (err) {
                 log({ error: err.message });
             }
