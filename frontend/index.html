@@ -138,19 +138,17 @@
                     body: JSON.stringify([{ name: queryName }]) // Matches search_artifacts payload
                 });
                 const data = await res.json();
+                if (res.headers.has('Offset')) {
+                    nextSearchOffset = res.headers.get('Offset');
+                    nextPageButton.classList.remove('hidden');
+                } else {
+                    nextSearchOffset = null;
+                    nextPageButton.classList.add('hidden');
+                }
                 log(data);
             } catch (err) {
                 log({ error: err.message });
             }
-
-            if (res.headers.has('Offset')) {
-                nextSearchOffset = res.headers.get('Offset');
-                nextPageButton.classList.remove('hidden');
-            } else {
-                nextSearchOffset = null;
-                nextPageButton.classList.add('hidden');
-            }
-            log(res)
         }
 
         async function resetRegistry() {
