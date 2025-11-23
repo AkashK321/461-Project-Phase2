@@ -144,7 +144,8 @@
                 });
                 const data = await res.json();
                 const offsetHeader = res.headers.get('Offset') || res.headers.get('offset');
-                console.log("OffserHeader is " + offsetHeader);
+                console.log("headers:", [...res.headers.entries()]);
+                console.log("OffsetHeader is " + offsetHeader);
 
                 if (offsetHeader) {
                     nextSearchOffset = offsetHeader;
