@@ -776,7 +776,11 @@
             }
 
             try {
-                const res = await fetch(`${API_URL}/artifacts`, {
+                const url = new URL(`${API_URL}/artifacts`);
+                if (nextSearchOffset) {
+                    url.searchParams.append('offset', nextSearchOffset);
+                }
+                const res = await fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
