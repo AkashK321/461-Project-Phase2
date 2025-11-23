@@ -769,7 +769,7 @@
             clearResult('search-result');
             
             const queryName = document.getElementById('search-query').value;
-            
+
             try {
                 const res = await fetch(`${API_URL}/artifacts`, {
                     method: 'POST',
