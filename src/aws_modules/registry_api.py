@@ -552,9 +552,19 @@ def search_artifacts(query_array, query_params):
         next_offset = str(page + 1)
         headers = {"Offset": next_offset}
 
-    logger.info(f"Returning {page_items} items for page {page}")
+    artifacts = []
 
-    return make_response(200, page_items, headers)
+    for it in page_items:
+        artifact = {
+            "name": it.get("model_name"),
+            "id": it.get("id"),
+            "type": it.get("type"),
+        }
+        artifacts.append(artifact)
+
+    logger.info(f"Returning {artifacts} items for page {page}")
+
+    return make_response(200, artifacts, headers)
 
 
 def get_lineage_graph(start_art_id):
