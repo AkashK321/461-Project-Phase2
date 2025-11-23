@@ -40,7 +40,8 @@
         <div class="section">
             <h3>Search Packages</h3>
             <label>Query (Regex): <input type="text" id="search-query" value="*"></label>
-            <button onclick="searchPackages()">Search</button>
+            <button onclick="searchPackages(true)">Search</button>
+            <button id="next-page-button" class="hidden" onclick="searchPackages(false)">Next Page</button>
         </div>
 
         <div class="section">
@@ -118,8 +119,13 @@
             }
         }
 
-        async function searchPackages() {
+        async function searchPackages(isFirstPage) {
             const queryName = document.getElementById('search-query').value;
+            const nextPageButton = document.getElementById('next-page-button');
+
+            if (isFirstPage) {
+                nextSearchOffset = null; // Reset pagination
+            }
 
             try {
                 const res = await fetch(`${API_URL}/artifacts`, {
@@ -128,12 +134,21 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
+                    queryStringParameters: nextSearchOffset ? { offset: nextSearchOffset } : {},
                     body: JSON.stringify([{ name: queryName }]) // Matches search_artifacts payload
                 });
                 const data = await res.json();
                 log(data);
             } catch (err) {
                 log({ error: err.message });
+            }
+
+            if (res.headers.has('offset')) {
+                nextSearchOffset = res.headers.get('offset');
+                nextPageButton.classList.remove('hidden');
+            } else {
+                nextSearchOffset = null;
+                nextPageButton.classList.add('hidden');
             }
         }
 
