@@ -58,6 +58,8 @@ SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
 
+FEATURE_FLAG_FORCE_INGESTION = os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
+
 # Global flag to track if initialization has been performed
 _initialized = False
 
@@ -381,16 +383,16 @@ def ingest_artifact(artifact_type, payload):
             if score < 0.5:
                 failing_metrics.append(f"{metric}: {score}")
     
-    # if failing_metrics:
-    #     logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-    #     # Uncomment to enforce quality gates:
-    #     return make_response(
-    #         424,
-    #         {
-    #             "error": "Insufficient quality metrics",
-    #             "failing_metrics": failing_metrics,
-    #         },
-    #     )
+    if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
+        logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
+        # Uncomment to enforce quality gates:
+        return make_response(
+            424,
+            {
+                "error": "Insufficient quality metrics",
+                "failing_metrics": failing_metrics,
+            },
+        )
 
     # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
