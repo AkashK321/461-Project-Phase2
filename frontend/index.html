@@ -5,69 +5,687 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Package Registry</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        .section { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 5px; }
-        label { display: block; margin-top: 0.5rem; }
-        input, button { margin-top: 0.5rem; padding: 0.5rem; width: 100%; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; border: none; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        button.delete { background-color: #dc3545; }
-        button.delete:hover { background-color: #a71d2a; }
-        pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; }
-        .hidden { display: none; }
+        :root {
+            --primary-color: #004494;
+            --primary-hover: #003377;
+            --secondary-color: #5a6268;
+            --secondary-hover: #4e555b;
+            --danger-color: #a71d2a;
+            --danger-hover: #8c1823;
+            --text-color: #212529;
+            --bg-color: #f4f4f4;
+            --card-bg: #ffffff;
+            --input-border: #595959;
+            --focus-ring: #0056b3;
+            --radius: 0.75rem;
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
+            --success-bg: #d4edda;
+            --success-text: #155724;
+            --row-hover: #f1f3f5;
+            --row-active: #e2e6ea;
+            --detail-bg: #f8f9fa;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 1rem;
+            line-height: 1.6;
+            font-size: 100%;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -3rem;
+            left: 0;
+            background: var(--primary-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            z-index: 100;
+            text-decoration: none;
+            border-radius: 0 0 0.5rem 0;
+        }
+        .skip-link:focus {
+            top: 0;
+        }
+
+        main {
+            width: 100%;
+            max-width: 50rem;
+            margin: 0 auto;
+        }
+
+        .nav-header {
+            display: flex;
+            justify-content: space-between; 
+            align-items: center;
+            min-height: 3rem; 
+            margin-bottom: 1rem;
+        }
+
+        .nav-btn {
+            width: auto;
+            margin: 0;
+            background-color: var(--secondary-color);
+            padding: 0.5rem 1.2rem;
+            font-size: 1rem;
+        }
+        .nav-btn:hover {
+            background-color: var(--secondary-hover);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2rem;
+            color: #111;
+            line-height: 1.3;
+        }
+
+        h2, h3 {
+            color: #333;
+            margin-top: 0;
+            line-height: 1.4;
+        }
+
+        .section {
+            background: var(--card-bg);
+            border: 0.125rem solid var(--input-border);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-radius: var(--radius);
+            box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.05);
+            height: auto;
+        }
+
+        .error-msg {
+            background-color: var(--error-bg);
+            color: var(--error-text);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--error-text);
+            margin-bottom: 1rem;
+            font-weight: bold;
+        }
+
+        label {
+            display: block;
+            margin-top: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            line-height: 1.5;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.8rem;
+            border: 0.125rem solid var(--input-border);
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            background-color: #fff;
+            color: var(--text-color);
+            min-height: 3rem;
+            line-height: 1.5;
+        }
+
+        button {
+            display: inline-block;
+            margin-top: 1.5rem;
+            width: 100%;
+            padding: 0.8rem;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: white;
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            height: auto;
+            min-height: 3rem;
+            white-space: normal;
+            line-height: 1.5;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.delete {
+            background-color: var(--danger-color);
+        }
+        button.delete:hover {
+            background-color: var(--danger-hover);
+        }
+
+        input:focus, button:focus {
+            outline: 0.25rem solid var(--focus-ring);
+            outline-offset: 0.125rem;
+            border-color: transparent;
+        }
+
+        /* Result Area Styling */
+        .result-container {
+            margin-top: 1.5rem;
+            border-top: 1px solid #ccc;
+            padding-top: 1rem;
+        }
+
+        /* --- Search Table Styling --- */
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.95rem;
+        }
+        
+        .result-table th, .result-table td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .result-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .main-row {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .main-row:hover { background-color: var(--row-hover); }
+        .main-row.expanded { background-color: var(--row-active); }
+        
+        .expand-icon {
+            display: inline-block;
+            margin-right: 0.5rem;
+            font-size: 0.8em;
+            color: #555;
+            transition: transform 0.2s ease;
+            transform: rotate(0deg); 
+        }
+        .main-row.expanded .expand-icon { transform: rotate(90deg); }
+
+        .detail-row td {
+            background-color: var(--detail-bg);
+            padding: 0;
+            border-bottom: 1px solid #ccc;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .detail-content {
+            padding: 1.5rem;
+            color: #333;
+        }
+
+        /* Detail Grid Layout */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .detail-item {
+            background: #fff;
+            padding: 0.75rem;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+
+        .detail-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+            font-weight: 700;
+        }
+
+        .detail-value {
+            font-size: 0.95rem;
+            font-weight: 500;
+            word-break: break-all;
+        }
+        
+        /* Special link style for S3 key */
+        .download-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .download-link:hover {
+            text-decoration: underline;
+            color: var(--primary-hover);
+        }
+
+        /* --- Scores Dropdown & Table --- */
+        details.scores-dropdown {
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        details.scores-dropdown summary {
+            padding: 0.75rem 1rem;
+            background-color: #f1f3f5;
+            cursor: pointer;
+            font-weight: bold;
+            user-select: none;
+            outline: none;
+        }
+        
+        details.scores-dropdown summary:hover {
+            background-color: #e9ecef;
+        }
+        
+        details.scores-dropdown summary:focus {
+            box-shadow: inset 0 0 0 2px var(--focus-ring);
+        }
+
+        .scores-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .scores-table th, .scores-table td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .scores-table th {
+            background-color: #fff;
+            color: #555;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .scores-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        /* Success Card */
+        .success-card {
+            background-color: var(--success-bg);
+            color: var(--success-text);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #c3e6cb;
+        }
+        .success-card h4 { margin: 0 0 0.5rem 0; }
+        .success-card p { margin: 0.25rem 0; }
+
+        .hidden { display: none !important; }
+
+        /* Modal Styles */
+        dialog {
+            border: none;
+            border-radius: var(--radius);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 2rem;
+            max-width: 90%;
+            width: 400px;
+            background: var(--card-bg);
+            color: var(--text-color);
+        }
+        dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+
+        @media (max-width: 40rem) {
+            .section { padding: 1rem; }
+            .result-table th, .result-table td { padding: 0.5rem; font-size: 0.85rem; }
+            .detail-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
 
-    <h1>Package Registry UI</h1>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
 
-    <div id="login-section" class="section">
-        <h2>Login</h2>
-        <label>Username: <input type="text" id="username" placeholder="Enter username"></label>
-        <label>Password: <input type="password" id="password" placeholder="Enter password"></label>
-        <button onclick="handleLogin()">Login</button>
-    </div>
+    <main id="main-content">
+        <nav class="nav-header" aria-label="User Account">
+            <button id="logout-btn" class="nav-btn hidden" onclick="handleLogout()">Log Out</button>
+            <button id="admin-btn" class="nav-btn hidden" onclick="openAdminModal()">Admin Actions</button>
+        </nav>
 
-    <div id="dashboard" class="section hidden">
-        <p>Welcome! Token: <span id="token-display">...</span></p>
-        
-        <div class="section">
-            <h3>Upload Package</h3>
-            <label>Package URL (GitHub/npm): <input type="text" id="package-url" placeholder="https://github.com/user/repo"></label>
-            <button onclick="uploadPackage()">Upload</button>
+        <h1>Package Registry UI</h1>
+
+        <section id="login-section" class="section" aria-labelledby="login-heading">
+            <h2 id="login-heading">Login</h2>
+            
+            <div id="login-error" class="error-msg hidden" role="alert"></div>
+
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username" autocomplete="username" required>
+            
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password" autocomplete="current-password" required>
+            
+            <button onclick="handleLogin()">Login</button>
+        </section>
+
+        <div id="dashboard" class="hidden">
+            
+            <section class="section" aria-labelledby="upload-heading">
+                <h3 id="upload-heading">Upload Package</h3>
+                <label for="package-url">Package URL</label>
+                <input type="url" id="package-url" placeholder="https://github.com/user/repo" autocomplete="url">
+                <button onclick="uploadPackage()">Upload</button>
+                
+                <div id="upload-result" class="result-container hidden" aria-live="polite"></div>
+            </section>
+
+            <section class="section" aria-labelledby="search-heading">
+                <h3 id="search-heading">Search Packages</h3>
+                <label for="search-query">Query (Regex)</label>
+                <input type="text" id="search-query" value="*" autocomplete="off">
+                <button onclick="searchPackages()">Search</button>
+                
+                <div id="search-result" class="result-container hidden" aria-live="polite"></div>
+            </section>
         </div>
+    </main>
 
-        <div class="section">
-            <h3>Search Packages</h3>
-            <label>Query (Regex): <input type="text" id="search-query" value="*"></label>
-            <button onclick="searchPackages()">Search</button>
-        </div>
-
-        <div class="section">
-            <h3>Admin</h3>
-            <button class="delete" onclick="resetRegistry()">Reset Registry</button>
-        </div>
-
-        <div class="section">
-            <h3>Output</h3>
-            <pre id="output">Waiting for action...</pre>
-        </div>
-    </div>
+    <dialog id="admin-modal">
+        <h3 id="admin-modal-title">Admin Actions</h3>
+        <p>Warning: These actions affect the entire registry.</p>
+        <button class="delete" onclick="resetRegistry()">Reset Registry</button>
+        <button onclick="closeAdminModal()" style="background-color: var(--secondary-color); margin-top: 1rem;">Close</button>
+    </dialog>
 
     <script>
         const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
         
         let authToken = null;
+        const adminModal = document.getElementById('admin-modal');
 
-        function log(data) {
-            document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+        // --- Helpers ---
+        function clearResult(elementId) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = '';
+            el.classList.add('hidden');
+        }
+
+        function displayError(elementId, errorMsg) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = `<div class="error-msg">${errorMsg}</div>`;
+            el.classList.remove('hidden');
+        }
+
+        function renderUploadResult(data) {
+            if (data.metadata) {
+                const meta = data.metadata;
+                return `
+                    <div class="success-card">
+                        <h4>✅ Upload Successful</h4>
+                        <p><strong>Name:</strong> ${meta.name || 'N/A'}</p>
+                        <p><strong>Version:</strong> ${meta.version || '1.0.0'}</p>
+                        <p><strong>ID:</strong> ${meta.id}</p>
+                    </div>
+                `;
+            } 
+            return `<div style="background:#333; color:#fff; padding:1rem;">${JSON.stringify(data, null, 2)}</div>`;
+        }
+
+        function formatKey(key) {
+            return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function extractScores(item, excludedKeys, scoreKeywords) {
+            const foundScores = {};
+            if (item.scores && typeof item.scores === 'object' && !Array.isArray(item.scores)) {
+                for (const [sKey, sVal] of Object.entries(item.scores)) {
+                    foundScores[sKey] = sVal;
+                }
+            }
+            for (const [key, value] of Object.entries(item)) {
+                if (excludedKeys.includes(key) || key === 'scores') continue;
+                if (scoreKeywords.some(kw => key.toLowerCase().includes(kw))) {
+                    foundScores[key] = value;
+                }
+            }
+            return foundScores;
+        }
+
+        // --- Logic to Download Artifact ---
+        async function downloadArtifact(type, id) {
+            const artifactType = type || 'model'; 
+
+            try {
+                const res = await fetch(`${API_URL}/artifacts/${artifactType}/${id}`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Authorization': `bearer ${authToken}`
+                    }
+                });
+
+                if (!res.ok) throw new Error("Failed to fetch download URL");
+                
+                const json = await res.json();
+                const downloadUrl = json.data && json.data.download_url;
+
+                if (downloadUrl) {
+                    window.open(downloadUrl, '_blank');
+                } else {
+                    alert("No download URL available for this artifact.");
+                }
+
+            } catch (err) {
+                alert("Download failed: " + err.message);
+            }
+        }
+
+        function renderDetailView(item) {
+            const excludedKeys = ['model_name', 'Name', 'version', 'id']; 
+            const scoreKeywords = [
+                'net_score', 'ramp_up', 'correctness', 'bus_factor', 
+                'responsive_maintainer', 'license', 'dependency_pinning', 
+                'code_review', 'code_quality', 'dataset_quality', 
+                'performance_claims', 'dataset_and_code', 'size',
+                'netscore'
+            ];
+
+            const scoresObj = extractScores(item, excludedKeys, scoreKeywords);
+            const scoreKeys = Object.keys(scoresObj);
+
+            let generalHtml = '';
+            for (const [key, value] of Object.entries(item)) {
+                if (excludedKeys.includes(key)) continue;
+                if (key === 'scores') continue; 
+                if (scoreKeys.includes(key)) continue; 
+
+                let displayValue = value;
+                
+                if (key === 's3_key') {
+                    const safeType = item.type || 'model';
+                    displayValue = `<a href="#" class="download-link" onclick="downloadArtifact('${safeType}', '${item.id}'); return false;">${value} ⬇</a>`;
+                }
+                else if (typeof value === 'object' && value !== null) {
+                    displayValue = JSON.stringify(value); 
+                } 
+                else if (String(value).startsWith('http')) {
+                    displayValue = `<a href="${value}" target="_blank" rel="noopener noreferrer">Link</a>`;
+                }
+
+                generalHtml += `
+                    <div class="detail-item">
+                        <div class="detail-label">${formatKey(key)}</div>
+                        <div class="detail-value">${displayValue}</div>
+                    </div>
+                `;
+            }
+
+            let scoresRows = '';
+            if (scoreKeys.length > 0) {
+                scoreKeys.sort().forEach(key => {
+                    let val = scoresObj[key];
+                    let displayVal = val;
+
+                    if (typeof val === 'object' && val !== null) {
+                         const subEntries = Object.entries(val).map(([k, v]) => {
+                            return `<li><span style="color:#555; font-weight:500;">${formatKey(k)}:</span> ${v}</li>`;
+                        }).join('');
+                        displayVal = `<ul style="margin:0; padding-left:1.2rem; font-size:0.85rem;">${subEntries}</ul>`;
+                    }
+
+                    scoresRows += `
+                        <tr>
+                            <td style="width: 40%;"><strong>${formatKey(key)}</strong></td>
+                            <td>${displayVal}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            let output = '';
+
+            if (generalHtml) {
+                output += `<div class="detail-grid">${generalHtml}</div>`;
+            } else {
+                output += '<p style="color:#666; font-style:italic;">No general details available.</p>';
+            }
+
+            if (scoresRows) {
+                output += `
+                    <details class="scores-dropdown">
+                        <summary>Quality Scores</summary>
+                        <table class="scores-table">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${scoresRows}
+                            </tbody>
+                        </table>
+                    </details>
+                `;
+            }
+
+            return output;
+        }
+
+        function renderSearchResult(data) {
+            if (Array.isArray(data)) {
+                if (data.length === 0) {
+                    return `<p>No packages found matching your query.</p>`;
+                }
+
+                const rows = data.map((item, index) => {
+                    const detailId = `detail-${index}`;
+                    const formattedDetails = renderDetailView(item);
+                    
+                    return `
+                        <tr class="main-row" 
+                            id="row-${index}"
+                            onclick="toggleRow('${detailId}', 'row-${index}')" 
+                            onkeydown="handleRowKey(event, '${detailId}', 'row-${index}')"
+                            tabindex="0" 
+                            role="button" 
+                            aria-expanded="false" 
+                            aria-controls="${detailId}">
+                            
+                            <td><span class="expand-icon">▶</span> ${item.model_name || item.Name || 'Unknown'}</td>
+                            <td>${item.version || 'N/A'}</td>
+                            <td><code>${item.id}</code></td>
+                        </tr>
+                        <tr id="${detailId}" class="detail-row hidden">
+                            <td colspan="3">
+                                <div class="detail-content">${formattedDetails}</div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                return `
+                    <table class="result-table" role="grid">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Version</th>
+                                <th>ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                    <p style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Tip: Click a row to see full details.</p>
+                `;
+            }
+            return `<div style="background:#333; color:#fff; padding:1rem;">${JSON.stringify(data, null, 2)}</div>`;
+        }
+
+        function toggleRow(detailId, mainRowId) {
+            const detailRow = document.getElementById(detailId);
+            const mainRow = document.getElementById(mainRowId);
+            
+            const isHidden = detailRow.classList.contains('hidden');
+
+            if (isHidden) {
+                detailRow.classList.remove('hidden');
+                mainRow.classList.add('expanded');
+                mainRow.setAttribute('aria-expanded', 'true');
+            } else {
+                detailRow.classList.add('hidden');
+                mainRow.classList.remove('expanded');
+                mainRow.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function handleRowKey(event, detailId, mainRowId) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleRow(detailId, mainRowId);
+            }
+        }
+
+        // --- Modal & Auth Logic ---
+        function openAdminModal() { adminModal.showModal(); }
+        function closeAdminModal() { adminModal.close(); }
+        
+        adminModal.addEventListener('click', (event) => {
+            if (event.target === adminModal) adminModal.close();
+        });
+
+        function showLoginError(msg) {
+            const el = document.getElementById('login-error');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+        }
+
+        function clearLoginError() {
+            const el = document.getElementById('login-error');
+            el.textContent = '';
+            el.classList.add('hidden');
         }
 
         async function handleLogin() {
+            clearLoginError();
             const name = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
-            // Match structure expected by registry_api.py and auth.py
+            if(!name || !password) {
+                showLoginError("Username and password are required.");
+                return;
+            }
+
             const payload = {
                 user: { name: name, is_admin: true },
                 secret: { password: password }
@@ -79,28 +697,54 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
-                const data = await res.json();
                 
                 if (res.ok) {
-                    // Your API returns specific string format: "bearer <token>"
-                    // We need to clean it up to use in headers
+                    const data = await res.json();
                     authToken = data.replace(/"/g, '').split(' ')[1]; 
                     
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('dashboard').classList.remove('hidden');
-                    document.getElementById('token-display').textContent = "Active";
-                    log("Login Successful");
+                    document.getElementById('logout-btn').classList.remove('hidden');
+                    document.getElementById('admin-btn').classList.remove('hidden');
+
+                    const firstInput = document.getElementById('package-url');
+                    if(firstInput) firstInput.focus();
                 } else {
-                    log(data);
+                    showLoginError("Incorrect username or password");
                 }
             } catch (err) {
-                log({ error: err.message });
+                showLoginError("Failed to connect to authentication service.");
             }
         }
 
+        function handleLogout() {
+            if (!confirm("Are you sure you want to log out?")) return;
+
+            authToken = null;
+            clearLoginError();
+            clearResult('upload-result');
+            clearResult('search-result');
+
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('logout-btn').classList.add('hidden');
+            document.getElementById('admin-btn').classList.add('hidden');
+            document.getElementById('login-section').classList.remove('hidden');
+            
+            document.getElementById('password').value = '';
+            document.getElementById('username').value = '';
+            document.getElementById('username').focus();
+        }
+
+        // --- Feature Logic ---
         async function uploadPackage() {
+            const container = document.getElementById('upload-result');
+            clearResult('upload-result');
+            
             const url = document.getElementById('package-url').value;
+            if(!url) {
+                displayError('upload-result', "URL is required.");
+                return;
+            }
             
             try {
                 const res = await fetch(`${API_URL}/artifact/model`, {
@@ -109,16 +753,21 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    body: JSON.stringify({ url: url }) // Matches ingest_artifact payload
+                    body: JSON.stringify({ url: url })
                 });
                 const data = await res.json();
-                log(data);
+                container.innerHTML = renderUploadResult(data);
+                container.classList.remove('hidden');
+
             } catch (err) {
-                log({ error: err.message });
+                displayError('upload-result', err.message);
             }
         }
 
         async function searchPackages() {
+            const container = document.getElementById('search-result');
+            clearResult('search-result');
+            
             const queryName = document.getElementById('search-query').value;
 
             try {
@@ -128,12 +777,15 @@
                         'Content-Type': 'application/json',
                         'X-Authorization': `bearer ${authToken}`
                     },
-                    body: JSON.stringify([{ name: queryName }]) // Matches search_artifacts payload
+                    body: JSON.stringify([{ name: queryName }])
                 });
                 const data = await res.json();
-                log(data);
+                
+                container.innerHTML = renderSearchResult(data);
+                container.classList.remove('hidden');
+
             } catch (err) {
-                log({ error: err.message });
+                displayError('search-result', err.message);
             }
         }
 
@@ -149,9 +801,10 @@
                     }
                 });
                 const data = await res.json();
-                log(data);
+                alert(JSON.stringify(data, null, 2)); 
+                closeAdminModal();
             } catch (err) {
-                log({ error: err.message });
+                alert("Error: " + err.message);
             }
         }
     </script>
