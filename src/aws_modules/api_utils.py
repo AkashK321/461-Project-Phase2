@@ -27,7 +27,7 @@ def make_response(status, body, headers=None):
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "*",
         "Access-Control-Allow-Headers": "*",
-        "Access-Control-Expose-Headers": "Offset, offset",
+        "Access-Control-Expose-Headers": "Offset",
     }
 
     final_headers.update(headers)
