@@ -769,12 +769,9 @@
             clearResult('search-result');
             
             const queryName = document.getElementById('search-query').value;
-            
+
             try {
                 const url = new URL(`${API_URL}/artifacts`);
-                if (nextSearchOffset) {
-                    url.searchParams.append('offset', nextSearchOffset);
-                }
                 const res = await fetch(`${API_URL}/artifacts`, {
                     method: 'POST',
                     headers: {
