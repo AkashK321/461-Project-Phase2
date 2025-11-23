@@ -142,10 +142,39 @@
                     },
                     body: JSON.stringify([{ name: queryName }]) // Matches search_artifacts payload
                 });
-                const data = await res.json();
-                const offsetHeader = res.headers.get('Offset') || res.headers.get('offset');
-                console.log("headers:", [...res.headers.entries()]);
-                console.log("OffsetHeader is " + offsetHeader);
+                // Clone the response so we can inspect the raw text and the parsed JSON
+                const resClone = res.clone();
+
+                // Log high-level response info
+                console.log('response object:', res);
+                console.log('status:', res.status, 'ok:', res.ok, 'type:', res.type, 'url:', res.url);
+
+                // Log all headers visible to JS
+                const headerEntries = [...res.headers.entries()];
+                console.log('headers (JS-visible):', headerEntries);
+
+                // Specifically check CORS expose header and offset header
+                const expose = res.headers.get('Access-Control-Expose-Headers') || res.headers.get('access-control-expose-headers');
+                const offsetHeader = res.headers.get('Offset') || res.headers.get('offset') || res.headers.get('OFFSET');
+                console.log('Access-Control-Expose-Headers:', expose);
+                console.log('Offset header (from res.headers.get):', offsetHeader);
+
+                // Also log the raw body text for debugging (use the clone)
+                const rawText = await resClone.text();
+                console.log('raw body text:', rawText);
+
+                // Finally parse JSON from original response (or fallback)
+                let data;
+                try {
+                    data = await res.json();
+                } catch (err) {
+                    console.error('Failed to parse JSON from response:', err);
+                    try {
+                        data = JSON.parse(rawText);
+                    } catch (e) {
+                        data = rawText;
+                    }
+                }
 
                 if (offsetHeader) {
                     nextSearchOffset = offsetHeader;
