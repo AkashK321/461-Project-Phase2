@@ -487,7 +487,7 @@ def search_artifacts(query_array, query_params):
     if page < 1:
         page = 1
 
-    page_size = 50
+    page_size = 3
 
     if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
         query = {}
