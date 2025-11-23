@@ -321,7 +321,8 @@ def ingest_artifact(artifact_type, payload):
             repo = parts[-1] if parts else "unknown_repo"
 
         parts = repo.split("/", 1)
-        name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        parsed_name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        name = payload.get("name", parsed_name).strip()
         logger.info(f"Derived Artifact Name: {name}")
 
     except KeyError:
