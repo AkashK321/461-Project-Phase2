@@ -143,8 +143,8 @@
                 log({ error: err.message });
             }
 
-            if (res.headers.has('offset')) {
-                nextSearchOffset = res.headers.get('offset');
+            if (res.headers.has('Offset')) {
+                nextSearchOffset = res.headers.get('Offset');
                 nextPageButton.classList.remove('hidden');
             } else {
                 nextSearchOffset = null;
