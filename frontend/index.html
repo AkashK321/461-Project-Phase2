@@ -800,6 +800,7 @@
 
                 // capture next offset from response headers
                 const newOffset = res.headers.get('Offset');
+                console.log("Next Offset:", newOffset);
                 lastOffset = newOffset || null;
 
                 const data = await res.json();
