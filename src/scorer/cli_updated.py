@@ -411,7 +411,7 @@ def main() -> None:
             size_score = compute_size_score(size_dict)
 
             net_score = (
-                SIZE_WEIGHT * avg_size
+                SIZE_WEIGHT * size_score
                 + LICENSE_WEIGHT * license
                 + RAMP_UP_WEIGHT * ramp_up
                 + BUS_FACTOR_WEIGHT * bus_factor
