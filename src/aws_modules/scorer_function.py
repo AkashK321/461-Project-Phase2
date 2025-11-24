@@ -149,7 +149,7 @@ def score_url(url: str, url_type: str) -> dict:
     final_output = {**results, **latencies}
     return final_output
 
-
+    
 def handler(event, context):
     """
     AWS Lambda entry point.
