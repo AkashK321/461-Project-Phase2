@@ -12,7 +12,6 @@ import shutil
 import tempfile
 import datetime as dt
 from pathlib import Path
-from typing import Dict, Set, Tuple, List
 from collections import defaultdict
 from urllib.parse import urlparse
 from git import Repo, GitCommandError
