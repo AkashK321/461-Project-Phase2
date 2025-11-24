@@ -232,7 +232,9 @@ def get_validated_user(event):
         payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=["HS256"])
 
         # ---- 1000-use limit ----
-        remaining = _token_use_counts.get(raw_token, payload.get("uses", TOKEN_USE_LIMIT))
+        remaining = _token_use_counts.get(
+            raw_token, payload.get("uses", TOKEN_USE_LIMIT)
+        )
 
         if remaining <= 0:
             logger.warning("Token has exceeded its allowed number of uses")
@@ -263,4 +265,3 @@ def get_validated_user(event):
     except Exception as e:
         logger.error(f"Unexpected error validating token: {e}")
         return None
-

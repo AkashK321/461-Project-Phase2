@@ -757,8 +757,7 @@ def handler(event, context):
     if method == "POST" and path == "/users":
         if "admin" not in user_roles:
             return make_response(
-                403,
-                {"error": "Permission denied: 'admin' role required"}
+                403, {"error": "Permission denied: 'admin' role required"}
             )
         return register_user(body, user_roles)
 
