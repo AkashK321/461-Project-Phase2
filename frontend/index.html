@@ -779,7 +779,6 @@
                     body: JSON.stringify([{ name: queryName }])
                 });
                 const data = await res.json();
-                console.log(data);
                 console.log(res.headers.entries);
                 
                 container.innerHTML = renderSearchResult(data);
@@ -788,7 +787,6 @@
             } catch (err) {
                 displayError('search-result', err.message);
             }
-            log(res)
         }
 
         async function resetRegistry() {

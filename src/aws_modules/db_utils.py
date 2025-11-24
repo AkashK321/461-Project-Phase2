@@ -127,7 +127,9 @@ def get_model_by_model_name(name, dynamodb_resource=None):
             items = response.get("Items", [])
         except TypeError:
             response = tbl.scan()
-            items = [it for it in response.get("Items", []) if it.get("model_name") == name]
+            items = [
+                it for it in response.get("Items", []) if it.get("model_name") == name
+            ]
         if items:
             return items  # Assume model_name is unique
         return None
