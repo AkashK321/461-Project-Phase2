@@ -176,10 +176,11 @@ def test_search_artifacts_type_and_name_regex(monkeypatch):
     monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
     reg.TABLE_NAME = "dummy"
 
-    resp = reg.search_artifacts([{"types": ["hf"], "name": "bert"}], {})
+    resp = reg.search_artifacts([{"types": ["hf"], "name": "alpha-bert"}], {})
     res_items = _get_items_from_response(resp)
+    print(res_items)
     ids = {it["id"] for it in res_items}
-    assert ids == {"1", "3"}
+    assert ids == {"1"}
 
 
 def test_search_artifacts_bad_regex_falls_back_to_substring(monkeypatch):

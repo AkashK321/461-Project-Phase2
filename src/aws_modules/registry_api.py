@@ -713,7 +713,8 @@ def get_artifacts_by_name(name):
     Handle GET /artifact/byName/{name}
     Finds and returns metadata for all artifacts matching a given name.
     """
-    items = get_model_by_model_name(name)
+    # Pass this module's dynamodb to allow callers/tests to inject a fake resource.
+    items = get_model_by_model_name(name, dynamodb_resource=dynamodb)
 
     if not items:
         return make_response(404, {"error": "No such artifact."})
