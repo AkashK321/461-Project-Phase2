@@ -263,9 +263,11 @@ def _authors_by_file(dl, total_by_file, contributors, creators) -> Dict[str, Set
         }
 
         # Only keep authors with significant DOA for this file
-        authors_of_file[f] = {
-            a for a, doa in doa_by_author.items() if doa >= DOA_THRESHOLD
-        } if doa_by_author else set()
+        authors_of_file[f] = (
+            {a for a, doa in doa_by_author.items() if doa >= DOA_THRESHOLD}
+            if doa_by_author
+            else set()
+        )
 
     return authors_of_file
 
