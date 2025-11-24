@@ -358,17 +358,25 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
         readme = _read_first_readme(temp_dir)
         tree = _top_level_summary(temp_dir, max_files=120)
 
-        score = _ask_llm(readme, tree)
-        if score is None:
-            score = _heuristic_rampup(readme, tree)
+        llm_score = _ask_llm(readme, tree)
+
+        if llm_score is not None:
+            # Clamp LLM score to valid range
+            llm_score = max(0.0, min(1.0, float(llm_score)))
+
+            latency_ms = int((time.time() - start) * 1000)
+            return llm_score, latency_ms
+
+
+        # Fallback heuristic
+        score = _heuristic_rampup(readme, tree)
+        base_score = score
 
         readme_text = readme or ""
         readme_len = len(readme_text)
 
-        # README length bonus: up to +0.10
         length_boost = min(0.10, (readme_len / 15000) * 0.10)
 
-        # Documentation keyword bonus: up to +0.15
         doc_keywords = [
             "install",
             "installation",
@@ -384,15 +392,19 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
         hits = sum(1 for k in doc_keywords if k in readme_text.lower())
         doc_boost = min(0.15, hits * 0.03)
 
-        # Repo structure bonus: up to +0.05
         tree_lines = tree.split("\n")
         structure_boost = 0.05 if len(tree_lines) > 15 else 0.0
-
-        # Tiny repo penalty: up to -0.20
         tiny_penalty = -0.20 if len(tree_lines) < 6 else 0.0
 
-        # Apply combined adjustments
-        score = score + length_boost + doc_boost + structure_boost + tiny_penalty
+        raw = score + length_boost + doc_boost + structure_boost + tiny_penalty
+
+        # Diminishing returns only on heuristic path
+        score = raw * (1 - 0.15 * raw)
+
+        # Don't let it drop below heuristic minimum
+        if score < base_score:
+            score = base_score
+
         score = max(0.0, min(1.0, score))
 
         latency_ms = int((time.time() - start) * 1000)
