@@ -392,12 +392,8 @@
             <section class="section" aria-labelledby="search-heading">
                 <h3 id="search-heading">Search Packages</h3>
                 <label for="search-query">Query (Regex)</label>
-                <input type="text" id="search-query" value="*" autocomplete="off">
+                <input type="text" id="search-query" value="**" autocomplete="off">
                 <button onclick="searchPackages()">Search</button>
-                
-                    <div id="search-pagination" class="result-container" aria-live="polite">
-                        <button id="next-page-btn" class="nav-btn" onclick="searchPackagesNext()">Next Page</button>
-                    </div>
                 <div id="search-result" class="result-container hidden" aria-live="polite"></div>
             </section>
         </div>
@@ -783,6 +779,8 @@
                     body: JSON.stringify([{ name: queryName }])
                 });
                 const data = await res.json();
+                console.log(data);
+                console.log(res.headers.entries);
                 
                 container.innerHTML = renderSearchResult(data);
                 container.classList.remove('hidden');
