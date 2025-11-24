@@ -396,6 +396,9 @@
                 <button onclick="searchPackages()">Search</button>
                 
                 <div id="search-result" class="result-container hidden" aria-live="polite"></div>
+                <div id="search-pagination" class="result-container hidden" aria-live="polite">
+                    <button id="next-page-btn" class="nav-btn" onclick="searchPackagesNext()">Next Page</button>
+                </div>
             </section>
         </div>
     </main>
@@ -411,6 +414,9 @@
         const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
         
         let authToken = null;
+        // Pagination state for search
+        let lastOffset = null;
+        let searchRowCount = 0; // total rows rendered so far
         const adminModal = document.getElementById('admin-modal');
 
         // --- Helpers ---
@@ -581,53 +587,68 @@
             return output;
         }
 
-        function renderSearchResult(data) {
+        function generateRows(data, startIndex = 0) {
+            return data.map((item, idx) => {
+                const index = startIndex + idx;
+                const detailId = `detail-${index}`;
+                const formattedDetails = renderDetailView(item);
+
+                return `
+                    <tr class="main-row" 
+                        id="row-${index}"
+                        onclick="toggleRow('${detailId}', 'row-${index}')" 
+                        onkeydown="handleRowKey(event, '${detailId}', 'row-${index}')"
+                        tabindex="0" 
+                        role="button" 
+                        aria-expanded="false" 
+                        aria-controls="${detailId}">
+                        
+                        <td><span class="expand-icon">▶</span> ${item.model_name || item.Name || 'Unknown'}</td>
+                        <td>${item.version || 'N/A'}</td>
+                        <td><code>${item.id}</code></td>
+                    </tr>
+                    <tr id="${detailId}" class="detail-row hidden">
+                        <td colspan="3">
+                            <div class="detail-content">${formattedDetails}</div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderSearchResult(data, append = false) {
             if (Array.isArray(data)) {
-                if (data.length === 0) {
+                if (data.length === 0 && !append) {
                     return `<p>No packages found matching your query.</p>`;
                 }
 
-                const rows = data.map((item, index) => {
-                    const detailId = `detail-${index}`;
-                    const formattedDetails = renderDetailView(item);
-                    
-                    return `
-                        <tr class="main-row" 
-                            id="row-${index}"
-                            onclick="toggleRow('${detailId}', 'row-${index}')" 
-                            onkeydown="handleRowKey(event, '${detailId}', 'row-${index}')"
-                            tabindex="0" 
-                            role="button" 
-                            aria-expanded="false" 
-                            aria-controls="${detailId}">
-                            
-                            <td><span class="expand-icon">▶</span> ${item.model_name || item.Name || 'Unknown'}</td>
-                            <td>${item.version || 'N/A'}</td>
-                            <td><code>${item.id}</code></td>
-                        </tr>
-                        <tr id="${detailId}" class="detail-row hidden">
-                            <td colspan="3">
-                                <div class="detail-content">${formattedDetails}</div>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
+                if (!append) {
+                    // reset count for new searches
+                    searchRowCount = 0;
+                    const rows = generateRows(data, 0);
+                    searchRowCount += data.length;
 
-                return `
-                    <table class="result-table" role="grid">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Version</th>
-                                <th>ID</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows}
-                        </tbody>
-                    </table>
-                    <p style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Tip: Click a row to see full details.</p>
-                `;
+                    return `
+                        <table class="result-table" role="grid">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Version</th>
+                                    <th>ID</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows}
+                            </tbody>
+                        </table>
+                        <p style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Tip: Click a row to see full details.</p>
+                    `;
+                } else {
+                    // when appending, just return rows to be inserted into existing tbody
+                    const rows = generateRows(data, searchRowCount);
+                    searchRowCount += data.length;
+                    return rows;
+                }
             }
             return `<div style="background:#333; color:#fff; padding:1rem;">${JSON.stringify(data, null, 2)}</div>`;
         }
@@ -764,30 +785,68 @@
             }
         }
 
-        async function searchPackages() {
+        async function searchPackages(offset = null, append = false) {
             const container = document.getElementById('search-result');
-            clearResult('search-result');
+            if (!append) clearResult('search-result');
             
             const queryName = document.getElementById('search-query').value;
 
             try {
-                const url = new URL(`${API_URL}/artifacts`);
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Authorization': `bearer ${authToken}`
+                };
+                if (offset) {
+                    headers['Offset'] = offset;
+                }
+
                 const res = await fetch(`${API_URL}/artifacts`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Authorization': `bearer ${authToken}`
-                    },
+                    headers: headers,
                     body: JSON.stringify([{ name: queryName }])
                 });
+
+                // capture next offset from response headers
+                const newOffset = res.headers.get('Offset');
+                lastOffset = newOffset || null;
+
                 const data = await res.json();
-                
-                container.innerHTML = renderSearchResult(data);
+
+                if (!append) {
+                    container.innerHTML = renderSearchResult(data, false);
+                } else {
+                    // append rows into existing tbody
+                    const tbody = container.querySelector('table.result-table tbody');
+                    if (tbody) {
+                        const rowsHtml = renderSearchResult(data, true);
+                        tbody.insertAdjacentHTML('beforeend', rowsHtml);
+                    } else {
+                        // fallback to full render
+                        container.innerHTML = renderSearchResult(data, false);
+                    }
+                }
+
                 container.classList.remove('hidden');
+
+                // toggle pagination controls
+                const pager = document.getElementById('search-pagination');
+                const nextBtn = document.getElementById('next-page-btn');
+                if (lastOffset) {
+                    pager.classList.remove('hidden');
+                    nextBtn.disabled = false;
+                } else {
+                    pager.classList.add('hidden');
+                }
 
             } catch (err) {
                 displayError('search-result', err.message);
             }
+        }
+
+        function searchPackagesNext() {
+            if (!lastOffset) return;
+            // fetch next page and append
+            searchPackages(lastOffset, true);
         }
 
         async function resetRegistry() {
