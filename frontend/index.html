@@ -395,6 +395,9 @@
                 <input type="text" id="search-query" value="*" autocomplete="off">
                 <button onclick="searchPackages()">Search</button>
                 
+                    <div id="search-pagination" class="result-container" aria-live="polite">
+                        <button id="next-page-btn" class="nav-btn" onclick="searchPackagesNext()">Next Page</button>
+                    </div>
                 <div id="search-result" class="result-container hidden" aria-live="polite"></div>
             </section>
         </div>
