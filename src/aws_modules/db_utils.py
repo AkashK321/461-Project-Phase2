@@ -107,7 +107,7 @@ def get_model_by_id(model_id):
         return None
 
 
-def get_model_by_model_name(name, dynamodb_resource=None):
+def get_model_by_model_name(name, dynamodb_resource=None, table_name=None):
     """
     Finds a model in DynamoDB by its 'model_name' using a scan.
 
@@ -117,7 +117,7 @@ def get_model_by_model_name(name, dynamodb_resource=None):
     """
     try:
         dynamodb_resource = dynamodb_resource or dynamodb
-        tbl = dynamodb_resource.Table(TABLE_NAME)
+        tbl = dynamodb_resource.Table(table_name or TABLE_NAME)
         # Some test fakes may not accept the same kwargs as boto3's Table.scan.
         # Try to call with a FilterExpression first (the real boto3 API), and
         # if the scan implementation doesn't accept that kwarg, fall back to

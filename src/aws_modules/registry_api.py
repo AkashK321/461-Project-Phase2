@@ -517,10 +517,14 @@ def search_artifacts(query_array, query_params):
     version_query = (query.get("version") or query.get("version_range") or "").strip()
 
     items = []
-    # If a specific name is given, use the optimized query.
+    # If a specific name is given, use the optimized query via db_utils,
+    # passing this module's dynamodb and TABLE_NAME so tests can monkeypatch
+    # `reg.dynamodb`/`reg.TABLE_NAME` and have that honored.
     # Otherwise, scan the whole table (for wildcard or no-name queries).
     if name_query:
-        items = get_model_by_model_name(name_query) or []
+        items = get_model_by_model_name(
+            name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
+        ) or []
     else:
         tbl = dynamodb.Table(TABLE_NAME)
         scan_resp = tbl.scan()
@@ -532,8 +536,6 @@ def search_artifacts(query_array, query_params):
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
 
     logger.info(f"Items after name/type filtering: {len(items)}")
-
-    # filter by version constraint (if any)
     if version_query:
         items = [
             it
@@ -714,7 +716,7 @@ def get_artifacts_by_name(name):
     Finds and returns metadata for all artifacts matching a given name.
     """
     # Pass this module's dynamodb to allow callers/tests to inject a fake resource.
-    items = get_model_by_model_name(name, dynamodb_resource=dynamodb)
+    items = get_model_by_model_name(name, dynamodb_resource=dynamodb, table_name=TABLE_NAME)
 
     if not items:
         return make_response(404, {"error": "No such artifact."})
