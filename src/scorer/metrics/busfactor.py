@@ -20,6 +20,7 @@ from git import Repo, GitCommandError
 # Optional: resolve HuggingFace → GitHub
 try:
     from huggingface_hub import HfApi
+
     HF = HfApi()
 except Exception:
     HF = None
@@ -28,24 +29,69 @@ SINCE_DAYS_DEFAULT = 600
 DOA_THRESHOLD = 3.293
 
 CODE_EXTS = {
-    ".py", ".ipynb", ".md", ".rst", ".txt",
-    ".json", ".yaml", ".yml", ".ini", ".toml", ".cfg",
-    ".sh", ".bat", ".ps1", ".js", ".ts", ".jsx", ".tsx",
-    ".java", ".scala", ".kt", ".c", ".h", ".hpp", ".hh",
-    ".cc", ".cpp", ".m", ".mm", ".go", ".rs", ".rb",
-    ".php", ".pl", ".r", ".swift", ".css", ".scss",
-    ".html", ".xml"
+    ".py",
+    ".ipynb",
+    ".md",
+    ".rst",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".toml",
+    ".cfg",
+    ".sh",
+    ".bat",
+    ".ps1",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".java",
+    ".scala",
+    ".kt",
+    ".c",
+    ".h",
+    ".hpp",
+    ".hh",
+    ".cc",
+    ".cpp",
+    ".m",
+    ".mm",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".pl",
+    ".r",
+    ".swift",
+    ".css",
+    ".scss",
+    ".html",
+    ".xml",
 }
 
 BINARY_SKIP_EXTS = {
-    ".bin", ".safetensors", ".pt", ".pth", ".onnx",
-    ".tflite", ".pb", ".tar", ".gz", ".xz", ".zip",
-    ".7z", ".rar", ".pdf"
+    ".bin",
+    ".safetensors",
+    ".pt",
+    ".pth",
+    ".onnx",
+    ".tflite",
+    ".pb",
+    ".tar",
+    ".gz",
+    ".xz",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".pdf",
 }
 
 _GH_LINK_RE = re.compile(r"https?://github\.com/\S+/\S+", re.IGNORECASE)
 
 # ---------- URL helpers ----------
+
 
 def _hf_kind_and_repo_id(url: str):
     p = urlparse(url)
@@ -60,10 +106,12 @@ def _hf_kind_and_repo_id(url: str):
         return "model", f"{parts[0]}/{parts[1]}"
     return None
 
+
 def _normalize_github_clone(url: str) -> str:
     p = urlparse(url)
     parts = [x for x in p.path.split("/") if x]
     return f"https://github.com/{parts[0]}/{parts[1]}.git"
+
 
 def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
     p = urlparse(url)
@@ -75,7 +123,11 @@ def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
         kind, repo_id = hf
         if HF:
             try:
-                info = HF.dataset_info(repo_id) if kind == "dataset" else HF.model_info(repo_id)
+                info = (
+                    HF.dataset_info(repo_id)
+                    if kind == "dataset"
+                    else HF.model_info(repo_id)
+                )
                 card = getattr(info, "cardData", None) or {}
 
                 for key in ("repository", "source_code", "code"):
@@ -96,7 +148,9 @@ def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
 
     return url
 
+
 # ---------- Analysis helpers ----------
+
 
 def _is_code_like(path: str) -> bool:
     p = Path(path)
@@ -110,12 +164,16 @@ def _is_code_like(path: str) -> bool:
     except Exception:
         return False
 
+
 def _first_author_email(repo: Repo, file_path: str):
     try:
-        out = repo.git.log("--diff-filter=A", "--reverse", "--format=%ae", "--", file_path)
+        out = repo.git.log(
+            "--diff-filter=A", "--reverse", "--format=%ae", "--", file_path
+        )
         return out.splitlines()[0].strip() if out else ""
     except GitCommandError:
         return ""
+
 
 def _collect_doa_inputs(repo: Repo, since_days: int):
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
@@ -151,11 +209,13 @@ def _collect_doa_inputs(repo: Repo, since_days: int):
 
     return dl, total_by_file, contributors, creators
 
+
 def _doa(author, file_path, dl, total_by_file, contributors, creators):
     DL = dl[file_path].get(author, 0)
     AC = max(0, total_by_file[file_path] - DL)
     FA = 1 if creators[file_path] == author else 0
     return 3.293 + 1.098 * FA + 0.164 * DL - 0.321 * math.log(1 + AC)
+
 
 def _authors_by_file(dl, total_by_file, contributors, creators):
     authors_of_file = {}
@@ -171,6 +231,7 @@ def _authors_by_file(dl, total_by_file, contributors, creators):
         }
 
     return authors_of_file
+
 
 def _compute_bus_factor(authors_of_file):
     files = list(authors_of_file.keys())
@@ -194,8 +255,7 @@ def _compute_bus_factor(authors_of_file):
             return len(removed), removed
 
         coverage = {
-            a: sum(1 for f in files if a in authors_of_file[f])
-            for a in active_authors
+            a: sum(1 for f in files if a in authors_of_file[f]) for a in active_authors
         }
 
         top_author = max(coverage.items(), key=lambda kv: kv[1])[0]
@@ -204,10 +264,13 @@ def _compute_bus_factor(authors_of_file):
         active_authors.remove(top_author)
         abandoned = recompute_abandoned(current_removed)
 
+
 def _normalize_score(bf: int) -> float:
     return min(bf / 10.0, 1.0)
 
+
 # ---------- Public API ----------
+
 
 def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT):
     start = time.time()
@@ -226,7 +289,9 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
             env=env,
         )
 
-        dl, total_by_file, contributors, creators = _collect_doa_inputs(repo, since_days)
+        dl, total_by_file, contributors, creators = _collect_doa_inputs(
+            repo, since_days
+        )
 
         if not total_by_file:
             return 0.0, int((time.time() - start) * 1000)
