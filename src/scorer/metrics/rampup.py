@@ -367,7 +367,6 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
             latency_ms = int((time.time() - start) * 1000)
             return llm_score, latency_ms
 
-
         # Fallback heuristic
         score = _heuristic_rampup(readme, tree)
         base_score = score
