@@ -19,6 +19,7 @@ from git import Repo, GitCommandError
 # Optional: resolve HuggingFace → GitHub
 try:
     from huggingface_hub import HfApi
+
     HF = HfApi()
 except Exception:
     HF = None
@@ -27,22 +28,69 @@ SINCE_DAYS_DEFAULT = 600
 DOA_THRESHOLD = 3.293
 
 CODE_EXTS = {
-    ".py", ".ipynb", ".md", ".rst", ".txt", ".json", ".yaml", ".yml",
-    ".ini", ".toml", ".cfg", ".sh", ".bat", ".ps1", ".js", ".ts",
-    ".jsx", ".tsx", ".java", ".scala", ".kt", ".c", ".h", ".hpp",
-    ".hh", ".cc", ".cpp", ".m", ".mm", ".go", ".rs", ".rb", ".php",
-    ".pl", ".r", ".swift", ".css", ".scss", ".html", ".xml"
+    ".py",
+    ".ipynb",
+    ".md",
+    ".rst",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".toml",
+    ".cfg",
+    ".sh",
+    ".bat",
+    ".ps1",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".java",
+    ".scala",
+    ".kt",
+    ".c",
+    ".h",
+    ".hpp",
+    ".hh",
+    ".cc",
+    ".cpp",
+    ".m",
+    ".mm",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".pl",
+    ".r",
+    ".swift",
+    ".css",
+    ".scss",
+    ".html",
+    ".xml",
 }
 
 BINARY_SKIP_EXTS = {
-    ".bin", ".safetensors", ".pt", ".pth", ".onnx",
-    ".tflite", ".pb", ".tar", ".gz", ".xz",
-    ".zip", ".7z", ".rar", ".pdf"
+    ".bin",
+    ".safetensors",
+    ".pt",
+    ".pth",
+    ".onnx",
+    ".tflite",
+    ".pb",
+    ".tar",
+    ".gz",
+    ".xz",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".pdf",
 }
 
 _GH_LINK_RE = re.compile(r"https?://github\.com/\S+/\S+", re.IGNORECASE)
 
 # ---------- URL helpers ----------
+
 
 def _hf_kind_and_repo_id(url: str):
     p = urlparse(url)
@@ -121,6 +169,7 @@ def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
 
 
 # ---------- Analysis helpers ----------
+
 
 def _is_code_like(path: str) -> bool:
     p = Path(path)
@@ -229,8 +278,7 @@ def _compute_bus_factor(authors_of_file):
             return len(removed), removed
 
         coverage = {
-            a: sum(1 for f in files if a in authors_of_file[f])
-            for a in active_authors
+            a: sum(1 for f in files if a in authors_of_file[f]) for a in active_authors
         }
 
         top_author = max(coverage.items(), key=lambda kv: kv[1])[0]
@@ -255,7 +303,9 @@ def _normalize_score(bus_factor: int, authors_of_file) -> float:
 
     return max(0.0, min(1.0, score))
 
+
 # ---------- Public API ----------
+
 
 def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT):
     start = time.time()
@@ -281,13 +331,10 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         if not total_by_file:
             return 0.0, int((time.time() - start) * 1000)
 
-        authors_of_file = _authors_by_file(
-            dl, total_by_file, contributors, creators
-        )
+        authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
 
         bf, _ = _compute_bus_factor(authors_of_file)
         score = _normalize_score(bf, authors_of_file)
-
 
         return score, int((time.time() - start) * 1000)
 

@@ -32,6 +32,15 @@ MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 _BOOT_STDOUT = sys.stdout
 sys.stdout = io.StringIO()
 
+SIZE_WEIGHT = 0.18
+LICENSE_WEIGHT = 0.14
+RAMP_UP_WEIGHT = 0.12
+BUS_FACTOR_WEIGHT = 0.05
+DATASET_QUALITY_WEIGHT = 0.14
+CODE_QUALITY_WEIGHT = 0.08
+PERFORMANCE_CLAIMS_WEIGHT = 0.17
+DATASET_AND_CODE_WEIGHT = 0.12
+
 
 def safe_metric_value(val: float) -> float:
     """
@@ -402,14 +411,14 @@ def main() -> None:
             size_score = compute_size_score(size_dict)
 
             net_score = (
-                0.15 * size_score
-                + 0.15 * license
-                + 0.10 * ramp_up
-                + 0.05 * bus_factor
-                + 0.15 * dataset_quality
-                + 0.10 * code_quality
-                + 0.15 * performance_claims
-                + 0.15 * dataset_and_code_score
+                SIZE_WEIGHT * avg_size
+                + LICENSE_WEIGHT * license
+                + RAMP_UP_WEIGHT * ramp_up
+                + BUS_FACTOR_WEIGHT * bus_factor
+                + DATASET_QUALITY_WEIGHT * dataset_quality
+                + CODE_QUALITY_WEIGHT * code_quality
+                + PERFORMANCE_CLAIMS_WEIGHT * performance_claims
+                + DATASET_AND_CODE_WEIGHT * dataset_and_code_score
             )
 
             net_score_latency = max(
