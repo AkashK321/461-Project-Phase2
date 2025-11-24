@@ -59,7 +59,9 @@ DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
 DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "10"))
 
-FEATURE_FLAG_FORCE_INGESTION = os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
+FEATURE_FLAG_FORCE_INGESTION = (
+    os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
+)
 
 # Global flag to track if initialization has been performed
 _initialized = False
@@ -384,7 +386,7 @@ def ingest_artifact(artifact_type, payload):
         else:
             if score < 0.5:
                 failing_metrics.append(f"{metric}: {score}")
-    
+
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
         # Uncomment to enforce quality gates:
@@ -479,7 +481,9 @@ def search_artifacts(query_array, query_params):
     - query_array: The request body, which is a list of query objects.
     - query_params: The query string parameters, containing the 'offset'.
     """
-    logger.info(f"Searching artifacts with queries: {query_array} and params: {query_params}")
+    logger.info(
+        f"Searching artifacts with queries: {query_array} and params: {query_params}"
+    )
     try:
         offset_str = query_params.get("offset", "1")
         page = int(offset_str)
@@ -502,14 +506,16 @@ def search_artifacts(query_array, query_params):
     types = query.get("types", [])
     want_all_types = not types
 
-    logger.info(f"name_query: {name_query}, types: {types}, want_all_types: {want_all_types}")
+    logger.info(
+        f"name_query: {name_query}, types: {types}, want_all_types: {want_all_types}"
+    )
 
     # Handle the wildcard "*" search
     if name_query == "*":
         name_query = ""  # This will match all names
-    
+
     version_query = (query.get("version") or query.get("version_range") or "").strip()
-    
+
     items = []
     # If a specific name is given, use the optimized query.
     # Otherwise, scan the whole table (for wildcard or no-name queries).
@@ -519,12 +525,12 @@ def search_artifacts(query_array, query_params):
         tbl = dynamodb.Table(TABLE_NAME)
         scan_resp = tbl.scan()
         items = scan_resp.get("Items", [])
-    
+
     # filter by type (if provided)
     if not want_all_types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
-    
+
     logger.info(f"Items after name/type filtering: {len(items)}")
 
     # filter by version constraint (if any)
