@@ -522,9 +522,12 @@ def search_artifacts(query_array, query_params):
     # `reg.dynamodb`/`reg.TABLE_NAME` and have that honored.
     # Otherwise, scan the whole table (for wildcard or no-name queries).
     if name_query:
-        items = get_model_by_model_name(
-            name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
-        ) or []
+        items = (
+            get_model_by_model_name(
+                name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
+            )
+            or []
+        )
     else:
         tbl = dynamodb.Table(TABLE_NAME)
         scan_resp = tbl.scan()
@@ -716,7 +719,9 @@ def get_artifacts_by_name(name):
     Finds and returns metadata for all artifacts matching a given name.
     """
     # Pass this module's dynamodb to allow callers/tests to inject a fake resource.
-    items = get_model_by_model_name(name, dynamodb_resource=dynamodb, table_name=TABLE_NAME)
+    items = get_model_by_model_name(
+        name, dynamodb_resource=dynamodb, table_name=TABLE_NAME
+    )
 
     if not items:
         return make_response(404, {"error": "No such artifact."})
