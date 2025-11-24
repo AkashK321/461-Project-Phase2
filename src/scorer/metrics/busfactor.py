@@ -1,10 +1,5 @@
 """
 Bus factor metric (ICSE-SEIP 2022, Jabrayilzade et al.).
-Fixes:
-- Normalize Hugging Face / GitHub URLs (strip /tree/main, add .git).
-- For HF targets, resolve a linked GitHub code repo from the model/dataset card.
-- Shallow clone + skip LFS blobs to avoid big downloads.
-- No prints to stdout; return neutral-low on failure so NDJSON stays clean.
 """
 
 from __future__ import annotations
@@ -31,6 +26,8 @@ except Exception:
     HF = None  # still works; we’ll just clone the HF git repo if needed
 
 SINCE_DAYS_DEFAULT = 600
+
+DOA_THRESHOLD = 3.5  # minimum DOA for someone to count as an author of a file
 
 CODE_EXTS = {
     ".py",
@@ -209,9 +206,13 @@ def _collect_doa_inputs(
     contributors: Dict[str, Set[str]] = defaultdict(set)
     creators: Dict[str, str] = {}
 
-    commits = list(repo.iter_commits("HEAD", since=since_arg)) or list(
-        repo.iter_commits("HEAD")
-    )
+    commits = list(repo.iter_commits("HEAD", since=since_arg))
+    if not commits:
+        commits = list(repo.iter_commits("HEAD"))
+
+    # Force stable ordering (oldest → newest) so DOA is reproducible
+    commits.sort(key=lambda c: c.committed_datetime)
+
     for c in commits:
         author = (c.author.email or c.author.name or "unknown").strip().lower()
         try:
@@ -255,13 +256,16 @@ def _authors_by_file(dl, total_by_file, contributors, creators) -> Dict[str, Set
         if total_by_file[f] == 0:
             authors_of_file[f] = set()
             continue
+
         doa_by_author = {
             a: _doa(a, f, dl, total_by_file, contributors, creators)
             for a in contributors.get(f, set())
         }
 
-        # Keep ALL contributors as authors — inclusive scoring for stability.
-        authors_of_file[f] = set(doa_by_author.keys()) if doa_by_author else set()
+        # Only keep authors with significant DOA for this file
+        authors_of_file[f] = {
+            a for a, doa in doa_by_author.items() if doa >= DOA_THRESHOLD
+        } if doa_by_author else set()
 
     return authors_of_file
 
@@ -335,7 +339,8 @@ def get_bus_factor(
         repo = Repo.clone_from(
             clone_url,
             temp_dir,
-            multi_options=["--depth=200"],  # shallow history speeds things up
+            # Full history but no file contents (avoids huge weights; stable DOA)
+            multi_options=["--filter=blob:none"],
             env=env,
         )
 
