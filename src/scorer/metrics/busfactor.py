@@ -215,8 +215,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             files_changed = [f.get("path") for f in commit_data.get("files", [])]
 
             for f in files_changed:
-                if not f or not _is_code_like(f):
-                    continue
+                # if not f or not _is_code_like(f):
+                #     continue
 
                 dl[f][author_email] += 1
                 total_by_file[f] += 1
