@@ -230,6 +230,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     except Exception as e:
         logger.error(f"Failed to list commits for {repo_id}: {e}")
         return {}, {}, {}, {}
+    
+    logger.info(f"Commits fetched for {repo_id}: {commits}")
 
     # Filter commits by date and sort oldest to newest
     recent_commits = sorted(
@@ -345,6 +347,7 @@ def _normalize_score(bus_factor: int, authors_of_file) -> float:
 
 def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT):
     start = time.time()
+    logger.info(f"Calculating bus factor for URL: {url} (type: {url_type})")
 
     try:
         repo_info = _to_hf_repo_id(url)
@@ -369,5 +372,6 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         logger.info(f"Bus factor score for {repo_id}: {score} (bus factor: {bf})")
         return score, int((time.time() - start) * 1000)
 
-    except Exception:
+    except Exception as e:
+        logger.exception(f"Error calculating bus factor for URL: {url} with Exception {e}")
         return 0.0, int((time.time() - start) * 1000)
