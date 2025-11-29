@@ -16,11 +16,12 @@ from urllib.parse import urlparse
 
 # Optional: resolve HuggingFace → GitHub
 try:
-    from huggingface_hub import HfApi
+    from huggingface_hub import HfApi, list_commits, get_commit_info
 
     HF = HfApi()
 except Exception:
     HF = None
+    list_commits = get_commit_info = None
 
 logger = logging.getLogger(__name__)
 
@@ -222,10 +223,10 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     creators = {}
 
     if not HF:
-        raise ImportError("huggingface_hub is not installed")
+        raise ImportError("huggingface_hub is not installed or failed to import")
 
     try:
-        commits = HF.list_commits(repo_id=repo_id, repo_type=repo_type)
+        commits = list_commits(repo_id=repo_id, repo_type=repo_type)
     except Exception as e:
         logger.error(f"Failed to list commits for {repo_id}: {e}")
         return {}, {}, {}, {}
@@ -241,7 +242,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     for commit in recent_commits:
         try:
-            commit_info = HF.get_commit_info(
+            commit_info = get_commit_info(
                 repo_id=repo_id, commit_hash=commit.commit_id, repo_type=repo_type
             )
             author_email = (commit_info.author.get("email") or "unknown").lower()
