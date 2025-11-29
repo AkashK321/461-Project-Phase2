@@ -4,17 +4,15 @@ Bus factor metric (ICSE-SEIP 2022, Jabrayilzade et al.).
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import math
 import time
-import shutil
-import tempfile
 import datetime as dt
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
 from urllib.parse import urlparse
-from git import Repo, GitCommandError
 
 # Optional: resolve HuggingFace → GitHub
 try:
@@ -23,6 +21,8 @@ try:
     HF = HfApi()
 except Exception:
     HF = None
+
+logger = logging.getLogger(__name__)
 
 SINCE_DAYS_DEFAULT = 600
 DOA_THRESHOLD = 3.293
@@ -116,21 +116,21 @@ def _hf_kind_and_repo_id(url: str):
     return None
 
 
-def _normalize_github_clone(url: str) -> str:
+def _to_hf_repo_id(url: str) -> tuple[str, str] | None:
     p = urlparse(url)
     parts = [x for x in p.path.split("/") if x]
 
-    if len(parts) < 2:
-        raise ValueError("GitHub URL must be /owner/repo")
+    if "github.com" in p.netloc.lower() and len(parts) >= 2:
+        return "code", f"{parts[0]}/{parts[1]}"
 
-    return f"https://github.com/{parts[0]}/{parts[1]}.git"
+    return _hf_kind_and_repo_id(url)
 
 
 def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
     p = urlparse(url)
 
     if "github.com" in p.netloc.lower():
-        return _normalize_github_clone(url)
+        return url  # Keep it as a GitHub URL for now
 
     hf = _hf_kind_and_repo_id(url)
 
@@ -150,12 +150,12 @@ def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
                 for key in ("repository", "source_code", "code"):
                     v = card.get(key)
                     if isinstance(v, str) and "github.com" in v.lower():
-                        return _normalize_github_clone(v)
+                        return v
 
                 for field in ("summary", "description"):
                     text = card.get(field, "")
                     if isinstance(text, str):
-                        match = _GH_LINK_RE.search(text)
+                        match = _GH_LINK_RE.search(text)  # type: ignore
                         if match:
                             return _normalize_github_clone(match.group(0))
 
@@ -166,6 +166,15 @@ def _resolve_code_repo_for_target(url: str, url_type: str) -> str:
         return f"https://huggingface.co/{base}{repo_id}"
 
     return url
+
+
+def _normalize_github_clone(url: str) -> str:
+    p = urlparse(url)
+    parts = [x for x in p.path.split("/") if x]
+
+    if len(parts) < 2:
+        raise ValueError("GitHub URL must be /owner/repo")
+    return f"https://github.com/{parts[0]}/{parts[1]}.git"
 
 
 # ---------- Analysis helpers ----------
@@ -187,47 +196,73 @@ def _is_code_like(path: str) -> bool:
         return False
 
 
-def _first_author_email(repo: Repo, file_path: str):
-    try:
-        out = repo.git.log(
-            "--diff-filter=A", "--reverse", "--format=%ae", "--", file_path
-        )
-        return out.splitlines()[0].strip() if out else ""
-    except GitCommandError:
-        return ""
+def _parse_diff_files(diff_text: str) -> list[str]:
+    """Extracts file paths from a git diff string."""
+    files = []
+    # Look for lines like '--- a/file.py' or '+++ b/file.py'
+    for line in diff_text.splitlines():
+        if line.startswith("--- a/") or line.startswith("+++ b/"):
+            # Ignore /dev/null for new/deleted files
+            if "/dev/null" in line:
+                continue
+            # Strip prefix and add to list
+            path = line[6:]
+            if path not in files:
+                files.append(path)
+    return files
 
 
-def _collect_doa_inputs(repo: Repo, since_days: int):
+def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
+    """Collects Degree-of-Authorship data from Hugging Face Hub API."""
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
-    since_arg = since_dt.strftime("%Y-%m-%d")
 
-    dl = defaultdict(lambda: defaultdict(int))
+    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
     creators = {}
 
-    commits = list(repo.iter_commits("HEAD", since=since_arg))
-    if not commits:
-        commits = list(repo.iter_commits("HEAD"))
+    if not HF:
+        raise ImportError("huggingface_hub is not installed")
 
-    commits.sort(key=lambda c: c.committed_datetime)
+    try:
+        commits = HF.list_commits(repo_id=repo_id, repo_type=repo_type)
+    except Exception as e:
+        logger.error(f"Failed to list commits for {repo_id}: {e}")
+        return {}, {}, {}, {}
 
-    for c in commits:
-        if len(c.parents) > 1:
-            continue  # skip merge commits
+    # Filter commits by date and sort oldest to newest
+    recent_commits = sorted(
+        [c for c in commits if c.committed_date > since_dt],
+        key=lambda c: c.committed_date,
+    )
 
-        author = (c.author.email or "unknown").lower()
-        files = c.stats.files.keys() if c.stats else []
+    # Track file creation to find the first author
+    file_creators: dict[str, str] = {}
 
-        for f in files:
-            if not _is_code_like(f):
-                continue
-            dl[f][author] += 1
-            total_by_file[f] += 1
-            contributors[f].add(author)
+    for commit in recent_commits:
+        try:
+            commit_info = HF.get_commit_info(
+                repo_id=repo_id, commit_hash=commit.commit_id, repo_type=repo_type
+            )
+            author_email = (commit_info.author.get("email") or "unknown").lower()
+            files_changed = _parse_diff_files(commit_info.diff)
 
-    for f in total_by_file:
-        creators[f] = _first_author_email(repo, f)
+            for f in files_changed:
+                if not _is_code_like(f):
+                    continue
+
+                dl[f][author_email] += 1
+                total_by_file[f] += 1
+                contributors[f].add(author_email)
+
+                # Record the author of the first commit touching a file
+                if f not in file_creators:
+                    file_creators[f] = author_email
+
+        except Exception as e:
+            logger.warning(f"Skipping commit {commit.commit_id} due to error: {e}")
+
+    creators = file_creators
 
     return dl, total_by_file, contributors, creators
 
@@ -258,7 +293,7 @@ def _authors_by_file(dl, total_by_file, contributors, creators):
 
 def _compute_bus_factor(authors_of_file):
     files = list(authors_of_file.keys())
-    abandoned = {f for f in files if not authors_of_file[f]}
+    abandoned: set[str] = {f for f in files if not authors_of_file[f]}
     removed = []
     active_authors = set().union(*authors_of_file.values())
 
@@ -309,37 +344,29 @@ def _normalize_score(bus_factor: int, authors_of_file) -> float:
 
 def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT):
     start = time.time()
-    temp_dir = tempfile.mkdtemp()
 
     try:
-        clone_url = _resolve_code_repo_for_target(url, url_type)
+        repo_info = _to_hf_repo_id(url)
+        if not repo_info:
+            logger.warning(f"Could not resolve '{url}' to a Hugging Face repo.")
+            return 0.0, int((time.time() - start) * 1000)
 
-        env = os.environ.copy()
-        env["GIT_LFS_SKIP_SMUDGE"] = "1"
+        repo_type, repo_id = repo_info
 
-        repo = Repo.clone_from(
-            clone_url,
-            temp_dir,
-            multi_options=["--filter=blob:none"],
-            env=env,
-        )
-
-        dl, total_by_file, contributors, creators = _collect_doa_inputs(
-            repo, since_days
+        dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
+            repo_id, repo_type, since_days
         )
 
         if not total_by_file:
+            logger.info(f"No code-like files with commit history found for {repo_id}.")
             return 0.0, int((time.time() - start) * 1000)
 
         authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
 
         bf, _ = _compute_bus_factor(authors_of_file)
         score = _normalize_score(bf, authors_of_file)
-
+        logger.info(f"Bus factor score for {repo_id}: {score} (bus factor: {bf})")
         return score, int((time.time() - start) * 1000)
 
     except Exception:
         return 0.0, int((time.time() - start) * 1000)
-
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)

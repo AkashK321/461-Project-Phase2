@@ -18,6 +18,7 @@ on:
       - 32-rate-models
       - frontend
       - dataset-and-code-urls
+      - refactor-metrics-to-use-hp-api-instead-of-github
 
 # Define the permissions the job will need
 permissions:
