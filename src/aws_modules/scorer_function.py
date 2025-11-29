@@ -78,7 +78,7 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["size"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
         # tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         # tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
 
     results = {"name": name, "category": url_type.upper()}
