@@ -16,12 +16,10 @@ from urllib.parse import urlparse
 
 # Optional: resolve HuggingFace → GitHub
 try:
-    from huggingface_hub import HfApi, list_commits, get_commit_info
-
+    from huggingface_hub import HfApi
     HF = HfApi()
-except Exception:
+except ImportError:
     HF = None
-    list_commits = get_commit_info = None
 
 logger = logging.getLogger(__name__)
 
@@ -29,63 +27,16 @@ SINCE_DAYS_DEFAULT = 600
 DOA_THRESHOLD = 3.293
 
 CODE_EXTS = {
-    ".py",
-    ".ipynb",
-    ".md",
-    ".rst",
-    ".txt",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".ini",
-    ".toml",
-    ".cfg",
-    ".sh",
-    ".bat",
-    ".ps1",
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".java",
-    ".scala",
-    ".kt",
-    ".c",
-    ".h",
-    ".hpp",
-    ".hh",
-    ".cc",
-    ".cpp",
-    ".m",
-    ".mm",
-    ".go",
-    ".rs",
-    ".rb",
-    ".php",
-    ".pl",
-    ".r",
-    ".swift",
-    ".css",
-    ".scss",
-    ".html",
-    ".xml",
+    ".py", ".ipynb", ".md", ".rst", ".txt", ".json", ".yaml", ".yml",
+    ".ini", ".toml", ".cfg", ".sh", ".bat", ".ps1", ".js", ".ts",
+    ".jsx", ".tsx", ".java", ".scala", ".kt", ".c", ".h", ".hpp",
+    ".hh", ".cc", ".cpp", ".m", ".mm", ".go", ".rs", ".rb", ".php",
+    ".pl", ".r", ".swift", ".css", ".scss", ".html", ".xml",
 }
 
 BINARY_SKIP_EXTS = {
-    ".bin",
-    ".safetensors",
-    ".pt",
-    ".pth",
-    ".onnx",
-    ".tflite",
-    ".pb",
-    ".tar",
-    ".gz",
-    ".xz",
-    ".zip",
-    ".7z",
-    ".rar",
-    ".pdf",
+    ".bin", ".safetensors", ".pt", ".pth", ".onnx", ".tflite", ".pb",
+    ".tar", ".gz", ".xz", ".zip", ".7z", ".rar", ".pdf",
 }
 
 _GH_LINK_RE = re.compile(r"https?://github\.com/\S+/\S+", re.IGNORECASE)
@@ -184,33 +135,13 @@ def _normalize_github_clone(url: str) -> str:
 def _is_code_like(path: str) -> bool:
     p = Path(path)
     ext = p.suffix.lower()
-
     if ext in BINARY_SKIP_EXTS:
         return False
-
     if ext in CODE_EXTS:
         return True
-
-    try:
-        return ext == "" and p.stat().st_size < 512_000
-    except Exception:
-        return False
-
-
-def _parse_diff_files(diff_text: str) -> list[str]:
-    """Extracts file paths from a git diff string."""
-    files = []
-    # Look for lines like '--- a/file.py' or '+++ b/file.py'
-    for line in diff_text.splitlines():
-        if line.startswith("--- a/") or line.startswith("+++ b/"):
-            # Ignore /dev/null for new/deleted files
-            if "/dev/null" in line:
-                continue
-            # Strip prefix and add to list
-            path = line[6:]
-            if path not in files:
-                files.append(path)
-    return files
+    # If using API without local stats, we cannot rely on st_size
+    # We will assume no extension = code for now, or skip if unsure.
+    return ext == ""
 
 
 def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
@@ -220,38 +151,70 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
-    creators = {}
+    file_creators: dict[str, str] = {}
 
     if not HF:
         raise ImportError("huggingface_hub is not installed or failed to import")
 
     try:
-        commits = list_commits(repo_id=repo_id, repo_type=repo_type)
+        # FIX 1: Use list_repo_commits (returns GitCommitInfo objects)
+        commits = HF.list_repo_commits(repo_id=repo_id, repo_type=repo_type)
     except Exception as e:
         logger.error(f"Failed to list commits for {repo_id}: {e}")
         return {}, {}, {}, {}
-    
-    logger.info(f"Commits fetched for {repo_id}: {commits}")
 
-    # Filter commits by date and sort oldest to newest
-    recent_commits = sorted(
-        [c for c in commits if c.committed_date > since_dt],
-        key=lambda c: c.committed_date,
-    )
+    # FIX 2: Correct attribute is 'created_at', not 'committed_date'
+    # Ensure timezone awareness compatibility (compare both as UTC or unaware)
+    recent_commits = []
+    for c in commits:
+        c_date = c.created_at
+        if c_date.tzinfo is None:
+            c_date = c_date.replace(tzinfo=dt.timezone.utc)
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=dt.timezone.utc)
+            
+        if c_date > since_dt:
+            recent_commits.append(c)
 
-    # Track file creation to find the first author
-    file_creators: dict[str, str] = {}
+    # Sort oldest to newest
+    recent_commits.sort(key=lambda c: c.created_at)
+
+    # Prepare URL prefix for API calls
+    # repo_type input is "model", "dataset", "space". URL expects "models", "datasets", "spaces"
+    api_type = f"{repo_type}s" if repo_type else "models"
 
     for commit in recent_commits:
         try:
-            commit_info = get_commit_info(
-                repo_id=repo_id, commit_hash=commit.commit_id, repo_type=repo_type
-            )
-            author_email = (commit_info.author.get("email") or "unknown").lower()
-            files_changed = _parse_diff_files(commit_info.diff)
+            # FIX 3: Fetch detailed commit info (including files) via raw API
+            # HfApi() does not have a helper to get the "diff" directly, 
+            # so we query the API endpoint standard for commit details.
+            commit_url = f"https://huggingface.co/api/{api_type}/{repo_id}/commit/{commit.commit_id}"
+            
+            # Use the internal session from HfApi to handle auth headers if logged in
+            resp = HF.session.get(commit_url)
+            if resp.status_code != 200:
+                continue
+                
+            commit_data = resp.json()
+            
+            # Author email logic
+            # The list_repo_commits object has 'authors', usually a list of names.
+            # The raw API JSON usually has 'author' object with 'email' if available.
+            author_email = "unknown"
+            if "author" in commit_data and commit_data["author"]:
+                 author_email = commit_data["author"].get("email") or "unknown"
+            # Fallback to name if email missing
+            elif len(commit.authors) > 0:
+                author_email = commit.authors[0]
+            
+            author_email = author_email.lower()
+
+            # FIX 4: Use the 'files' list from the API response instead of parsing diff text
+            # commit_data['files'] is usually a list of dicts with 'path'
+            files_changed = [f.get("path") for f in commit_data.get("files", [])]
 
             for f in files_changed:
-                if not _is_code_like(f):
+                if not f or not _is_code_like(f):
                     continue
 
                 dl[f][author_email] += 1
@@ -266,14 +229,15 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             logger.warning(f"Skipping commit {commit.commit_id} due to error: {e}")
 
     creators = file_creators
-
     return dl, total_by_file, contributors, creators
 
 
 def _doa(author, file_path, dl, total_by_file, contributors, creators):
     DL = dl[file_path].get(author, 0)
     AC = max(0, total_by_file[file_path] - DL)
-    FA = 1 if creators[file_path] == author else 0
+    # Safely handle if creator is missing (though logic above should prevent it)
+    creator = creators.get(file_path, "")
+    FA = 1 if creator == author else 0
 
     return 3.293 + 1.098 * FA + 0.164 * DL - 0.321 * math.log(1 + AC)
 
