@@ -107,6 +107,37 @@ def get_model_by_id(model_id):
         return None
 
 
+def get_model_by_model_name(name, dynamodb_resource=None, table_name=None):
+    """
+    Finds a model in DynamoDB by its 'model_name' using a scan.
+
+    Accepts an optional `dynamodb_resource` to allow dependency injection
+    (useful for tests or callers that want to control the boto3 resource).
+    Note: A scan is inefficient on large tables. A GSI would be better.
+    """
+    try:
+        dynamodb_resource = dynamodb_resource or dynamodb
+        tbl = dynamodb_resource.Table(table_name or TABLE_NAME)
+        # Some test fakes may not accept the same kwargs as boto3's Table.scan.
+        # Try to call with a FilterExpression first (the real boto3 API), and
+        # if the scan implementation doesn't accept that kwarg, fall back to
+        # scanning without args and filtering in Python.
+        try:
+            response = tbl.scan(FilterExpression=Attr("model_name").eq(name))
+            items = response.get("Items", [])
+        except TypeError:
+            response = tbl.scan()
+            items = [
+                it for it in response.get("Items", []) if it.get("model_name") == name
+            ]
+        if items:
+            return items  # Assume model_name is unique
+        return None
+    except Exception as e:
+        logger.error(f"Error scanning for model_name '{name}': {e}")
+        return None
+
+
 def get_model_by_repo_id(repo_id):
     """
     Finds a model in DynamoDB by its 'repo_id' using a scan.
