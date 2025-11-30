@@ -18,6 +18,7 @@ from aws_modules.s3_utils import upload_model, generate_presigned_download_url
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
+    get_model_by_model_name,
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -56,6 +57,11 @@ SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 # Fall back to the specification defaults if not set
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "10"))
+
+FEATURE_FLAG_FORCE_INGESTION = (
+    os.getenv("FEATURE_FLAG_FORCE_INGESTION", "false").lower() == "true"
+)
 
 # Global flag to track if initialization has been performed
 _initialized = False
@@ -317,7 +323,8 @@ def ingest_artifact(artifact_type, payload):
             repo = parts[-1] if parts else "unknown_repo"
 
         parts = repo.split("/", 1)
-        name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        parsed_name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        name = payload.get("name", parsed_name).strip()
         logger.info(f"Derived Artifact Name: {name}")
 
     except KeyError:
@@ -380,7 +387,7 @@ def ingest_artifact(artifact_type, payload):
             if score < 0.5:
                 failing_metrics.append(f"{metric}: {score}")
 
-    if failing_metrics:
+    if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
         logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
         # Uncomment to enforce quality gates:
         return make_response(
@@ -474,7 +481,9 @@ def search_artifacts(query_array, query_params):
     - query_array: The request body, which is a list of query objects.
     - query_params: The query string parameters, containing the 'offset'.
     """
-
+    logger.info(
+        f"Searching artifacts with queries: {query_array} and params: {query_params}"
+    )
     try:
         offset_str = query_params.get("offset", "1")
         page = int(offset_str)
@@ -484,16 +493,22 @@ def search_artifacts(query_array, query_params):
     if page < 1:
         page = 1
 
-    page_size = 50
+    page_size = DEFAULT_PAGE_SIZE
 
     if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
         query = {}
     else:
         query = query_array[0]  # Use the first query object
 
+    logger.info(f"Using query: {query}")
+
     name_query = (query.get("name") or "").strip()
     types = query.get("types", [])
     want_all_types = not types
+
+    logger.info(
+        f"name_query: {name_query}, types: {types}, want_all_types: {want_all_types}"
+    )
 
     # Handle the wildcard "*" search
     if name_query == "*":
@@ -501,24 +516,29 @@ def search_artifacts(query_array, query_params):
 
     version_query = (query.get("version") or query.get("version_range") or "").strip()
 
-    tbl = dynamodb.Table(TABLE_NAME)
-    scan_resp = tbl.scan()
-    items = scan_resp.get("Items", [])
+    items = []
+    # If a specific name is given, use the optimized query via db_utils,
+    # passing this module's dynamodb and TABLE_NAME so tests can monkeypatch
+    # `reg.dynamodb`/`reg.TABLE_NAME` and have that honored.
+    # Otherwise, scan the whole table (for wildcard or no-name queries).
+    if name_query:
+        items = (
+            get_model_by_model_name(
+                name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
+            )
+            or []
+        )
+    else:
+        tbl = dynamodb.Table(TABLE_NAME)
+        scan_resp = tbl.scan()
+        items = scan_resp.get("Items", [])
 
     # filter by type (if provided)
     if not want_all_types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
 
-    # filter by name (regex on model_name, fall back to substring)
-    if name_query:
-        try:
-            rx = re.compile(name_query)
-            items = [it for it in items if rx.search(str(it.get("model_name", "")))]
-        except re.error:
-            items = [it for it in items if name_query in str(it.get("model_name", ""))]
-
-    # filter by version constraint (if any)
+    logger.info(f"Items after name/type filtering: {len(items)}")
     if version_query:
         items = [
             it
@@ -543,7 +563,19 @@ def search_artifacts(query_array, query_params):
         next_offset = str(page + 1)
         headers = {"Offset": next_offset}
 
-    return make_response(200, page_items, headers=headers)
+    artifacts = []
+
+    for it in page_items:
+        artifact = {
+            "name": it.get("model_name"),
+            "id": it.get("id"),
+            "type": it.get("type"),
+        }
+        artifacts.append(artifact)
+
+    logger.info(f"Returning {artifacts} items for page {page}")
+
+    return make_response(200, artifacts, headers)
 
 
 def get_lineage_graph(start_art_id):
@@ -679,6 +711,32 @@ def rate_model(art_id):
                 )
 
     return make_response(200, scores)
+
+
+def get_artifacts_by_name(name):
+    """
+    Handle GET /artifact/byName/{name}
+    Finds and returns metadata for all artifacts matching a given name.
+    """
+    # Pass this module's dynamodb to allow callers/tests to inject a fake resource.
+    items = get_model_by_model_name(
+        name, dynamodb_resource=dynamodb, table_name=TABLE_NAME
+    )
+
+    if not items:
+        return make_response(404, {"error": "No such artifact."})
+
+    # Format the items into the ArtifactMetadata schema
+    metadata_list = [
+        {
+            "name": item.get("model_name"),
+            "id": item.get("id"),
+            "type": item.get("type"),
+        }
+        for item in items
+    ]
+
+    return make_response(200, metadata_list)
 
 
 def handler(event, context):
@@ -820,6 +878,14 @@ def handler(event, context):
                 },
             )
         return rate_model(art_id)
+
+    # GET /artifact/byName/{name}
+    by_name_match = re.match(r"/artifact/byName/([^/]+)", path)
+    if method == "GET" and by_name_match:
+        name = by_name_match.group(1)
+        if not name:
+            return make_response(400, {"error": "Missing artifact name in path"})
+        return get_artifacts_by_name(name)
 
     # POST /artifacts
     if method == "POST" and path == "/artifacts":

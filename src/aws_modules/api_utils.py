@@ -1,5 +1,6 @@
 import json
 import decimal
+import logging
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -27,9 +28,21 @@ def make_response(status, body, headers=None):
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "*",
         "Access-Control-Allow-Headers": "*",
+        "Access-Control-Expose-Headers": "Offset",
     }
 
     final_headers.update(headers)
+
+    # Log the outgoing response headers and status for debugging
+    try:
+        logging.getLogger(__name__).info(
+            "make_response returning status=%s headers=%s",
+            status,
+            final_headers,
+        )
+    except Exception:
+        # Don't let logging failures break the response
+        pass
 
     return {
         "statusCode": status,
