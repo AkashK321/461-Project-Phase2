@@ -24,14 +24,18 @@ class TestFrontend:
             options=chrome_options,
         )
 
-        # Load the local HTML file
-        file_path = os.path.abspath(
-            "akashk321/461-project-phase2/461-Project-Phase2/frontend/index.html"
-        )
-        self.driver.get(f"file://{file_path}")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        html_path = os.path.join(base_dir, '..', 'frontend', 'index.html')
+        html_path = os.path.abspath(html_path)
+        
+        # Fail fast if file is missing
+        if not os.path.exists(html_path):
+            pytest.fail(f"HTML file not found at expected path: {html_path}")
 
+        self.driver.get(f"file://{html_path}")
+        
         yield
-
+        
         # Teardown
         self.driver.quit()
 
