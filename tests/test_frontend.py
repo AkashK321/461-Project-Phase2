@@ -1,5 +1,4 @@
 import os
-import time
 import pytest
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -13,7 +12,7 @@ from selenium.webdriver.chrome.options import Options
 class TestFrontend:
     @pytest.fixture(autouse=True)
     def setup_teardown(self):
-        # Setup Chrome options for headless environment (CI friendly)
+        # Setup Chrome options for headless environment
         chrome_options = Options()
         chrome_options.add_argument("--headless")  # Run in background
         chrome_options.add_argument("--no-sandbox")
