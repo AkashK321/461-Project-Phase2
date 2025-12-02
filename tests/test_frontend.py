@@ -25,7 +25,9 @@ class TestFrontend:
         )
 
         # Load the local HTML file
-        file_path = os.path.abspath("frontend/index.html")
+        file_path = os.path.abspath(
+            "akashk321/461-project-phase2/461-Project-Phase2/frontend/index.html"
+        )
         self.driver.get(f"file://{file_path}")
 
         yield
