@@ -788,7 +788,7 @@ def handler(event, context):
         user_roles = user_payload.get("roles", [])
         if "admin" not in user_roles:
             return make_response(
-                403, {"error": "Permission denied: 'admin' role required"}
+                401, {"error": "You do not have permission to reset the registry."}
             )
         try:
             out = reset_state()
@@ -813,23 +813,13 @@ def handler(event, context):
     logger.info(f"Authenticated user {user_payload.get('sub')} with roles {user_roles}")
 
     if method == "POST" and path == "/users":
-        if "admin" not in user_roles:
-            return make_response(
-                403, {"error": "Permission denied: 'admin' role required"}
-            )
         return register_user(body, user_roles)
 
     # POST /artifact/{type}
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:
-        if "upload" not in user_roles:
-            return make_response(
-                403, {"error": "Permission denied: 'upload' role required"}
-            )
-
         art_type = path.split("/artifact/", 1)[-1]
         try:
             return ingest_artifact(art_type, body)
-
         except KeyError as ke:
             return make_response(400, {"error": f"missing field: {str(ke)}"})
         except Exception as e:
@@ -838,11 +828,6 @@ def handler(event, context):
     # GET /artifact/{type}/{id}
     get_match = re.match(r"/artifacts/([^/]+)/([^/]+)", path)
     if method == "GET" and get_match and path.count("/") == 3:
-        if "download" not in user_roles:
-            return make_response(
-                403, {"error": "Permission denied: 'download' role required"}
-            )
-
         art_type = get_match.group(1)
         art_id = get_match.group(2)
 
@@ -874,10 +859,6 @@ def handler(event, context):
     # GET /artifact/model/{id}/lineage
     lineage_match = re.match(r"/artifact/model/([^/]+)/lineage", path)
     if method == "GET" and lineage_match:
-        if "search" not in user_roles:
-            return make_response(
-                403, {"error": "Permission denied: 'search' role required"}
-            )
         art_id = lineage_match.group(1)
         if not art_id:
             return make_response(400, {"error": "Missing artifact ID in path"})
@@ -886,10 +867,6 @@ def handler(event, context):
     # GET /artifact/model/{id}/rate
     rate_match = re.match(r"/artifact/model/([^/]+)/rate", path)
     if method == "GET" and rate_match:
-        if "search" not in user_roles:
-            return make_response(
-                403, {"error": "Permission denied: 'search' role required"}
-            )
         art_id = rate_match.group(1)
         if not art_id:
             return make_response(
@@ -912,10 +889,6 @@ def handler(event, context):
 
     # POST /artifacts
     if method == "POST" and path == "/artifacts":
-        if "search" not in user_roles:
-            return make_response(
-                403, {"error": "Permission denied: 'search' role required"}
-            )
         try:
             return search_artifacts(body or [], query_params)
         except Exception as e:

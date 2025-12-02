@@ -14,10 +14,6 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
 dynamodb = boto3.resource("dynamodb")
 logger = logging.getLogger()
 
-TOKEN_USE_LIMIT = 1000
-# tracks remaining uses per raw token string
-_token_use_counts = {}
-
 # Default admin user credentials from environment variables
 # Fall back to the specification defaults if not set
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
@@ -218,50 +214,26 @@ def get_validated_user(event):
     Parses and validates the JWT from the X-Authorization header.
     Returns the user payload if valid, None otherwise.
     """
-    headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    headers = {k.lower(): v for k, v in event.get("headers", {}).items()}
     auth_header = headers.get("x-authorization", "")
 
     if not auth_header.lower().startswith("bearer "):
         logger.info("Missing 'bearer ' prefix in X-Authorization header")
         return None
 
-    raw_token = auth_header.split(" ", 1)[-1]
+    token = auth_header.split(" ")[-1]
 
     try:
-        # This enforces exp automatically.
-        payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
 
-        # ---- 1000-use limit ----
-        remaining = _token_use_counts.get(
-            raw_token, payload.get("uses", TOKEN_USE_LIMIT)
-        )
+        # TODO: Implement 1000-use-limit check per Phase 2 doc
 
-        if remaining <= 0:
-            logger.warning("Token has exceeded its allowed number of uses")
-            return None
-
-        # decrement and store back
-        remaining -= 1
-        _token_use_counts[raw_token] = remaining
-        payload["uses_remaining"] = remaining
-
-        # ---- Check that the user still exists ----
-        user_id = payload.get("sub")
-        if USER_TABLE_NAME and user_id:
-            user_table = dynamodb.Table(USER_TABLE_NAME)
-            resp = user_table.get_item(Key={"id": user_id})
-            if "Item" not in resp:
-                logger.info(f"Token subject '{user_id}' no longer exists in user table")
-                return None
+        # TODO: Check if user 'sub' (id) still exists in the user table.
 
         return payload
-
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
         return None
     except jwt.InvalidTokenError:
         logger.warning(f"Token invalid: {traceback.format_exc()}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error validating token: {e}")
         return None
