@@ -23,7 +23,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-SINCE_DAYS_DEFAULT = 600
+SINCE_DAYS_DEFAULT = 1095 # Approx. 3 years
 DOA_THRESHOLD = 3.293
 
 CODE_EXTS = {
@@ -179,6 +179,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     # Sort oldest to newest
     recent_commits.sort(key=lambda c: c.created_at)
+
+    logger.info(f"Found {len(recent_commits)} recent commits since {since_dt} for {repo_id}")
 
     # Prepare URL prefix for API calls
     # repo_type input is "model", "dataset", "space". URL expects "models", "datasets", "spaces"
