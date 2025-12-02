@@ -375,6 +375,18 @@ def ingest_artifact(artifact_type, payload):
         "dataset_and_code",
         "size",
     ]
+    if artifact_type == "code":
+        non_latency_metrics.remove("dataset_quality")
+        non_latency_metrics.remove("dataset_and_code")
+        non_latency_metrics.remove("size")
+    elif artifact_type == "dataset":
+        non_latency_metrics.remove("performance_claims")
+        non_latency_metrics.remove("size")
+        non_latency_metrics.remove("code_quality")
+    elif artifact_type == "model":
+        non_latency_metrics.remove("code_quality")
+        non_latency_metrics.remove("dataset_quality")
+    
 
     failing_metrics = []
     for metric in non_latency_metrics:
