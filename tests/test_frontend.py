@@ -25,17 +25,17 @@ class TestFrontend:
         )
 
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, '..', 'frontend', 'index.html')
+        html_path = os.path.join(base_dir, "..", "frontend", "index.html")
         html_path = os.path.abspath(html_path)
-        
+
         # Fail fast if file is missing
         if not os.path.exists(html_path):
             pytest.fail(f"HTML file not found at expected path: {html_path}")
 
         self.driver.get(f"file://{html_path}")
-        
+
         yield
-        
+
         # Teardown
         self.driver.quit()
 
