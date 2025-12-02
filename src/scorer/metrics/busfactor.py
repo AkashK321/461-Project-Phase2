@@ -197,6 +197,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
                 continue
                 
             commit_data = resp.json()
+            logger.info(f"commit_data: {commit_data}")
             
             # Author email logic
             # The list_repo_commits object has 'authors', usually a list of names.
@@ -209,10 +210,12 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
                 author_email = commit.authors[0]
             
             author_email = author_email.lower()
+            logger.info(f"Processing commit {commit.commit_id} by author {author_email}")
 
             # FIX 4: Use the 'files' list from the API response instead of parsing diff text
             # commit_data['files'] is usually a list of dicts with 'path'
             files_changed = [f.get("path") for f in commit_data.get("files", [])]
+            logger.info(f"Files changed in commit {commit.commit_id}: {files_changed}")
 
             for f in files_changed:
                 # if not f or not _is_code_like(f):
