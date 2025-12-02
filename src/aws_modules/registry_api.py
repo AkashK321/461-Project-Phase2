@@ -66,7 +66,6 @@ FEATURE_FLAG_FORCE_INGESTION = (
 # Global flag to track if initialization has been performed
 _initialized = False
 
-
 # simple helpers for semver-ish ranges
 
 SEMVER_PATTERN = re.compile(
