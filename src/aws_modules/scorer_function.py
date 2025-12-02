@@ -27,7 +27,7 @@ from scorer.metrics.license import get_license_score
 from scorer.metrics.dataset_quality import get_dataset_quality_score
 
 # from scorer.metrics.code_quality import get_code_quality
-# from scorer.metrics.performance_claims import get_performance_claims
+from scorer.metrics.performance_claims import get_performance_claims
 from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 
 from scorer.metrics.rampup import get_ramp_up
@@ -77,7 +77,7 @@ def score_url(url: str, url_type: str) -> dict:
         pass
         tasks["size"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
-        # tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
+        tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
 
