@@ -80,6 +80,11 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+            url, url_type
+        )
+        # tasks["code_quality"] = lambda: get_code_quality(url, url_type)
 
     results = {"name": name, "category": url_type.upper()}
     latencies = {}
