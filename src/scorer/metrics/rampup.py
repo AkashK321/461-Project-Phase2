@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -24,6 +25,7 @@ HF_API = HfApi()
 
 # Load .env if present so GEN_AI_STUDIO_API_KEY / GENAI_* vars are picked up
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 def _parse_repo_id(url: str) -> Tuple[Optional[str], Optional[str]]:
@@ -167,6 +169,7 @@ def _heuristic_rampup(readme: str, tree: str) -> float:
 
 
 def _session_with_retry() -> requests.Session:
+    logger.info("Creating session with retries")
     s = requests.Session()
     r = Retry(
         total=3,
@@ -280,6 +283,8 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
     payload = _build_payload(user_prompt_1)
     payload_str = json.dumps(payload)
     # Send with retries
+
+    logger.info(f"Payload: {payload_str}")
     
     session = _session_with_retry()
     try:
@@ -292,6 +297,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
             data=payload_str,
             timeout=90,
         )
+        logger.info(f"Response: {resp}")
     except requests.exceptions.Timeout:
         return None
     except requests.exceptions.SSLError:
@@ -330,6 +336,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
         '{"score": <float 0..1>, "rationale": "<=200 chars>"}'
     )
     payload2 = _build_payload(user_prompt_2)
+    logger.info(f"Second pass payload: {json.dumps(payload2)}")
     try:
         resp2 = session.post(
             url,
@@ -340,6 +347,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
             data=json.dumps(payload2),
             timeout=60,
         )
+        logger.info(f"Second pass response: {resp2}")
     except Exception:
         return None
 
@@ -356,8 +364,11 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
         txt2 = data2["choices"][0]["message"]["content"]
     except Exception:
         txt2 = data2.get("output_text") or data2.get("text") or ""
+    
+    logger.info(f"Second pass content: {txt2}")
 
     score2 = _parse_or_salvage(txt2)
+    logger.info(f"Second pass extracted score: {score2}")
     if isinstance(score2, float):
         return max(0.0, min(1.0, score2))
 
