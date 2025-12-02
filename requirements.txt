@@ -10,3 +10,5 @@ requests
 boto3
 bcrypt
 PyJWT
+selenium
+webdriver-manager
