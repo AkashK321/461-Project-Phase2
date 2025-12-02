@@ -51,7 +51,7 @@ def get_dataset_and_code_score(url: str, url_type: str):
     except Exception as e:
         print(f"Error getting repo id {e}")
         latency = int((time.time() - start_time) * 1000)
-        return None, latency
+        return 0.0, latency
 
     # Fetch README
     try:
@@ -62,11 +62,11 @@ def get_dataset_and_code_score(url: str, url_type: str):
         else:
             latency = int((time.time() - start_time) * 1000)
             print("dataset_and_code_score only applicable to model/dataset")
-            return None, latency
+            return 0.0, latency
     except Exception as e:
         print(f"Error fetching repo info {e}")
         latency = int((time.time() - start_time) * 1000)
-        return None, latency
+        return 0.0, latency
 
     # Extract README content (if available)
     readme = getattr(repo_info, "cardData", None) or {}
