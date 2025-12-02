@@ -1,7 +1,7 @@
 # Trustworthy Model Registry (Phase 2)
 
 ## Project Overview
-This project implements a **Trustworthy Model Registry** for ACME Corporation. It provides a secure, centralized system to upload, store, score, and manage machine learning models. Unlike public registries, this system focuses on trust and reliability by automatically calculating metrics such as reproducibility, code review coverage ("reviewedness"), and maintainer activity ("bus factor") for every model.
+This project implements a **Trustworthy Model Registry and Scorer**. It provides a secure, centralized system to upload, store, score, and manage machine learning models.
 
 **Key Features:**
 * **Model Ingestion:** Import models directly from HuggingFace or upload custom zip packages.
@@ -15,25 +15,23 @@ This project implements a **Trustworthy Model Registry** for ACME Corporation. I
 
 ---
 
-## Configuration
-
-### Prerequisites
-* Docker & Docker Compose
-* Git
-* API Keys (HuggingFace, GitHub, etc.)
+## Authentication & Configuration
 
 ### Environment Variables
-To run the system, you must configure your environment variables.
-1.  Copy the example environment file:
-    ```bash
-    cp .env.example .env
-    ```
-2.  Open `.env` and populate the following required variables:
-    * `HF_TOKEN`: Your HuggingFace API token (for fetching model metadata).
-    * `GITHUB_TOKEN`: Your GitHub Personal Access Token (for checking repo metrics).
-    * `GEN_AI_STUDIO_API_KEY`: API key for the GenAI service (used for some scoring logic).
-    * `GENAI_BASE_URL`: Base URL for the GenAI provider (default provided).
+**No manual configuration is required.**
+Users do not need to set up environment variables or `.env` files. All system configurations, API keys (e.g., HuggingFace, GitHub), and secrets are securely stored and managed directly within the **AWS Lambda** environment.
 
+### Access Control
+To ensure security, the system enforces strict authentication. You must log in before accessing any features.
+
+* **Authentication Requirement:** Users must authenticate before accessing any aspect of the system (searching, uploading, downloading, etc.).
+* **User Roles:**
+    * **Admin:** Has full access to the system, including the ability to create and delete other user accounts.
+    * **Regular User:** Can perform standard registry operations. These accounts must be created by an Admin; they cannot self-register.
+
+* After a successful login, an authentication token will be created and stored by the user's browser for 10 hours. After the token expires, users must log in again.
+
+*(Note: Use the default admin credentials provided in the project documentation to perform the initial login and user setup.)*
 ---
 
 ## Installation & Local Development
@@ -68,6 +66,7 @@ If you prefer running without Docker:
 ## Testing
 
 We prioritize high code coverage and reliability.
+We use pytest to run all tests, and Selenium to run automated tests for the front-end UI.
 
 * **Run All Tests:**
     ```bash
