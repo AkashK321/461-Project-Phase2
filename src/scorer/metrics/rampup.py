@@ -280,6 +280,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
     payload = _build_payload(user_prompt_1)
     payload_str = json.dumps(payload)
     # Send with retries
+    
     session = _session_with_retry()
     try:
         resp = session.post(
