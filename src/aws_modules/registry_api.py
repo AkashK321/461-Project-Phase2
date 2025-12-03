@@ -35,6 +35,8 @@ from aws_modules.auth import (
     register_user,
     hash_password,
     ensure_default_user,
+    DEFAULT_ADMIN_ID,
+    TOKEN_USE_LIMIT
 )
 
 # logging setup
@@ -230,51 +232,51 @@ def initialize_system():
     _initialized = True
 
 
-def reset_state():
-    # wipe the main registry table
+def reset_state(restore_jti=None):
+    # 1. Wipe Registry Table
     tbl = dynamodb.Table(TABLE_NAME)
     scan = tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
     ids = [it["id"] for it in scan.get("Items", [])]
     if ids:
         with tbl.batch_writer() as batch:
-            for _id in ids:
-                batch.delete_item(Key={"id": _id})
+            for _id in ids: batch.delete_item(Key={"id": _id})
 
-    # and clear any model objects in S3 under models/
+    # 2. Wipe S3 Models
     if BUCKET_NAME:
         paginator = s3.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
             objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
-            if objs:
-                s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
+            if objs: s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
+    # 3. Wipe User Table & Restore Admin
     if USER_TABLE_NAME:
-        # rebuild the user table with the default admin from the spec
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
-
-        scan = user_tbl.scan(
-            ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
-        )
+        scan = user_tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
         user_ids = [it["id"] for it in scan.get("Items", [])]
 
         if user_ids:
             with user_tbl.batch_writer() as batch:
-                for _id in user_ids:
-                    batch.delete_item(Key={"id": _id})
+                for _id in user_ids: batch.delete_item(Key={"id": _id})
 
-        admin_id = str(uuid.uuid4())
+        # Prepare Admin Item
+        admin_id = DEFAULT_ADMIN_ID
+        active_tokens = {}
+        
+        if restore_jti:
+            logger.info(f"Restoring token {restore_jti} for admin {admin_id}")
+            active_tokens[restore_jti] = TOKEN_USE_LIMIT
+
         user_tbl.put_item(
             Item={
                 "id": admin_id,
                 "username": DEFAULT_ADMIN_USERNAME,
                 "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
                 "roles": ["admin", "upload", "search", "download"],
+                "active_tokens": active_tokens,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
-        logger.info(
-            f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}"
-        )
+        logger.info(f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}")
 
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
