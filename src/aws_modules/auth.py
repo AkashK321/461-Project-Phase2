@@ -72,9 +72,7 @@ def ensure_default_user():
         }
 
         user_table.put_item(Item=item)
-        logger.info(
-            f"Created default admin user '{DEFAULT_ADMIN_USERNAME}' with ID: {DEFAULT_ADMIN_ID}"
-        )
+        logger.info(f"Created default admin user '{DEFAULT_ADMIN_USERNAME}'")
         return True
 
     except Exception as e:
@@ -212,7 +210,7 @@ def get_validated_user(event):
         logger.info("Missing 'bearer ' prefix in X-Authorization header")
         return None
 
-    token = auth_header.split(" ")[-1]
+    raw_token = auth_header.split(" ")[-1]
 
     try:
         payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=["HS256"])
@@ -222,11 +220,13 @@ def get_validated_user(event):
         if USER_TABLE_NAME and jti and user_id:
             user_table = dynamodb.Table(USER_TABLE_NAME)
             try:
-                # Decrement atomically. Fails if active_tokens[jti] doesn't exist or is <= 0
+                # Decrement atomically
                 response = user_table.update_item(
                     Key={"id": user_id},
-                    UpdateExpression="SET active_tokens.#jti = active_tokens.#jti - :dec",
-                    ConditionExpression="attribute_exists(active_tokens.#jti) AND active_tokens.#jti > :zero",
+                    UpdateExpression="SET active_tokens.#jti "
+                    "= active_tokens.#jti - :dec",
+                    ConditionExpression="attribute_exists(active_tokens.#jti) "
+                    "AND active_tokens.#jti > :zero",
                     ExpressionAttributeNames={"#jti": jti},
                     ExpressionAttributeValues={":dec": 1, ":zero": 0},
                     ReturnValues="UPDATED_NEW",
@@ -239,7 +239,8 @@ def get_validated_user(event):
             except ClientError as e:
                 if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                     logger.warning(
-                        f"Token {jti} has exceeded its allowed number of uses or does not exist."
+                        f"Token {jti} has exceeded its allowed "
+                        "number of uses or does not exist."
                     )
                     return None
                 else:
