@@ -212,7 +212,7 @@ def get_validated_user(event):
         logger.info("Missing 'bearer ' prefix in X-Authorization header")
         return None
 
-    raw_token = auth_header.split(" ", 1)[-1]
+    token = auth_header.split(" ")[-1]
 
     try:
         payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=["HS256"])
@@ -251,13 +251,9 @@ def get_validated_user(event):
 
         # Double check user exists
         return payload
-
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
         return None
     except jwt.InvalidTokenError:
         logger.warning(f"Token invalid: {traceback.format_exc()}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error validating token: {e}")
         return None

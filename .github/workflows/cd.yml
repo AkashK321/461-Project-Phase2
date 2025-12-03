@@ -18,7 +18,6 @@ on:
       - 32-rate-models
       - frontend
       - dataset-and-code-urls
-      - rbac-auth
       - search-for-artifact-by-name
 
 # Define the permissions the job will need
