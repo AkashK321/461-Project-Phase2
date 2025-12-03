@@ -184,7 +184,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     # Prepare URL prefix for API calls
     # repo_type input is "model", "dataset", "space". URL expects "models", "datasets", "spaces"
-    api_repo_type = f"{repo_type}s" if repo_type in ("model", "dataset", "space") else "models"
+    api_repo_type = f"{repo_type}s/" if repo_type in ("dataset", "space") else ""
 
     hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN") or get_token()
     headers = {}
@@ -196,15 +196,14 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             # FIX 3: Fetch detailed commit info (including files) via raw API
             # HfApi() does not have a helper to get the "diff" directly,
             # so we query the API endpoint standard for commit details.
-            commit_url = f"https://huggingface.co/api/{api_repo_type}/{repo_id}/commit/{commit.commit_id}"
+            commit_url = f"https://huggingface.co/api/{api_repo_type}{repo_id}/commit/{commit.commit_id}.diff"
+            logger.info(f"Fetching commit details from {commit_url}")
 
             # This works for public repos even if headers is empty
             resp = requests.get(commit_url, headers=headers)
             if resp.status_code != 200:
                 logger.warning(f"Failed to fetch commit details for {commit.commit_id}: {resp.status_code}")
                 continue
-
-            commit_data = resp.json()
 
             # Author email logic
             # The list_repo_commits object has 'authors', usually a list of names.
@@ -216,23 +215,31 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             elif len(commit.authors) > 0:
                 author_email = commit.authors[0]
 
+            author_emails = ["unknown"]
+            if hasattr(commit, 'authors') and commit.authors:
+                # commit.authors is usually a list of usernames (e.g. ['System', 'User'])
+                author_emails = commit.authors
+
             author_email = author_email.lower()
 
             # FIX 4: Use the 'files' list from the API response instead of parsing diff text
             # commit_data['files'] is usually a list of dicts with 'path'
-            files_changed = [f.get("path") for f in commit_data.get("diff", {}).get("files", [])]
+            diff_text = resp.text
+            logger.info(f"Commit {commit.commit_id} diff text length: {len(diff_text)}")
+            files_changed = re.findall(r'^diff --git a/.*? b/(.*?)$', diff_text, re.MULTILINE)
+            logger.info(f"Commit {commit.commit_id} changed files: {files_changed}")
 
             for f in files_changed:
                 # if not f or not _is_code_like(f):
                 #     continue
-
-                dl[f][author_email] += 1
                 total_by_file[f] += 1
-                contributors[f].add(author_email)
+                for author in author_emails:
+                    dl[f][author] += 1
+                    contributors[f].add(author)
 
                 # Record the author of the first commit touching a file
                 if f not in file_creators:
-                    file_creators[f] = author_email
+                    file_creators[f] = author_emails[0]
 
         except Exception as e:
             logger.warning(f"Skipping commit {commit.commit_id} due to error: {e}")
