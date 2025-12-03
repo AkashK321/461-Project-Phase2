@@ -67,7 +67,7 @@ def ensure_default_user():
             "username": DEFAULT_ADMIN_USERNAME,
             "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
             "roles": ["admin", "upload", "search", "download"],
-            "active_tokens": {},  
+            "active_tokens": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -88,7 +88,7 @@ def create_token(user_id, roles):
     # 10-hour expiry / 1000 uses
     payload = {
         "sub": user_id,
-        "jti": jti, 
+        "jti": jti,
         "roles": roles,
         "exp": datetime.now(timezone.utc) + timedelta(hours=10),
         "iat": datetime.now(timezone.utc),
@@ -102,17 +102,17 @@ def create_token(user_id, roles):
                 Key={"id": user_id},
                 UpdateExpression="SET active_tokens.#jti = :limit",
                 ExpressionAttributeNames={"#jti": jti},
-                ExpressionAttributeValues={":limit": TOKEN_USE_LIMIT}
+                ExpressionAttributeValues={":limit": TOKEN_USE_LIMIT},
             )
         except Exception as e:
             logger.error(f"Failed to persist token to DB: {e}")
 
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
-    
+
     # Handle PyJWT bytes vs string versions
     if isinstance(token, bytes):
         token = token.decode("utf-8")
-        
+
     return f"bearer {token}"
 
 
@@ -129,7 +129,7 @@ def register_user(body, current_user_roles=None):
 
         user_table = dynamodb.Table(USER_TABLE_NAME)
         user_id = str(uuid.uuid4())
-        
+
         roles = body.get("roles", ["upload", "search", "download"])
         if body.get("is_admin", False):
             if "admin" not in roles:
@@ -140,7 +140,7 @@ def register_user(body, current_user_roles=None):
             "username": username,
             "password_hash": hash_password(password),
             "roles": roles,
-            "active_tokens": {}, 
+            "active_tokens": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -162,10 +162,14 @@ def authenticate_user(body):
         password = body.get("secret", {}).get("password")
 
         if not username or not password:
-            return make_response(400, {"error": "Username and password cannot be empty"})
+            return make_response(
+                400, {"error": "Username and password cannot be empty"}
+            )
 
         if not isinstance(username, str) or not isinstance(password, str):
-            return make_response(400, {"error": "Username and password must be strings"})
+            return make_response(
+                400, {"error": "Username and password must be strings"}
+            )
 
         if "(A'\"`;" in password:
             password = password.replace("(A'\"`;", "(A'\\\"`;")
@@ -225,16 +229,18 @@ def get_validated_user(event):
                     ConditionExpression="attribute_exists(active_tokens.#jti) AND active_tokens.#jti > :zero",
                     ExpressionAttributeNames={"#jti": jti},
                     ExpressionAttributeValues={":dec": 1, ":zero": 0},
-                    ReturnValues="UPDATED_NEW"
+                    ReturnValues="UPDATED_NEW",
                 )
-                
+
                 # Get the new remaining value
                 new_vals = response.get("Attributes", {}).get("active_tokens", {})
                 payload["uses_remaining"] = int(new_vals.get(jti, 0))
 
             except ClientError as e:
-                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                    logger.warning(f"Token {jti} has exceeded its allowed number of uses or does not exist.")
+                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    logger.warning(
+                        f"Token {jti} has exceeded its allowed number of uses or does not exist."
+                    )
                     return None
                 else:
                     logger.error(f"DB Error updating token usage: {e}")
@@ -242,7 +248,7 @@ def get_validated_user(event):
             except Exception as e:
                 logger.error(f"Unexpected error updating token usage: {e}")
                 return None
-        
+
         # Double check user exists
         return payload
 

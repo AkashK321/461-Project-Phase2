@@ -35,10 +35,10 @@ from aws_modules.auth import (
     register_user,
     hash_password,
     ensure_default_user,
-    DEFAULT_ADMIN_ID,      
-    DEFAULT_ADMIN_USERNAME, 
-    DEFAULT_ADMIN_PASSWORD, 
-    TOKEN_USE_LIMIT        
+    DEFAULT_ADMIN_ID,
+    DEFAULT_ADMIN_USERNAME,
+    DEFAULT_ADMIN_PASSWORD,
+    TOKEN_USE_LIMIT,
 )
 
 # logging setup
@@ -237,24 +237,29 @@ def reset_state(restore_jti=None):
     ids = [it["id"] for it in scan.get("Items", [])]
     if ids:
         with tbl.batch_writer() as batch:
-            for _id in ids: batch.delete_item(Key={"id": _id})
+            for _id in ids:
+                batch.delete_item(Key={"id": _id})
 
     # 2. Wipe S3
     if BUCKET_NAME:
         paginator = s3.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
             objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
-            if objs: s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
+            if objs:
+                s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
     # 3. Wipe User Table and Restore
     if USER_TABLE_NAME:
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
-        scan = user_tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
+        scan = user_tbl.scan(
+            ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
+        )
         user_ids = [it["id"] for it in scan.get("Items", [])]
 
         if user_ids:
             with user_tbl.batch_writer() as batch:
-                for _id in user_ids: batch.delete_item(Key={"id": _id})
+                for _id in user_ids:
+                    batch.delete_item(Key={"id": _id})
 
         # Use DETERMINISTIC ID so the token's 'sub' claim remains valid
         admin_id = DEFAULT_ADMIN_ID
@@ -275,7 +280,9 @@ def reset_state(restore_jti=None):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
-        logger.info(f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}")
+        logger.info(
+            f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}"
+        )
 
     return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
 
@@ -780,12 +787,14 @@ def handler(event, context):
 
         if not user_payload:
             # Bypass for testing
-            try: return make_response(200, reset_state())
-            except Exception as e: return make_response(500, {"error": str(e)})
+            try:
+                return make_response(200, reset_state())
+            except Exception as e:
+                return make_response(500, {"error": str(e)})
 
         if "admin" not in user_payload.get("roles", []):
             return make_response(403, {"error": "Permission denied"})
-        
+
         try:
             # Pass JTI to reset_state
             out = reset_state(restore_jti=current_jti)
