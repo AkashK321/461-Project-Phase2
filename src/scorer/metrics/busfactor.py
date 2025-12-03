@@ -203,6 +203,9 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             
             # This works for public repos even if headers is empty
             resp = requests.get(commit_url, headers=headers)
+            if resp.status_code != 200:
+                logger.warning(f"Failed to fetch commit details: {resp.status_code}")
+                continue
                 
             commit_data = resp.json()
             logger.info(f"commit_data: {commit_data}")
