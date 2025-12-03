@@ -208,12 +208,6 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             # Author email logic
             # The list_repo_commits object has 'authors', usually a list of names.
             # The raw API JSON usually has 'author' object with 'email' if available.
-            author_email = "unknown"
-            if "author" in commit_data and commit_data["author"]:
-                author_email = commit_data["author"].get("email") or commit_data["author"].get("name") or "unknown"
-            # Fallback to name if email missing
-            elif len(commit.authors) > 0:
-                author_email = commit.authors[0]
 
             author_emails = ["unknown"]
             if hasattr(commit, 'authors') and commit.authors:
