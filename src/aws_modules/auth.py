@@ -17,11 +17,10 @@ logger = logging.getLogger()
 
 TOKEN_USE_LIMIT = 1000
 
-# Default credentials
+# Default admin user credentials from environment variables
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "password")
 
-# Deterministic Admin ID (UUID5) so the ID stays the same across resets
 DEFAULT_ADMIN_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, DEFAULT_ADMIN_USERNAME))
 
 
@@ -33,30 +32,36 @@ def hash_password(pw):
 def check_password(pw, hashed_pw):
     """Checks a plaintext password against a stored hash."""
     logger.info("[CHECK_PW] Checking password...")
-    if not hashed_pw or not pw:
+    if not hashed_pw:
+        return False
+    if not pw:
         return False
     try:
-        return bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
+        result = bcrypt.checkpw(pw.encode("utf-8"), hashed_pw.encode("utf-8"))
+        return result
     except Exception as e:
-        logger.error(f"[CHECK_PW] bcrypt error: {e}")
+        logger.error(f"[CHECK_PW] bcrypt comparison failed with error: {e}")
         return False
 
 
 def ensure_default_user():
-    """Ensures the default admin user exists."""
+    """
+    Ensures the default admin user exists in the system.
+    """
     if not USER_TABLE_NAME:
-        logger.error("User table not configured")
+        logger.error("User table not configured, cannot create default user")
         return False
 
     try:
         user_table = dynamodb.Table(USER_TABLE_NAME)
-        
+
+        # Check if default admin user already exists using the Deterministic ID
         resp = user_table.get_item(Key={"id": DEFAULT_ADMIN_ID})
         if "Item" in resp:
-            logger.info(f"Default admin '{DEFAULT_ADMIN_USERNAME}' exists")
+            logger.info(f"Default admin user '{DEFAULT_ADMIN_USERNAME}' already exists")
             return True
 
-        # Create default admin with empty active_tokens map
+        # Create the default admin user with an empty active_tokens map
         item = {
             "id": DEFAULT_ADMIN_ID,
             "username": DEFAULT_ADMIN_USERNAME,
@@ -67,24 +72,25 @@ def ensure_default_user():
         }
 
         user_table.put_item(Item=item)
-        logger.info(f"Created default admin '{DEFAULT_ADMIN_USERNAME}'")
+        logger.info(
+            f"Created default admin user '{DEFAULT_ADMIN_USERNAME}' with ID: {DEFAULT_ADMIN_ID}"
+        )
         return True
 
     except Exception as e:
-        logger.error(f"Failed to create default user: {e}")
+        logger.error(f"Failed to create default user: {e}\n{traceback.format_exc()}")
         return False
 
 
 def create_token(user_id, roles):
-    """Creates a JWT and adds it to the user's active_tokens map."""
+    """Creates a JWT for a user and stores it in the DB."""
     jti = str(uuid.uuid4())
-    exp_time = datetime.now(timezone.utc) + timedelta(hours=10)
-    
+    # 10-hour expiry / 1000 uses
     payload = {
         "sub": user_id,
-        "jti": jti,
+        "jti": jti, 
         "roles": roles,
-        "exp": exp_time,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=10),
         "iat": datetime.now(timezone.utc),
         "uses": TOKEN_USE_LIMIT,
     }
@@ -92,7 +98,6 @@ def create_token(user_id, roles):
     if USER_TABLE_NAME:
         try:
             user_table = dynamodb.Table(USER_TABLE_NAME)
-            # Add the new token JTI to the active_tokens map with 1000 uses
             user_table.update_item(
                 Key={"id": user_id},
                 UpdateExpression="SET active_tokens.#jti = :limit",
@@ -104,6 +109,7 @@ def create_token(user_id, roles):
 
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
     
+    # Handle PyJWT bytes vs string versions
     if isinstance(token, bytes):
         token = token.decode("utf-8")
         
@@ -123,6 +129,7 @@ def register_user(body, current_user_roles=None):
 
         user_table = dynamodb.Table(USER_TABLE_NAME)
         user_id = str(uuid.uuid4())
+        
         roles = body.get("roles", ["upload", "search", "download"])
         if body.get("is_admin", False):
             if "admin" not in roles:
@@ -138,6 +145,7 @@ def register_user(body, current_user_roles=None):
         }
 
         user_table.put_item(Item=item)
+
         return make_response(201, {"id": user_id, "username": username, "roles": roles})
 
     except KeyError:
@@ -154,10 +162,10 @@ def authenticate_user(body):
         password = body.get("secret", {}).get("password")
 
         if not username or not password:
-            return make_response(400, {"error": "Missing credentials"})
+            return make_response(400, {"error": "Username and password cannot be empty"})
 
         if not isinstance(username, str) or not isinstance(password, str):
-            return make_response(400, {"error": "Credentials must be strings"})
+            return make_response(400, {"error": "Username and password must be strings"})
 
         if "(A'\"`;" in password:
             password = password.replace("(A'\"`;", "(A'\\\"`;")
@@ -175,17 +183,20 @@ def authenticate_user(body):
             return make_response(401, {"error": "Invalid credentials"})
 
         user = items[0]
-        if check_password(password, user.get("password_hash")):
-            logger.info(f"[AUTH] User '{username}' authenticated.")
+        stored_hash = user.get("password_hash")
+
+        if check_password(password, stored_hash):
+            logger.info(f"[AUTH] User '{username}' authenticated SUCCESSFULLY.")
             token = create_token(user["id"], user.get("roles", []))
             return make_response(200, token)
         else:
+            logger.warning(f"[AUTH] Password check FAILED for user: '{username}'")
             return make_response(401, {"error": "Invalid credentials"})
 
     except KeyError:
-        return make_response(400, {"error": "Bad Request"})
+        return make_response(400, {"error": "Missing fields in AuthenticationRequest"})
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.error(f"Login error: {e}\n{traceback.format_exc()}")
         return make_response(500, {"error": str(e)})
 
 
@@ -194,6 +205,7 @@ def get_validated_user(event):
     auth_header = headers.get("x-authorization", "")
 
     if not auth_header.lower().startswith("bearer "):
+        logger.info("Missing 'bearer ' prefix in X-Authorization header")
         return None
 
     raw_token = auth_header.split(" ", 1)[-1]
@@ -206,8 +218,7 @@ def get_validated_user(event):
         if USER_TABLE_NAME and jti and user_id:
             user_table = dynamodb.Table(USER_TABLE_NAME)
             try:
-                # 1. Decrement usage count at active_tokens.<jti>
-                # 2. Condition: active_tokens.<jti> must exist and be > 0
+                # Decrement atomically. Fails if active_tokens[jti] doesn't exist or is <= 0
                 response = user_table.update_item(
                     Key={"id": user_id},
                     UpdateExpression="SET active_tokens.#jti = active_tokens.#jti - :dec",
@@ -217,19 +228,30 @@ def get_validated_user(event):
                     ReturnValues="UPDATED_NEW"
                 )
                 
-                # Update payload with remaining uses from DB
+                # Get the new remaining value
                 new_vals = response.get("Attributes", {}).get("active_tokens", {})
                 payload["uses_remaining"] = int(new_vals.get(jti, 0))
 
             except ClientError as e:
                 if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                    logger.warning(f"Token {jti} invalid or exhausted.")
+                    logger.warning(f"Token {jti} has exceeded its allowed number of uses or does not exist.")
                     return None
-                logger.error(f"DB Error validating token: {e}")
+                else:
+                    logger.error(f"DB Error updating token usage: {e}")
+                    return None
+            except Exception as e:
+                logger.error(f"Unexpected error updating token usage: {e}")
                 return None
         
+        # Double check user exists
         return payload
 
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
+        return None
+    except jwt.InvalidTokenError:
+        logger.warning(f"Token invalid: {traceback.format_exc()}")
+        return None
     except Exception as e:
-        logger.error(f"Validation error: {e}")
+        logger.error(f"Unexpected error validating token: {e}")
         return None
