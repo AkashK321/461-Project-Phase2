@@ -196,6 +196,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             
             # Use the internal session from HfApi to handle auth headers if logged in
             hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+            token = get_token() or hf_token
             
             headers = {}
             if hf_token:
