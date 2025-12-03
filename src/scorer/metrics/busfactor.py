@@ -149,7 +149,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     """Collects Degree-of-Authorship data from Hugging Face Hub API."""
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
 
-    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
+    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int)) # type: ignore
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
     file_creators: dict[str, str] = {}
@@ -159,7 +159,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     try:
         # FIX 1: Use list_repo_commits (returns GitCommitInfo objects)
-        commits = HF.list_repo_commits(repo_id=repo_id, repo_type=repo_type)
+        commits = list(HF.list_repo_commits(repo_id=repo_id, repo_type=repo_type))
         logger.info(f"commits: {commits}")
     except Exception as e:
         logger.error(f"Failed to list commits for {repo_id}: {e}")
@@ -167,67 +167,60 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     # FIX 2: Correct attribute is 'created_at', not 'committed_date'
     # Ensure timezone awareness compatibility (compare both as UTC or unaware)
+    since_dt_aware = since_dt.replace(tzinfo=dt.timezone.utc)
     recent_commits = []
     for c in commits:
         c_date = c.created_at
         if c_date.tzinfo is None:
             c_date = c_date.replace(tzinfo=dt.timezone.utc)
-        if since_dt.tzinfo is None:
-            since_dt = since_dt.replace(tzinfo=dt.timezone.utc)
-            
-        if c_date > since_dt:
+
+        if c_date > since_dt_aware:
             recent_commits.append(c)
 
     # Sort oldest to newest
     recent_commits.sort(key=lambda c: c.created_at)
 
-    logger.info(f"Found {len(recent_commits)} recent commits since {since_dt} for {repo_id}")
+    logger.info(f"Found {len(recent_commits)} recent commits since {since_dt_aware} for {repo_id}")
 
     # Prepare URL prefix for API calls
     # repo_type input is "model", "dataset", "space". URL expects "models", "datasets", "spaces"
-    api_type = f"{repo_type}s" if repo_type else "models"
+    api_repo_type = f"{repo_type}s" if repo_type in ("model", "dataset", "space") else "models"
+
+    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN") or get_token()
+    headers = {}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
 
     for commit in recent_commits:
         try:
             # FIX 3: Fetch detailed commit info (including files) via raw API
-            # HfApi() does not have a helper to get the "diff" directly, 
+            # HfApi() does not have a helper to get the "diff" directly,
             # so we query the API endpoint standard for commit details.
-            commit_url = f"https://huggingface.co/api/{api_type}/{repo_id}/commit/{commit.commit_id}"
-            
-            # Use the internal session from HfApi to handle auth headers if logged in
-            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
-            token = get_token() or hf_token
-            
-            headers = {}
-            if hf_token:
-                headers["Authorization"] = f"Bearer {hf_token}"
-            
+            commit_url = f"https://huggingface.co/api/{api_repo_type}/{repo_id}/commit/{commit.commit_id}"
+
             # This works for public repos even if headers is empty
             resp = requests.get(commit_url, headers=headers)
             if resp.status_code != 200:
-                logger.warning(f"Failed to fetch commit details: {resp.status_code}")
+                logger.warning(f"Failed to fetch commit details for {commit.commit_id}: {resp.status_code}")
                 continue
-                
+
             commit_data = resp.json()
-            logger.info(f"commit_data: {commit_data}")
-            
+
             # Author email logic
             # The list_repo_commits object has 'authors', usually a list of names.
             # The raw API JSON usually has 'author' object with 'email' if available.
             author_email = "unknown"
             if "author" in commit_data and commit_data["author"]:
-                 author_email = commit_data["author"].get("email") or "unknown"
+                author_email = commit_data["author"].get("email") or commit_data["author"].get("name") or "unknown"
             # Fallback to name if email missing
             elif len(commit.authors) > 0:
                 author_email = commit.authors[0]
-            
+
             author_email = author_email.lower()
-            logger.info(f"Processing commit {commit.commit_id} by author {author_email}")
 
             # FIX 4: Use the 'files' list from the API response instead of parsing diff text
             # commit_data['files'] is usually a list of dicts with 'path'
-            files_changed = [f.get("path") for f in commit_data.get("files", [])]
-            logger.info(f"Files changed in commit {commit.commit_id}: {files_changed}")
+            files_changed = [f.get("path") for f in commit_data.get("diff", {}).get("files", [])]
 
             for f in files_changed:
                 # if not f or not _is_code_like(f):
