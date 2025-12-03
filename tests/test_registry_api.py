@@ -397,7 +397,7 @@ def test_handler_reset_admin_calls_reset_state(monkeypatch):
 
     called = {}
 
-    def fake_reset_state():
+    def fake_reset_state(**kwargs):
         called["x"] = True
         return {"reset": "ok"}
 
