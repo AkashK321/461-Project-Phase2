@@ -108,6 +108,8 @@ def create_token(user_id, roles):
         "uses": 1000,
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
+    if isinstance(token, bytes):
+        token = token.decode('utf-8')
     return f"bearer {token}"
 
 
