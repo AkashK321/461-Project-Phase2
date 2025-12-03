@@ -17,6 +17,7 @@ on:
       - uploads-and-downloads
       - 32-rate-models
       - frontend
+      - rbac-auth
       - dataset-and-code-urls
       - search-for-artifact-by-name
 
