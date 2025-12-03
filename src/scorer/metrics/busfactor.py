@@ -10,13 +10,14 @@ import re
 import math
 import time
 import datetime as dt
+import requests
 from pathlib import Path
 from collections import defaultdict, Counter
 from urllib.parse import urlparse
 
 # Optional: resolve HuggingFace → GitHub
 try:
-    from huggingface_hub import HfApi
+    from huggingface_hub import HfApi, get_token
     HF = HfApi()
 except ImportError:
     HF = None
@@ -194,9 +195,14 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             commit_url = f"https://huggingface.co/api/{api_type}/{repo_id}/commit/{commit.commit_id}"
             
             # Use the internal session from HfApi to handle auth headers if logged in
-            resp = HF.session.get(commit_url)
-            if resp.status_code != 200:
-                continue
+            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+            
+            headers = {}
+            if hf_token:
+                headers["Authorization"] = f"Bearer {hf_token}"
+            
+            # This works for public repos even if headers is empty
+            resp = requests.get(commit_url, headers=headers)
                 
             commit_data = resp.json()
             logger.info(f"commit_data: {commit_data}")
