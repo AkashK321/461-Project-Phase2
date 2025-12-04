@@ -35,6 +35,9 @@ from aws_modules.auth import (
     register_user,
     hash_password,
     ensure_default_user,
+    delete_user,
+    get_all_users,
+    update_user_roles,
     DEFAULT_ADMIN_ID,
     DEFAULT_ADMIN_USERNAME,
     DEFAULT_ADMIN_PASSWORD,
@@ -822,10 +825,30 @@ def handler(event, context):
     # Authenticated Routes
 
     user_roles = user_payload.get("roles", [])
-    logger.info(f"Authenticated user {user_payload.get('sub')} with roles {user_roles}")
+    user_id = user_payload.get("sub")
+    logger.info(f"Authenticated user {user_id} with roles {user_roles}")
 
+    # POST /users (Register)
     if method == "POST" and path == "/users":
         return register_user(body, user_roles)
+
+    # GET /users (List Users)
+    if method == "GET" and path == "/users":
+        return get_all_users(user_roles)
+
+    # Regex for user operations by ID
+    user_op_match = re.match(r"/users/([^/]+)$", path)
+    if user_op_match:
+        target_id = user_op_match.group(1)
+
+        # DELETE /users/{id}
+        if method == "DELETE":
+            return delete_user(target_id, user_id, user_roles)
+        
+        # PUT /users/{id} (Update Roles)
+        if method == "PUT":
+            new_roles = body.get("roles")
+            return update_user_roles(target_id, new_roles, user_roles)
 
     # POST /artifact/{type}
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:

@@ -151,7 +151,81 @@ def register_user(body, current_user_roles=None):
     except Exception as e:
         logger.error(f"Register error: {e}\n{traceback.format_exc()}")
         return make_response(500, {"error": str(e)})
+    
+def delete_user(target_user_id, current_user_id, current_user_roles):
+    """
+    Deletes a user from the database.
+    - Admins can delete any user.
+    - Regular users can only delete themselves.
+    """
+    # 1. Check Permissions
+    is_admin = "admin" in (current_user_roles or [])
+    is_self = target_user_id == current_user_id
 
+    if not (is_admin or is_self):
+        return make_response(403, {"error": "Permission denied: You can only delete yourself unless you are an admin."})
+
+    # 2. Check if table is configured
+    if not USER_TABLE_NAME:
+        return make_response(500, {"error": "User table not configured"})
+
+    try:
+        user_table = dynamodb.Table(USER_TABLE_NAME)
+        
+        # 3. Check if user exists (Optional, ensures we don't return 200 for phantom deletes)
+        resp = user_table.get_item(Key={"id": target_user_id})
+        if "Item" not in resp:
+             return make_response(404, {"error": "User not found"})
+
+        # 4. Delete the user
+        user_table.delete_item(Key={"id": target_user_id})
+        
+        logger.info(f"User {target_user_id} deleted by {current_user_id}")
+        return make_response(200, {"message": "User deleted successfully"})
+
+    except Exception as e:
+        logger.error(f"Delete user error: {e}\n{traceback.format_exc()}")
+        return make_response(500, {"error": str(e)})
+
+def get_all_users(current_user_roles):
+    """Returns a list of all users. Admin only."""
+    if "admin" not in (current_user_roles or []):
+        return make_response(403, {"error": "Permission denied"})
+
+    if not USER_TABLE_NAME:
+        return make_response(500, {"error": "Configuration error"})
+
+    try:
+        tbl = dynamodb.Table(USER_TABLE_NAME)
+        response = tbl.scan(ProjectionExpression="id, username, #r", ExpressionAttributeNames={"#r": "roles"})
+        items = response.get("Items", [])
+        return make_response(200, items)
+    except Exception as e:
+        return make_response(500, {"error": str(e)})
+
+
+def update_user_roles(target_user_id, new_roles, current_user_roles):
+    """Updates the roles for a specific user. Admin only."""
+    if "admin" not in (current_user_roles or []):
+        return make_response(403, {"error": "Permission denied"})
+
+    if not USER_TABLE_NAME:
+        return make_response(500, {"error": "Configuration error"})
+    
+    if not isinstance(new_roles, list) or len(new_roles) == 0:
+        return make_response(400, {"error": "Roles must be a non-empty list"})
+
+    try:
+        tbl = dynamodb.Table(USER_TABLE_NAME)
+        tbl.update_item(
+            Key={"id": target_user_id},
+            UpdateExpression="SET #r = :r",
+            ExpressionAttributeNames={"#r": "roles"},
+            ExpressionAttributeValues={":r": new_roles}
+        )
+        return make_response(200, {"message": "Roles updated successfully"})
+    except Exception as e:
+        return make_response(500, {"error": str(e)})
 
 def authenticate_user(body):
     try:
