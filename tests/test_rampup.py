@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 import os
 from src.scorer.metrics.rampup import (
@@ -9,7 +8,6 @@ from src.scorer.metrics.rampup import (
     _heuristic_rampup,
     _extract_json_first,
     _fetch_file_content,
-    SKIP_DIRS,
 )
 
 
