@@ -41,6 +41,10 @@ jobs:
           black --check .
 
       # step 6: Run tests with pytest
+
+      - name: Install Chrome Browser
+        uses: browser-actions/setup-chrome@latest
+
       - name: Run tests
         run: |
           pytest
