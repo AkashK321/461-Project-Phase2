@@ -365,16 +365,6 @@ def ingest_artifact(artifact_type, payload):
         return make_response(500, {"error": "Failed to calculate metrics"})
 
     # --- Validate Metrics ---
-    non_latency_metrics = [
-        "bus_factor",
-        "code_quality",
-        "license",
-        "ramp_up",
-        "dataset_quality",
-        "performance_claims",
-        "dataset_and_code",
-        "size",
-    ]
     if artifact_type == "code":
         non_latency_metrics = ["code_quality"]
     elif artifact_type == "dataset":
@@ -390,6 +380,8 @@ def ingest_artifact(artifact_type, payload):
             "bus_factor",
             "ramp_up",
         ]
+    else:
+        non_latency_metrics = []
 
     failing_metrics = []
     for metric in non_latency_metrics:
