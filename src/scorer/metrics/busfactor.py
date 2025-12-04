@@ -18,26 +18,74 @@ from urllib.parse import urlparse
 # Optional: resolve HuggingFace → GitHub
 try:
     from huggingface_hub import HfApi, get_token
+
     HF = HfApi()
 except ImportError:
     HF = None
 
 logger = logging.getLogger(__name__)
 
-SINCE_DAYS_DEFAULT = 1095 # Approx. 3 years
+SINCE_DAYS_DEFAULT = 1095  # Approx. 3 years
 DOA_THRESHOLD = 3.293
 
 CODE_EXTS = {
-    ".py", ".ipynb", ".md", ".rst", ".txt", ".json", ".yaml", ".yml",
-    ".ini", ".toml", ".cfg", ".sh", ".bat", ".ps1", ".js", ".ts",
-    ".jsx", ".tsx", ".java", ".scala", ".kt", ".c", ".h", ".hpp",
-    ".hh", ".cc", ".cpp", ".m", ".mm", ".go", ".rs", ".rb", ".php",
-    ".pl", ".r", ".swift", ".css", ".scss", ".html", ".xml",
+    ".py",
+    ".ipynb",
+    ".md",
+    ".rst",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".toml",
+    ".cfg",
+    ".sh",
+    ".bat",
+    ".ps1",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".java",
+    ".scala",
+    ".kt",
+    ".c",
+    ".h",
+    ".hpp",
+    ".hh",
+    ".cc",
+    ".cpp",
+    ".m",
+    ".mm",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".pl",
+    ".r",
+    ".swift",
+    ".css",
+    ".scss",
+    ".html",
+    ".xml",
 }
 
 BINARY_SKIP_EXTS = {
-    ".bin", ".safetensors", ".pt", ".pth", ".onnx", ".tflite", ".pb",
-    ".tar", ".gz", ".xz", ".zip", ".7z", ".rar", ".pdf",
+    ".bin",
+    ".safetensors",
+    ".pt",
+    ".pth",
+    ".onnx",
+    ".tflite",
+    ".pb",
+    ".tar",
+    ".gz",
+    ".xz",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".pdf",
 }
 
 _GH_LINK_RE = re.compile(r"https?://github\.com/\S+/\S+", re.IGNORECASE)
@@ -152,10 +200,12 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     """
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
 
-    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int)) # type: ignore
+    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))  # type: ignore
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
-    file_creators: dict[str, str] = {} # Not used heavily in this approx, but kept for type safety
+    file_creators: dict[str, str] = (
+        {}
+    )  # Not used heavily in this approx, but kept for type safety
 
     if not HF:
         raise ImportError("huggingface_hub is not installed or failed to import")
@@ -169,7 +219,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     # Ensure timezone awareness compatibility
     since_dt_aware = since_dt.replace(tzinfo=dt.timezone.utc)
-    
+
     # We use a dummy filename to represent the whole project
     virtual_filename = f"Entire_Repo:{repo_id}"
     logger.info(f"Fetched commits: {commits}")
@@ -188,14 +238,14 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
         # Try to get author name from object, fallback to title or unknown
         # Note: HF commit objects often don't have 'author' filled if not a signed-up user
         author_names = ["unknown"]
-        if hasattr(c, 'authors') and c.authors:
+        if hasattr(c, "authors") and c.authors:
             author_names = c.authors
-        elif hasattr(c, 'author') and c.author:
-             author_names = [c.author]
-        
+        elif hasattr(c, "author") and c.author:
+            author_names = [c.author]
+
         # 3. Populate stats for the "Virtual File"
         total_by_file[virtual_filename] += 1
-        
+
         for author in author_names:
             auth_norm = author.lower()
             dl[virtual_filename][auth_norm] += 1
@@ -268,9 +318,9 @@ def _compute_bus_factor(authors_of_file):
         active_authors.remove(top_author)
         abandoned = recompute_abandoned(current_removed)
 
+
 def _compute_bus_factor_approximation(
-    total_by_file: dict[str, int], 
-    dl: dict[str, dict[str, int]]
+    total_by_file: dict[str, int], dl: dict[str, dict[str, int]]
 ) -> tuple[int, int]:
     """
     Calculates Bus Factor based on commit volume (Approximation Method).
@@ -280,15 +330,17 @@ def _compute_bus_factor_approximation(
     # We expect total_by_file to have exactly one key like "Entire_Repo:..."
     if not total_by_file:
         return 0, 0
-        
+
     virtual_file_key = list(total_by_file.keys())[0]
     total_commits = total_by_file[virtual_file_key]
-    author_stats = dl[virtual_file_key] # {'alice': 100, 'bob': 20}
-    
+    author_stats = dl[virtual_file_key]  # {'alice': 100, 'bob': 20}
+
     # 2. Sort authors by contribution count (Descending)
     # List of (author_name, commit_count)
-    sorted_authors = sorted(author_stats.items(), key=lambda item: item[1], reverse=True)
-    
+    sorted_authors = sorted(
+        author_stats.items(), key=lambda item: item[1], reverse=True
+    )
+
     total_authors = len(sorted_authors)
     if total_authors == 0:
         return 0, 0
@@ -304,7 +356,7 @@ def _compute_bus_factor_approximation(
         bus_factor += 1
         if cumulative_commits > threshold:
             break
-            
+
     return bus_factor, total_authors
 
 
@@ -356,9 +408,13 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         # score = _normalize_score(bf, authors_of_file)
         score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
         score = max(0.0, min(1.0, score))
-        logger.info(f"Bus factor score for {repo_id}: {score} (bus factor: {bf}) (total authors: {total_authors})")
+        logger.info(
+            f"Bus factor score for {repo_id}: {score} (bus factor: {bf}) (total authors: {total_authors})"
+        )
         return score, int((time.time() - start) * 1000)
 
     except Exception as e:
-        logger.exception(f"Error calculating bus factor for URL: {url} with Exception {e}")
+        logger.exception(
+            f"Error calculating bus factor for URL: {url} with Exception {e}"
+        )
         return 0.0, int((time.time() - start) * 1000)

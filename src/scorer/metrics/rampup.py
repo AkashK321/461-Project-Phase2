@@ -34,23 +34,24 @@ def _parse_repo_id(url: str) -> Tuple[Optional[str], Optional[str]]:
     Returns (repo_id, repo_type).
     """
     p = urlparse(url)
-    
+
     # Handle direct "huggingface.co" links
     if "huggingface.co" in p.netloc:
         parts = [x for x in p.path.split("/") if x]
-        if not parts: return None, None
-        
+        if not parts:
+            return None, None
+
         if parts[0] == "datasets" and len(parts) >= 3:
             return f"{parts[1]}/{parts[2]}", "dataset"
         elif parts[0] == "spaces" and len(parts) >= 3:
-             return f"{parts[1]}/{parts[2]}", "space"
+            return f"{parts[1]}/{parts[2]}", "space"
         elif len(parts) >= 2:
             return f"{parts[0]}/{parts[1]}", "model"
 
     # Fallback for simple strings like "user/repo"
     if url.count("/") == 1:
         return url, "model"
-        
+
     return None, None
 
 
@@ -82,17 +83,17 @@ def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
     """Downloads a specific file from HF Hub into memory."""
     try:
         local_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            repo_type=repo_type,
-            local_dir=None 
+            repo_id=repo_id, filename=filename, repo_type=repo_type, local_dir=None
         )
         with open(local_path, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()
     except (EntryNotFoundError, RepositoryNotFoundError, Exception):
         return ""
 
-def _get_repo_tree_hf(repo_id: str, repo_type: str, max_files: int = 120) -> Tuple[str, Optional[str]]:
+
+def _get_repo_tree_hf(
+    repo_id: str, repo_type: str, max_files: int = 120
+) -> Tuple[str, Optional[str]]:
     """
     Uses HfApi to list files. Returns (tree_string, readme_content).
     """
@@ -104,27 +105,28 @@ def _get_repo_tree_hf(repo_id: str, repo_type: str, max_files: int = 120) -> Tup
     filtered_files = []
     readme_filename = None
     count = 0
-    
+
     for f in files:
         # Simple skip logic matches your original SKIP_DIRS
         if any(p in SKIP_DIRS for p in f.split("/")):
             continue
-        
+
         filtered_files.append(f)
-        
+
         # Identify readme without reading content yet
         if readme_filename is None and f in README_CANDIDATES:
             readme_filename = f
-            
+
         count += 1
-        if count >= max_files * 2: break
-            
+        if count >= max_files * 2:
+            break
+
     tree_str = "\n".join(filtered_files[:max_files])
-    
+
     readme_content = ""
     if readme_filename:
         readme_content = _fetch_file_content(repo_id, repo_type, readme_filename)
-        
+
     return tree_str, readme_content
 
 
@@ -285,7 +287,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
     # Send with retries
 
     logger.info(f"Payload: {payload_str}")
-    
+
     session = _session_with_retry()
     try:
         resp = session.post(
@@ -364,7 +366,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
         txt2 = data2["choices"][0]["message"]["content"]
     except Exception:
         txt2 = data2.get("output_text") or data2.get("text") or ""
-    
+
     logger.info(f"Second pass content: {txt2}")
 
     score2 = _parse_or_salvage(txt2)
@@ -380,7 +382,7 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
     try:
         # --- CHANGED: URL Parsing ---
         repo_id, parsed_type = _parse_repo_id(url)
-        
+
         # Determine strict type if provided, else use parsed
         if url_type and url_type.lower() in ["model", "dataset", "space"]:
             final_type = url_type.lower()
@@ -388,7 +390,7 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
             final_type = parsed_type if parsed_type else "model"
 
         if not repo_id:
-             return 0.0, int((time.time() - start) * 1000)
+            return 0.0, int((time.time() - start) * 1000)
 
         # --- CHANGED: Retrieve Data via API instead of Clone ---
         tree, readme = _get_repo_tree_hf(repo_id, final_type, max_files=120)

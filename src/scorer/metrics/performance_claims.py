@@ -55,11 +55,11 @@ def _check_code_repo_performance(code_url: str) -> float:
         # 1. Clean up URL to construct ZIP link
         if code_url.endswith(".git"):
             code_url = code_url[:-4]
-        
+
         # 2. Attempt download (Try 'main' branch first, then 'master')
         branches = ["main", "master"]
         download_success = False
-        
+
         for branch in branches:
             zip_url = f"{code_url}/archive/refs/heads/{branch}.zip"
             try:
@@ -73,7 +73,7 @@ def _check_code_repo_performance(code_url: str) -> float:
             except Exception as e:
                 logger.warning(f"Failed to download branch {branch}: {e}")
                 continue
-        
+
         if not download_success:
             logger.warning(f"Cannot download repo archive from: {code_url}")
             return 0.0
@@ -89,11 +89,16 @@ def _check_code_repo_performance(code_url: str) -> float:
                 if filename.lower() == "readme.md":
                     logger.info(f"Found README at: {os.path.join(root, filename)}")
                     try:
-                        with open(os.path.join(root, filename), "r", encoding="utf-8", errors="ignore") as f:
+                        with open(
+                            os.path.join(root, filename),
+                            "r",
+                            encoding="utf-8",
+                            errors="ignore",
+                        ) as f:
                             readme_text = f.read().lower()
                     except Exception:
                         logger.warning("Cannot open readme")
-                
+
                 # Check for test/eval scripts
                 if "test" in filename.lower() or "eval" in filename.lower():
                     found_test_script = True
@@ -149,7 +154,7 @@ def _check_model_card_performance(model_url: str) -> float:
         # read full text
         with open(readme_path, "r", encoding="utf-8") as f:
             text = f.read().lower()
-        
+
         logger.info(f"Downloaded README.md for model ID: {model_id}")
 
         # define keywords to check in the readme
@@ -204,7 +209,9 @@ def _check_model_card_performance(model_url: str) -> float:
         counted_keywords = set()
         keyword_count = 0
 
-        logger.info("Analyzing README for performance keywords on {len(sentences)} sentences from readme.")
+        logger.info(
+            "Analyzing README for performance keywords on {len(sentences)} sentences from readme."
+        )
 
         for sent in sentences:
             sent_lower = sent.lower()
