@@ -6,51 +6,165 @@
     <title>Package Registry</title>
     <style>
         :root {
-            --primary-color: #004494;
+            --primary-color: #004494; 
             --primary-hover: #003377;
-            --secondary-color: #5a6268;
             --text-color: #212529;
             --bg-color: #f4f4f4;
             --card-bg: #ffffff;
-            --danger-color: #dc3545;
-            --danger-hover: #c82333;
+            --danger-color: #a71d2a; 
+            --danger-hover: #8c1823;
+            --input-border: #767676; 
         }
-        body { font-family: sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 1rem; }
+
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background: var(--bg-color); 
+            color: var(--text-color); 
+            margin: 0; 
+            padding: 1rem; 
+            line-height: 1.5;
+        }
+
         .hidden { display: none !important; }
         
-        /* Navbar */
-        .nav-header { display: flex; gap: 10px; margin-bottom: 2rem; background: #ddd; padding: 10px; border-radius: 8px; }
-        .nav-btn { padding: 8px 16px; cursor: pointer; border: none; background: #fff; border-radius: 4px; font-weight: bold; }
-        .nav-btn:hover { background: #eee; }
-        .nav-btn.danger { color: white; background: var(--danger-color); }
+        /* Navigation */
+        .nav-header { 
+            display: flex; 
+            flex-wrap: wrap;
+            gap: 10px; 
+            margin-bottom: 2rem; 
+            background: #e9ecef;
+            padding: 15px; 
+            border-radius: 8px; 
+            align-items: center;
+        }
+
+        .nav-btn { 
+            padding: 10px 18px; 
+            cursor: pointer; 
+            border: 1px solid #ced4da; 
+            background: #ffffff; 
+            color: var(--primary-color); 
+            border-radius: 5px; 
+            font-weight: bold; 
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn:hover { 
+            background: #dde2e6; 
+            text-decoration: underline;
+        }
+
+        .nav-btn:focus-visible {
+            outline: 3px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .nav-btn.danger { 
+            color: #ffffff; 
+            background: var(--danger-color); 
+            border-color: var(--danger-color);
+        }
         .nav-btn.danger:hover { background: var(--danger-hover); }
 
-        /* Sections */
-        .section { background: var(--card-bg); padding: 1.5rem; margin-bottom: 1rem; border-radius: 8px; border: 1px solid #ccc; }
-        input, button { display: block; width: 100%; margin-bottom: 1rem; padding: 10px; box-sizing: border-box; }
-        button { background: var(--primary-color); color: white; border: none; cursor: pointer; font-weight: bold; }
+        /* Layout & Sections */
+        h1, h2, h3 { margin-top: 0; }
+        
+        .section { 
+            background: var(--card-bg); 
+            padding: 2rem; 
+            margin-bottom: 1.5rem; 
+            border-radius: 8px; 
+            border: 1px solid #dee2e6; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        /* Forms */
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        input { 
+            display: block; 
+            width: 100%; 
+            margin-bottom: 1.5rem; 
+            padding: 12px; 
+            box-sizing: border-box; 
+            border: 1px solid var(--input-border);
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        
+        input:focus {
+            outline: 2px solid var(--primary-color);
+            border-color: transparent;
+        }
+
+        button { 
+            background: var(--primary-color); 
+            color: white; 
+            border: none; 
+            padding: 12px 20px;
+            cursor: pointer; 
+            font-weight: bold; 
+            font-size: 1.1rem;
+            border-radius: 5px; 
+            transition: background 0.2s;
+            width: 100%;
+        }
+
         button:hover { background: var(--primary-hover); }
         
+        button:focus-visible {
+            outline: 3px solid #212529;
+            outline-offset: 2px;
+        }
+        
         /* Modals */
-        dialog { border: none; border-radius: 8px; padding: 2rem; width: 500px; max-width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
-        dialog::backdrop { background: rgba(0,0,0,0.5); }
-        
+        dialog { 
+            border: none; 
+            border-radius: 8px; 
+            padding: 2rem; 
+            width: 500px; 
+            max-width: 90%; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25); 
+            color: var(--text-color);
+        }
+        dialog::backdrop { background: rgba(0,0,0,0.6); }
+
         /* Tables */
+        .table-container { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background: #f8f9fa; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f8f9fa; font-weight: bold; }
         
-        /* Form Checks */
-        .checkbox-group { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
-        .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; }
-        .checkbox-group input { width: auto; margin: 0; }
+        /* Checkboxes */
+        .checkbox-group { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        .checkbox-group label { display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; }
+        .checkbox-group input { width: 20px; height: 20px; margin: 0; cursor: pointer; }
+
+        /* Utilities */
+        .error-box { 
+            background-color: #f8d7da; 
+            color: #721c24; 
+            padding: 1rem; 
+            border-radius: 5px; 
+            border: 1px solid #f5c6cb;
+            margin-bottom: 1.5rem;
+            font-weight: bold;
+        }
+        
+        pre { background: #f8f9fa; padding: 1rem; overflow-x: auto; border-radius: 4px; border: 1px solid #dee2e6; }
     </style>
 </head>
 <body>
     <main>
         <h1>Package Registry</h1>
 
-        <div id="nav-bar" class="nav-header hidden">
+        <nav id="nav-bar" class="nav-header hidden" aria-label="Main Navigation">
             <button class="nav-btn" onclick="handleLogout()">Log Out</button>
             
             <button class="nav-btn admin-only hidden" onclick="resetRegistry()">Reset Registry</button>
@@ -58,65 +172,87 @@
             <button class="nav-btn admin-only hidden" onclick="openViewUsersModal()">View Users</button>
             
             <button class="nav-btn danger user-only hidden" onclick="deleteSelf()">Delete Account</button>
-        </div>
+        </nav>
 
-        <section id="login-section" class="section">
-            <h2>Login</h2>
-            <div id="login-error" style="color:red; margin-bottom:1rem;" class="hidden"></div>
-            <input type="text" id="username" placeholder="Username">
-            <input type="password" id="password" placeholder="Password">
+        <section id="login-section" class="section" aria-labelledby="login-title">
+            <h2 id="login-title">Login</h2>
+            
+            <div id="login-error" class="error-box hidden" role="alert"></div>
+
+            <label for="username">Username</label>
+            <input type="text" id="username" autocomplete="username" required>
+            
+            <label for="password">Password</label>
+            <input type="password" id="password" autocomplete="current-password" required>
+            
             <button onclick="handleLogin()">Login</button>
         </section>
 
         <div id="dashboard" class="hidden">
-            <section class="section">
-                <h3>Upload Package</h3>
+            <section class="section" aria-labelledby="upload-title">
+                <h3 id="upload-title">Upload Package</h3>
+                <label for="pkg-url">Package URL (GitHub or HuggingFace)</label>
                 <input type="url" id="pkg-url" placeholder="https://github.com/user/repo">
                 <button onclick="uploadPackage()">Upload</button>
-                <div id="upload-res"></div>
+                <div id="upload-res" aria-live="polite" style="margin-top: 1rem;"></div>
             </section>
             
-            <section class="section">
-                <h3>Search Packages</h3>
-                <input type="text" id="search-q" placeholder="Search (Regex allowed)" value=".*">
+            <section class="section" aria-labelledby="search-title">
+                <h3 id="search-title">Search Packages</h3>
+                <label for="search-q">Search Query (Regex allowed)</label>
+                <input type="text" id="search-q" value=".*">
                 <button onclick="searchPackages()">Search</button>
-                <div id="search-res"></div>
+                <div id="search-res" aria-live="polite" style="margin-top: 1rem;"></div>
             </section>
         </div>
     </main>
 
-    <dialog id="create-user-modal">
-        <h3>Create New User</h3>
-        <input type="text" id="new-user-name" placeholder="Username">
-        <input type="password" id="new-user-pass" placeholder="Password">
-        <div class="checkbox-group">
-            <label><input type="checkbox" id="role-admin" onchange="toggleAdminRoles(this)"> Admin</label>
-            <label><input type="checkbox" class="role-chk" value="upload"> Upload</label>
-            <label><input type="checkbox" class="role-chk" value="search"> Search</label>
-            <label><input type="checkbox" class="role-chk" value="download"> Download</label>
-        </div>
+    <dialog id="create-user-modal" aria-labelledby="create-user-title">
+        <h3 id="create-user-title">Create New User</h3>
+        
+        <label for="new-user-name">New Username</label>
+        <input type="text" id="new-user-name" required>
+        
+        <label for="new-user-pass">New Password</label>
+        <input type="password" id="new-user-pass" required>
+        
+        <fieldset style="border: none; padding: 0; margin-bottom: 1.5rem;">
+            <legend style="font-weight: 600; margin-bottom: 0.5rem;">Roles</legend>
+            <div class="checkbox-group">
+                <label><input type="checkbox" id="role-admin" onchange="toggleAdminRoles(this)"> Admin</label>
+                <label><input type="checkbox" class="role-chk" value="upload"> Upload</label>
+                <label><input type="checkbox" class="role-chk" value="search"> Search</label>
+                <label><input type="checkbox" class="role-chk" value="download"> Download</label>
+            </div>
+        </fieldset>
+
         <button id="create-btn" onclick="createUser()">Create User</button>
-        <button onclick="document.getElementById('create-user-modal').close()" style="background:#666">Cancel</button>
+        <button onclick="document.getElementById('create-user-modal').close()" style="background:#6c757d; margin-top: 10px;">Cancel</button>
     </dialog>
 
-    <dialog id="view-users-modal" style="width: 700px;">
-        <h3>All Users</h3>
-        <div id="users-list-container">Loading...</div>
-        <button onclick="document.getElementById('view-users-modal').close()" style="margin-top:1rem; background:#666">Close</button>
+    <dialog id="view-users-modal" style="width: 800px;" aria-labelledby="view-users-title">
+        <h3 id="view-users-title">All Users</h3>
+        <div id="users-list-container" class="table-container" aria-live="polite">Loading...</div>
+        <button onclick="document.getElementById('view-users-modal').close()" style="margin-top:1rem; background:#6c757d">Close</button>
     </dialog>
 
-    <dialog id="modify-roles-modal">
-        <h3>Modify Roles</h3>
-        <p id="mod-user-display"></p>
+    <dialog id="modify-roles-modal" aria-labelledby="mod-roles-title">
+        <h3 id="mod-roles-title">Modify Roles</h3>
+        <p id="mod-user-display" style="margin-bottom: 1.5rem; font-weight: bold;"></p>
         <input type="hidden" id="mod-user-id">
-        <div class="checkbox-group">
-            <label><input type="checkbox" id="mod-role-admin"> Admin</label>
-            <label><input type="checkbox" class="mod-chk" value="upload"> Upload</label>
-            <label><input type="checkbox" class="mod-chk" value="search"> Search</label>
-            <label><input type="checkbox" class="mod-chk" value="download"> Download</label>
-        </div>
+        
+        <fieldset style="border: none; padding: 0; margin-bottom: 1.5rem;">
+            <legend style="font-weight: 600; margin-bottom: 0.5rem;">Select Roles</legend>
+            <div class="checkbox-group">
+                <label><input type="checkbox" id="mod-role-admin"> Admin</label>
+                <label><input type="checkbox" class="mod-chk" value="upload"> Upload</label>
+                <label><input type="checkbox" class="mod-chk" value="search"> Search</label>
+                <label><input type="checkbox" class="mod-chk" value="download"> Download</label>
+            </div>
+        </fieldset>
+
         <button onclick="submitRoleUpdate()">Save Changes</button>
-        <button onclick="document.getElementById('modify-roles-modal').close()" style="background:#666">Cancel</button>
+        <button onclick="document.getElementById('modify-roles-modal').close()" style="background:#6c757d; margin-top: 10px;">Cancel</button>
     </dialog>
 
     <script>
@@ -143,6 +279,13 @@
             const pass = document.getElementById('password').value;
             const errDiv = document.getElementById('login-error');
             
+            // Basic client-side validation for empty fields
+            if (!name || !pass) {
+                errDiv.innerText = "Please enter both username and password.";
+                errDiv.classList.remove('hidden');
+                return;
+            }
+
             try {
                 const res = await fetch(`${API_URL}/authenticate`, {
                     method: 'PUT',
@@ -152,22 +295,23 @@
 
                 if(res.ok) {
                     const txt = await res.json();
-                    authToken = txt.replace(/"/g, '').split(' ')[1]; // Extract token from "bearer <token>"
+                    authToken = txt.replace(/"/g, '').split(' ')[1]; 
                     
                     const decoded = parseJwt(authToken);
                     if(decoded) {
                         currentUser = decoded;
                         updateUI(true);
+                        errDiv.classList.add('hidden');
                     } else {
-                        errDiv.innerText = "Failed to parse token.";
+                        errDiv.innerText = "System Error: Failed to parse authentication token.";
                         errDiv.classList.remove('hidden');
                     }
                 } else {
-                    errDiv.innerText = "Invalid Credentials";
+                    errDiv.innerText = "Invalid credentials. Please try again.";
                     errDiv.classList.remove('hidden');
                 }
             } catch(e) {
-                errDiv.innerText = "Connection Error: " + e.message;
+                errDiv.innerText = "Connection failed. Please check your internet connection.";
                 errDiv.classList.remove('hidden');
             }
         }
@@ -178,6 +322,7 @@
             updateUI(false);
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
+            document.getElementById('login-error').classList.add('hidden');
         }
 
         function updateUI(isLoggedIn) {
@@ -192,13 +337,13 @@
 
                 const isAdmin = currentUser.roles && currentUser.roles.includes('admin');
                 
-                // Show Admin Buttons
+                // Show/Hide Admin Buttons
                 document.querySelectorAll('.admin-only').forEach(el => {
                     if(isAdmin) el.classList.remove('hidden');
                     else el.classList.add('hidden');
                 });
 
-                // Show Regular User Delete Button (if not admin, or admins can delete themselves via View Users)
+                // Show/Hide Regular User Delete Button
                 document.querySelectorAll('.user-only').forEach(el => {
                     if(!isAdmin) el.classList.remove('hidden');
                     else el.classList.add('hidden');
@@ -214,7 +359,6 @@
         // --- Admin Features ---
 
         function openCreateUserModal() {
-            // Reset form
             document.getElementById('new-user-name').value = '';
             document.getElementById('new-user-pass').value = '';
             document.getElementById('role-admin').checked = false;
@@ -243,7 +387,6 @@
             const pass = document.getElementById('new-user-pass').value;
             const isAdmin = document.getElementById('role-admin').checked;
             
-            // Collect roles
             let roles = [];
             if(isAdmin) {
                 roles = ['admin', 'upload', 'search', 'download'];
@@ -253,9 +396,8 @@
                 });
             }
 
-            // Validation
             if(!name || !pass || roles.length === 0) {
-                alert("Username, password, and at least one role are required.");
+                alert("Please provide a username, password, and select at least one role.");
                 return;
             }
 
@@ -266,19 +408,19 @@
                     body: JSON.stringify({ username: name, password: pass, roles: roles })
                 });
                 if(res.ok) {
-                    alert("User Created!");
+                    alert("User Created Successfully!");
                     document.getElementById('create-user-modal').close();
                 } else {
                     const json = await res.json();
                     alert("Error: " + (json.error || "Unknown"));
                 }
-            } catch(e) { alert("Error: " + e.message); }
+            } catch(e) { alert("Network Error: " + e.message); }
         }
 
         async function openViewUsersModal() {
             document.getElementById('view-users-modal').showModal();
             const list = document.getElementById('users-list-container');
-            list.innerHTML = "Loading...";
+            list.innerHTML = "<p>Loading users...</p>";
 
             try {
                 const res = await fetch(`${API_URL}/users`, {
@@ -286,31 +428,41 @@
                 });
                 const users = await res.json();
                 
-                if(!res.ok) throw new Error(users.error);
+                if(!res.ok) throw new Error(users.error || "Failed to fetch");
 
-                let html = `<table><tr><th>Username</th><th>ID</th><th>Roles</th><th>Actions</th></tr>`;
+                let html = `<table aria-label="List of users">
+                    <thead><tr><th scope="col">Username</th><th scope="col">Roles</th><th scope="col">Actions</th></tr></thead>
+                    <tbody>`;
+                
                 users.forEach(u => {
                     html += `<tr>
-                        <td>${u.username}</td>
-                        <td style="font-family:monospace; font-size:0.8em">${u.id}</td>
+                        <td><strong>${u.username}</strong></td>
                         <td>${u.roles.join(', ')}</td>
                         <td>
-                            <button onclick="openModifyRoles('${u.id}', '${u.username}', '${u.roles.join(',')}')" style="font-size:0.8em; padding:5px; width:auto; display:inline;">Edit</button>
-                            <button onclick="deleteUser('${u.id}')" style="font-size:0.8em; padding:5px; width:auto; display:inline; background:var(--danger-color);">Delete</button>
+                            <button onclick="openModifyRoles('${u.id}', '${u.username}', '${u.roles.join(',')}')" 
+                                aria-label="Edit roles for ${u.username}"
+                                style="font-size:0.9em; padding:6px 12px; width:auto; display:inline-block; margin-right:5px;">
+                                Edit
+                            </button>
+                            <button onclick="deleteUser('${u.id}', '${u.username}')" 
+                                aria-label="Delete user ${u.username}"
+                                style="font-size:0.9em; padding:6px 12px; width:auto; display:inline-block; background:var(--danger-color);">
+                                Delete
+                            </button>
                         </td>
                     </tr>`;
                 });
-                html += "</table>";
+                html += "</tbody></table>";
                 list.innerHTML = html;
             } catch(e) {
-                list.innerHTML = "Error loading users: " + e.message;
+                list.innerHTML = `<div class="error-box">Error loading users: ${e.message}</div>`;
             }
         }
 
         // --- Modify Roles ---
         function openModifyRoles(id, name, rolesStr) {
             document.getElementById('mod-user-id').value = id;
-            document.getElementById('mod-user-display').innerText = "Editing: " + name;
+            document.getElementById('mod-user-display').innerText = "Editing User: " + name;
             
             const roles = rolesStr.split(',');
             const isAdmin = roles.includes('admin');
@@ -342,7 +494,7 @@
                     body: JSON.stringify({ roles: roles })
                 });
                 if(res.ok) {
-                    alert("Roles Updated");
+                    alert("Roles Updated Successfully");
                     document.getElementById('modify-roles-modal').close();
                     openViewUsersModal(); // Reload list
                 } else {
@@ -353,17 +505,15 @@
         }
 
         // --- Delete Logic ---
-        async function deleteUser(id) {
-            if(!confirm("Are you sure you want to delete this user?")) return;
+        async function deleteUser(id, username) {
+            if(!confirm(`Are you sure you want to delete user "${username}"?`)) return;
             try {
                 const res = await fetch(`${API_URL}/users/${id}`, {
                     method: 'DELETE',
                     headers: { 'X-Authorization': `bearer ${authToken}` }
                 });
                 if(res.ok) {
-                    // Reload list if modal is open
-                    const modal = document.getElementById('view-users-modal');
-                    if(modal.open) openViewUsersModal();
+                    openViewUsersModal();
                 } else {
                     const json = await res.json();
                     alert("Error: " + json.error);
@@ -372,7 +522,7 @@
         }
 
         async function deleteSelf() {
-            if(!confirm("Are you sure you want to delete your account? This cannot be undone.")) return;
+            if(!confirm("Are you sure you want to delete your account? This action cannot be undone.")) return;
             try {
                 const res = await fetch(`${API_URL}/users/${currentUser.sub}`, {
                     method: 'DELETE',
@@ -388,11 +538,17 @@
             } catch(e) { alert("Error: " + e.message); }
         }
 
-        // --- Upload/Search ---
+        // --- Upload/Search/Reset ---
         async function uploadPackage() {
             const url = document.getElementById('pkg-url').value;
             const resDiv = document.getElementById('upload-res');
-            resDiv.innerText = "Uploading...";
+            
+            if(!url) {
+                resDiv.innerHTML = "<div class='error-box'>Please enter a URL.</div>";
+                return;
+            }
+
+            resDiv.innerHTML = "<p>Uploading...</p>";
             try {
                 const res = await fetch(`${API_URL}/artifact/model`, {
                     method: 'POST',
@@ -401,13 +557,13 @@
                 });
                 const json = await res.json();
                 resDiv.innerHTML = `<pre>${JSON.stringify(json, null, 2)}</pre>`;
-            } catch(e) { resDiv.innerText = "Error: " + e.message; }
+            } catch(e) { resDiv.innerHTML = `<div class='error-box'>Error: ${e.message}</div>`; }
         }
 
         async function searchPackages() {
             const q = document.getElementById('search-q').value;
             const resDiv = document.getElementById('search-res');
-            resDiv.innerText = "Searching...";
+            resDiv.innerHTML = "<p>Searching...</p>";
             try {
                 const res = await fetch(`${API_URL}/artifacts`, {
                     method: 'POST',
@@ -416,11 +572,11 @@
                 });
                 const json = await res.json();
                 resDiv.innerHTML = `<pre>${JSON.stringify(json, null, 2)}</pre>`;
-            } catch(e) { resDiv.innerText = "Error: " + e.message; }
+            } catch(e) { resDiv.innerHTML = `<div class='error-box'>Error: ${e.message}</div>`; }
         }
 
         async function resetRegistry() {
-            if(!confirm("WARNING: Wipe entire registry?")) return;
+            if(!confirm("WARNING: This will wipe the entire registry database. Continue?")) return;
             try {
                 const res = await fetch(`${API_URL}/reset`, {
                     method: 'DELETE',
