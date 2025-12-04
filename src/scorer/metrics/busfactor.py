@@ -205,8 +205,6 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             # This matters less for the approximation
             if virtual_filename not in file_creators:
                 file_creators[virtual_filename] = auth_norm
-        
-        logger.info(f"doa inputs: {dl}, {total_by_file}, {contributors}, {file_creators}")
 
     return dl, total_by_file, contributors, file_creators
 
@@ -270,6 +268,45 @@ def _compute_bus_factor(authors_of_file):
         active_authors.remove(top_author)
         abandoned = recompute_abandoned(current_removed)
 
+def _compute_bus_factor_approximation(
+    total_by_file: dict[str, int], 
+    dl: dict[str, dict[str, int]]
+) -> tuple[int, int]:
+    """
+    Calculates Bus Factor based on commit volume (Approximation Method).
+    Returns (bus_factor, total_authors).
+    """
+    # 1. Get the "Virtual File" data
+    # We expect total_by_file to have exactly one key like "Entire_Repo:..."
+    if not total_by_file:
+        return 0, 0
+        
+    virtual_file_key = list(total_by_file.keys())[0]
+    total_commits = total_by_file[virtual_file_key]
+    author_stats = dl[virtual_file_key] # {'alice': 100, 'bob': 20}
+    
+    # 2. Sort authors by contribution count (Descending)
+    # List of (author_name, commit_count)
+    sorted_authors = sorted(author_stats.items(), key=lambda item: item[1], reverse=True)
+    
+    total_authors = len(sorted_authors)
+    if total_authors == 0:
+        return 0, 0
+
+    # 3. Calculate Bus Factor (The 50% Coverage Rule)
+    # How many people does it take to cover 50% of the work?
+    cumulative_commits = 0
+    bus_factor = 0
+    threshold = total_commits * 0.50
+
+    for _, count in sorted_authors:
+        cumulative_commits += count
+        bus_factor += 1
+        if cumulative_commits > threshold:
+            break
+            
+    return bus_factor, total_authors
+
 
 def _normalize_score(bus_factor: int, authors_of_file) -> float:
     if bus_factor <= 0 or not authors_of_file:
@@ -306,16 +343,19 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
             repo_id, repo_type, since_days
         )
+        logger.info(f"doa inputs: {dl}, {total_by_file}, {contributors}, {creators}")
 
-        if not total_by_file:
-            logger.info(f"No code-like files with commit history found for {repo_id}.")
-            return 0.0, int((time.time() - start) * 1000)
+        # if not total_by_file:
+        #     logger.info(f"No code-like files with commit history found for {repo_id}.")
+        #     return 0.0, int((time.time() - start) * 1000)
 
-        authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
+        # authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
 
-        bf, _ = _compute_bus_factor(authors_of_file)
-        score = _normalize_score(bf, authors_of_file)
-        logger.info(f"Bus factor score for {repo_id}: {score} (bus factor: {bf})")
+        # bf, _ = _compute_bus_factor(authors_of_file)
+        bf, total_authors = _compute_bus_factor_approximation(total_by_file, dl)
+        # score = _normalize_score(bf, authors_of_file)
+        score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
+        logger.info(f"Bus factor score for {repo_id}: {score} (bus factor: {bf}) (total authors: {total_authors})")
         return score, int((time.time() - start) * 1000)
 
     except Exception as e:
