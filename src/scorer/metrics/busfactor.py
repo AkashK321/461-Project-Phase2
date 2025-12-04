@@ -25,7 +25,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 SINCE_DAYS_DEFAULT = 1095 # Approx. 3 years
-DOA_THRESHOLD = 2
+DOA_THRESHOLD = 4
 
 CODE_EXTS = {
     ".py", ".ipynb", ".md", ".rst", ".txt", ".json", ".yaml", ".yml",
@@ -233,6 +233,8 @@ def _authors_by_file(dl, total_by_file, contributors, creators):
         authors_of_file[f] = {
             a for a, doa in doa_scores.items() if doa >= DOA_THRESHOLD
         }
+
+    logger.info(f"Authors by file: {authors_of_file}")
 
     return authors_of_file
 
