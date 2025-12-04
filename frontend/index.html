@@ -6,14 +6,22 @@
     <title>Package Registry</title>
     <style>
         :root {
-            --primary-color: #004494; 
+            /* Colors & Accessibility */
+            --primary-color: #004494;
             --primary-hover: #003377;
             --text-color: #212529;
             --bg-color: #f4f4f4;
             --card-bg: #ffffff;
-            --danger-color: #a71d2a; 
+            --danger-color: #a71d2a;
             --danger-hover: #8c1823;
-            --input-border: #767676; 
+            --input-border: #767676;
+            
+            /* Result Styling Variables */
+            --row-hover: #f1f3f5;
+            --row-active: #e2e6ea;
+            --detail-bg: #f8f9fa;
+            --success-bg: #d4edda;
+            --success-text: #155724;
         }
 
         body { 
@@ -33,7 +41,7 @@
             flex-wrap: wrap;
             gap: 10px; 
             margin-bottom: 2rem; 
-            background: #e9ecef;
+            background: #e9ecef; 
             padding: 15px; 
             border-radius: 8px; 
             align-items: center;
@@ -44,7 +52,7 @@
             cursor: pointer; 
             border: 1px solid #ced4da; 
             background: #ffffff; 
-            color: var(--primary-color); 
+            color: var(--primary-color);
             border-radius: 5px; 
             font-weight: bold; 
             font-size: 1rem;
@@ -94,7 +102,7 @@
             padding: 12px; 
             box-sizing: border-box; 
             border: 1px solid var(--input-border);
-            border-radius: 5px;
+            border-radius: 5px; 
             font-size: 1rem;
         }
         
@@ -135,12 +143,6 @@
         }
         dialog::backdrop { background: rgba(0,0,0,0.6); }
 
-        /* Tables */
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background: #f8f9fa; font-weight: bold; }
-        
         /* Checkboxes */
         .checkbox-group { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
         .checkbox-group label { display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; }
@@ -156,8 +158,66 @@
             margin-bottom: 1.5rem;
             font-weight: bold;
         }
+
+        /* --- DETAILED RESULT STYLING --- */
         
-        pre { background: #f8f9fa; padding: 1rem; overflow-x: auto; border-radius: 4px; border: 1px solid #dee2e6; }
+        /* Tables */
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f8f9fa; font-weight: bold; border-bottom: 2px solid #dee2e6; }
+        
+        /* Search Rows */
+        .main-row { cursor: pointer; transition: background-color 0.2s ease; }
+        .main-row:hover { background-color: var(--row-hover); }
+        .main-row.expanded { background-color: var(--row-active); }
+        
+        .expand-icon { 
+            display: inline-block; 
+            margin-right: 0.5rem; 
+            font-size: 0.8em; 
+            color: #555; 
+            transition: transform 0.2s ease; 
+            transform: rotate(0deg); 
+        }
+        .main-row.expanded .expand-icon { transform: rotate(90deg); }
+
+        /* Detail Area */
+        .detail-row td { background-color: var(--detail-bg); padding: 0; border-bottom: 1px solid #ccc; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
+        .detail-content { padding: 1.5rem; color: #333; }
+        
+        .detail-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); 
+            gap: 1rem; 
+            margin-bottom: 1.5rem; 
+        }
+        .detail-item { background: #fff; padding: 0.75rem; border-radius: 4px; border: 1px solid #dee2e6; }
+        .detail-label { font-size: 0.75rem; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.25rem; font-weight: 700; }
+        .detail-value { font-size: 0.95rem; font-weight: 500; word-break: break-all; }
+
+        .download-link { color: var(--primary-color); text-decoration: none; font-weight: bold; cursor: pointer; }
+        .download-link:hover { text-decoration: underline; }
+
+        /* Scores */
+        details.scores-dropdown { background: #fff; border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden; margin-top: 1rem; }
+        details.scores-dropdown summary { padding: 0.75rem 1rem; background-color: #f1f3f5; cursor: pointer; font-weight: bold; outline: none; }
+        details.scores-dropdown summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+        
+        .scores-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .scores-table th, .scores-table td { padding: 0.6rem 1rem; border-bottom: 1px solid #eee; text-align: left; }
+        .scores-table tr:nth-child(even) { background-color: #f8f9fa; }
+
+        /* Success Card */
+        .success-card { 
+            background-color: var(--success-bg); 
+            color: var(--success-text); 
+            padding: 1rem; 
+            border-radius: 0.5rem; 
+            border: 1px solid #c3e6cb; 
+        }
+        .success-card h4 { margin: 0 0 0.5rem 0; }
+        .success-card p { margin: 0.25rem 0; }
     </style>
 </head>
 <body>
@@ -202,7 +262,7 @@
                 <label for="search-q">Search Query (Regex allowed)</label>
                 <input type="text" id="search-q" value=".*">
                 <button onclick="searchPackages()">Search</button>
-                <div id="search-res" aria-live="polite" style="margin-top: 1rem;"></div>
+                <div id="search-res" class="table-container" aria-live="polite" style="margin-top: 1rem;"></div>
             </section>
         </div>
     </main>
@@ -279,7 +339,6 @@
             const pass = document.getElementById('password').value;
             const errDiv = document.getElementById('login-error');
             
-            // Basic client-side validation for empty fields
             if (!name || !pass) {
                 errDiv.innerText = "Please enter both username and password.";
                 errDiv.classList.remove('hidden');
@@ -323,6 +382,10 @@
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
             document.getElementById('login-error').classList.add('hidden');
+            
+            // Clear results on logout
+            document.getElementById('upload-res').innerHTML = '';
+            document.getElementById('search-res').innerHTML = '';
         }
 
         function updateUI(isLoggedIn) {
@@ -337,13 +400,11 @@
 
                 const isAdmin = currentUser.roles && currentUser.roles.includes('admin');
                 
-                // Show/Hide Admin Buttons
                 document.querySelectorAll('.admin-only').forEach(el => {
                     if(isAdmin) el.classList.remove('hidden');
                     else el.classList.add('hidden');
                 });
 
-                // Show/Hide Regular User Delete Button
                 document.querySelectorAll('.user-only').forEach(el => {
                     if(!isAdmin) el.classList.remove('hidden');
                     else el.classList.add('hidden');
@@ -356,8 +417,206 @@
             }
         }
 
-        // --- Admin Features ---
+        // --- RESULT RENDERING HELPERS ---
+        function formatKey(key) {
+            return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
 
+        function extractScores(item, excludedKeys, scoreKeywords) {
+            const foundScores = {};
+            if (item.scores && typeof item.scores === 'object' && !Array.isArray(item.scores)) {
+                for (const [sKey, sVal] of Object.entries(item.scores)) {
+                    foundScores[sKey] = sVal;
+                }
+            }
+            for (const [key, value] of Object.entries(item)) {
+                if (excludedKeys.includes(key) || key === 'scores') continue;
+                if (scoreKeywords.some(kw => key.toLowerCase().includes(kw))) {
+                    foundScores[key] = value;
+                }
+            }
+            return foundScores;
+        }
+
+        async function downloadArtifact(type, id) {
+            const artifactType = type || 'model'; 
+            try {
+                const res = await fetch(`${API_URL}/artifacts/${artifactType}/${id}`, {
+                    method: 'GET',
+                    headers: { 'X-Authorization': `bearer ${authToken}` }
+                });
+                if (!res.ok) throw new Error("Failed to fetch download URL");
+                
+                const json = await res.json();
+                const downloadUrl = json.data && json.data.download_url;
+
+                if (downloadUrl) {
+                    window.open(downloadUrl, '_blank');
+                } else {
+                    alert("No download URL available for this artifact.");
+                }
+            } catch (err) { alert("Download failed: " + err.message); }
+        }
+
+        function renderDetailView(item) {
+            const excludedKeys = ['model_name', 'Name', 'version', 'id']; 
+            const scoreKeywords = [
+                'net_score', 'ramp_up', 'correctness', 'bus_factor', 
+                'responsive_maintainer', 'license', 'dependency_pinning', 
+                'code_review', 'code_quality', 'dataset_quality', 
+                'performance_claims', 'dataset_and_code', 'size',
+                'netscore'
+            ];
+
+            const scoresObj = extractScores(item, excludedKeys, scoreKeywords);
+            const scoreKeys = Object.keys(scoresObj);
+
+            let generalHtml = '';
+            for (const [key, value] of Object.entries(item)) {
+                if (excludedKeys.includes(key)) continue;
+                if (key === 'scores') continue; 
+                if (scoreKeys.includes(key)) continue; 
+
+                let displayValue = value;
+                
+                if (key === 's3_key') {
+                    const safeType = item.type || 'model';
+                    displayValue = `<a href="#" class="download-link" onclick="downloadArtifact('${safeType}', '${item.id}'); return false;">${value} ⬇</a>`;
+                }
+                else if (typeof value === 'object' && value !== null) {
+                    displayValue = JSON.stringify(value); 
+                } 
+                else if (String(value).startsWith('http')) {
+                    displayValue = `<a href="${value}" target="_blank" rel="noopener noreferrer">Link</a>`;
+                }
+
+                generalHtml += `
+                    <div class="detail-item">
+                        <div class="detail-label">${formatKey(key)}</div>
+                        <div class="detail-value">${displayValue}</div>
+                    </div>
+                `;
+            }
+
+            let scoresRows = '';
+            if (scoreKeys.length > 0) {
+                scoreKeys.sort().forEach(key => {
+                    let val = scoresObj[key];
+                    let displayVal = val;
+                    if (typeof val === 'object' && val !== null) {
+                         const subEntries = Object.entries(val).map(([k, v]) => {
+                            return `<li><span style="color:#555; font-weight:500;">${formatKey(k)}:</span> ${v}</li>`;
+                        }).join('');
+                        displayVal = `<ul style="margin:0; padding-left:1.2rem; font-size:0.85rem;">${subEntries}</ul>`;
+                    }
+                    scoresRows += `<tr><td style="width: 40%;"><strong>${formatKey(key)}</strong></td><td>${displayVal}</td></tr>`;
+                });
+            }
+
+            let output = '';
+            if (generalHtml) output += `<div class="detail-grid">${generalHtml}</div>`;
+            else output += '<p style="color:#666; font-style:italic;">No general details available.</p>';
+
+            if (scoresRows) {
+                output += `
+                    <details class="scores-dropdown">
+                        <summary>Quality Scores</summary>
+                        <table class="scores-table">
+                            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+                            <tbody>${scoresRows}</tbody>
+                        </table>
+                    </details>
+                `;
+            }
+            return output;
+        }
+
+        function renderUploadResult(data) {
+            if (data.metadata) {
+                const meta = data.metadata;
+                return `
+                    <div class="success-card">
+                        <h4>Upload Successful</h4>
+                        <p><strong>Name:</strong> ${meta.name || 'N/A'}</p>
+                        <p><strong>Version:</strong> ${meta.version || '1.0.0'}</p>
+                        <p><strong>ID:</strong> ${meta.id}</p>
+                    </div>
+                `;
+            } 
+            return `<div style="background:#333; color:#fff; padding:1rem; border-radius:5px;"><pre style="margin:0; color:#fff;">${JSON.stringify(data, null, 2)}</pre></div>`;
+        }
+
+        function renderSearchResult(data) {
+            if (Array.isArray(data)) {
+                if (data.length === 0) return `<p>No packages found matching your query.</p>`;
+
+                const rows = data.map((item, index) => {
+                    const detailId = `detail-${index}`;
+                    const formattedDetails = renderDetailView(item);
+                    
+                    return `
+                        <tr class="main-row" 
+                            id="row-${index}"
+                            onclick="toggleRow('${detailId}', 'row-${index}')" 
+                            onkeydown="handleRowKey(event, '${detailId}', 'row-${index}')"
+                            tabindex="0" 
+                            role="button" 
+                            aria-expanded="false" 
+                            aria-controls="${detailId}">
+                            
+                            <td><span class="expand-icon">▶</span> ${item.model_name || item.Name || 'Unknown'}</td>
+                            <td>${item.version || 'N/A'}</td>
+                            <td><code>${item.id}</code></td>
+                        </tr>
+                        <tr id="${detailId}" class="detail-row hidden">
+                            <td colspan="3">
+                                <div class="detail-content">${formattedDetails}</div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                return `
+                    <table class="table-container" role="grid" aria-label="Search Results">
+                        <thead>
+                            <tr style="background:#f8f9fa;">
+                                <th>Name</th>
+                                <th>Version</th>
+                                <th>ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    <p style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">Tip: Click a row to see full details.</p>
+                `;
+            }
+            return `<div style="background:#333; color:#fff; padding:1rem; border-radius:5px;"><pre style="margin:0; color:#fff;">${JSON.stringify(data, null, 2)}</pre></div>`;
+        }
+
+        function toggleRow(detailId, mainRowId) {
+            const detailRow = document.getElementById(detailId);
+            const mainRow = document.getElementById(mainRowId);
+            
+            const isHidden = detailRow.classList.contains('hidden');
+            if (isHidden) {
+                detailRow.classList.remove('hidden');
+                mainRow.classList.add('expanded');
+                mainRow.setAttribute('aria-expanded', 'true');
+            } else {
+                detailRow.classList.add('hidden');
+                mainRow.classList.remove('expanded');
+                mainRow.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function handleRowKey(event, detailId, mainRowId) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleRow(detailId, mainRowId);
+            }
+        }
+
+        // --- Admin User Management Logic ---
         function openCreateUserModal() {
             document.getElementById('new-user-name').value = '';
             document.getElementById('new-user-pass').value = '';
@@ -538,7 +797,7 @@
             } catch(e) { alert("Error: " + e.message); }
         }
 
-        // --- Upload/Search/Reset ---
+        // --- Core Features ---
         async function uploadPackage() {
             const url = document.getElementById('pkg-url').value;
             const resDiv = document.getElementById('upload-res');
@@ -556,7 +815,9 @@
                     body: JSON.stringify({ url: url })
                 });
                 const json = await res.json();
-                resDiv.innerHTML = `<pre>${JSON.stringify(json, null, 2)}</pre>`;
+                
+                resDiv.innerHTML = renderUploadResult(json);
+                
             } catch(e) { resDiv.innerHTML = `<div class='error-box'>Error: ${e.message}</div>`; }
         }
 
@@ -571,7 +832,9 @@
                     body: JSON.stringify([{ name: q }])
                 });
                 const json = await res.json();
-                resDiv.innerHTML = `<pre>${JSON.stringify(json, null, 2)}</pre>`;
+                
+                resDiv.innerHTML = renderSearchResult(json);
+                
             } catch(e) { resDiv.innerHTML = `<div class='error-box'>Error: ${e.message}</div>`; }
         }
 
