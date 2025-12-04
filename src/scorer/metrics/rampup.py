@@ -8,8 +8,7 @@ import os
 import re
 import time
 import json
-from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import Tuple, Optional
 
 import requests
 from requests.adapters import HTTPAdapter

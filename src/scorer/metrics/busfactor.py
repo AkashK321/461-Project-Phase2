@@ -5,19 +5,17 @@ Bus factor metric (ICSE-SEIP 2022, Jabrayilzade et al.).
 from __future__ import annotations
 
 import logging
-import os
 import re
 import math
 import time
 import datetime as dt
-import requests
 from pathlib import Path
-from collections import defaultdict, Counter
+from collections import defaultdict
 from urllib.parse import urlparse
 
 # Optional: resolve HuggingFace → GitHub
 try:
-    from huggingface_hub import HfApi, get_token
+    from huggingface_hub import HfApi
 
     HF = HfApi()
 except ImportError:
@@ -200,7 +198,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     """
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
 
-    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))  # type: ignore
+    dl: defaultdict[str, defaultdict[str, int]] = \
+        defaultdict(lambda: defaultdict(int))  # type: ignore
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
     file_creators: dict[str, str] = (
@@ -236,7 +235,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
         # 2. Identify Author
         # Try to get author name from object, fallback to title or unknown
-        # Note: HF commit objects often don't have 'author' filled if not a signed-up user
+        # Note: HF commit objects often don't have 'author' 
+        #   filled if not a signed-up user
         author_names = ["unknown"]
         if hasattr(c, "authors") and c.authors:
             author_names = c.authors
@@ -251,7 +251,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             dl[virtual_filename][auth_norm] += 1
             contributors[virtual_filename].add(auth_norm)
 
-            # Set creator as the first person found (since we iterate new->old or old->new)
+            # Set creator as the first person found 
+            #   (since we iterate new->old or old->new)
             # This matters less for the approximation
             if virtual_filename not in file_creators:
                 file_creators[virtual_filename] = auth_norm
@@ -397,11 +398,9 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         )
         logger.info(f"doa inputs: {dl}, {total_by_file}, {contributors}, {creators}")
 
-        # if not total_by_file:
-        #     logger.info(f"No code-like files with commit history found for {repo_id}.")
-        #     return 0.0, int((time.time() - start) * 1000)
-
-        # authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
+        if not total_by_file:
+            logger.info(f"No files with commit history found for {repo_id}.")
+            return 0.0, int((time.time() - start) * 1000)
 
         # bf, _ = _compute_bus_factor(authors_of_file)
         bf, total_authors = _compute_bus_factor_approximation(total_by_file, dl)
@@ -409,7 +408,8 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
         score = max(0.0, min(1.0, score))
         logger.info(
-            f"Bus factor score for {repo_id}: {score} (bus factor: {bf}) (total authors: {total_authors})"
+            f"Bus factor score for {repo_id}: {score} \
+                (bus factor: {bf}) (total authors: {total_authors})"
         )
         return score, int((time.time() - start) * 1000)
 
