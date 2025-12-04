@@ -172,6 +172,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     
     # We use a dummy filename to represent the whole project
     virtual_filename = f"Entire_Repo:{repo_id}"
+    logger.info(f"Fetched commits: {commits}")
 
     # Iterate through commits (No HTTP requests inside loop!)
     for c in commits:
@@ -204,6 +205,8 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             # This matters less for the approximation
             if virtual_filename not in file_creators:
                 file_creators[virtual_filename] = auth_norm
+        
+        logger.info(f"doa inputs: {dl}, {total_by_file}, {contributors}, {file_creators}")
 
     return dl, total_by_file, contributors, file_creators
 
