@@ -25,7 +25,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 SINCE_DAYS_DEFAULT = 1095 # Approx. 3 years
-DOA_THRESHOLD = 3.293
+DOA_THRESHOLD = 1
 
 CODE_EXTS = {
     ".py", ".ipynb", ".md", ".rst", ".txt", ".json", ".yaml", ".yml",
