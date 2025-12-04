@@ -146,100 +146,66 @@ def _is_code_like(path: str) -> bool:
 
 
 def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
-    """Collects Degree-of-Authorship data from Hugging Face Hub API."""
+    """
+    APPROXIMATION: Treats the entire repo as a single unit to calculate Bus Factor
+    based on commit volume, avoiding the need for file diffs/parsing.
+    """
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
 
     dl: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int)) # type: ignore
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
-    file_creators: dict[str, str] = {}
+    file_creators: dict[str, str] = {} # Not used heavily in this approx, but kept for type safety
 
     if not HF:
         raise ImportError("huggingface_hub is not installed or failed to import")
 
     try:
-        # FIX 1: Use list_repo_commits (returns GitCommitInfo objects)
+        # Fetch high-level commit list (Cheap API call)
         commits = list(HF.list_repo_commits(repo_id=repo_id, repo_type=repo_type))
-        logger.info(f"commits: {commits}")
     except Exception as e:
         logger.error(f"Failed to list commits for {repo_id}: {e}")
         return {}, {}, {}, {}
 
-    # FIX 2: Correct attribute is 'created_at', not 'committed_date'
-    # Ensure timezone awareness compatibility (compare both as UTC or unaware)
+    # Ensure timezone awareness compatibility
     since_dt_aware = since_dt.replace(tzinfo=dt.timezone.utc)
-    recent_commits = []
+    
+    # We use a dummy filename to represent the whole project
+    virtual_filename = f"Entire_Repo:{repo_id}"
+
+    # Iterate through commits (No HTTP requests inside loop!)
     for c in commits:
+        # 1. Date Check
         c_date = c.created_at
         if c_date.tzinfo is None:
             c_date = c_date.replace(tzinfo=dt.timezone.utc)
 
-        if c_date > since_dt_aware:
-            recent_commits.append(c)
+        if c_date < since_dt_aware:
+            continue
 
-    # Sort oldest to newest
-    recent_commits.sort(key=lambda c: c.created_at)
+        # 2. Identify Author
+        # Try to get author name from object, fallback to title or unknown
+        # Note: HF commit objects often don't have 'author' filled if not a signed-up user
+        author_names = ["unknown"]
+        if hasattr(c, 'authors') and c.authors:
+            author_names = c.authors
+        elif hasattr(c, 'author') and c.author:
+             author_names = [c.author]
+        
+        # 3. Populate stats for the "Virtual File"
+        total_by_file[virtual_filename] += 1
+        
+        for author in author_names:
+            auth_norm = author.lower()
+            dl[virtual_filename][auth_norm] += 1
+            contributors[virtual_filename].add(auth_norm)
 
-    logger.info(f"Found {len(recent_commits)} recent commits since {since_dt_aware} for {repo_id}")
+            # Set creator as the first person found (since we iterate new->old or old->new)
+            # This matters less for the approximation
+            if virtual_filename not in file_creators:
+                file_creators[virtual_filename] = auth_norm
 
-    # Prepare URL prefix for API calls
-    # repo_type input is "model", "dataset", "space". URL expects "models", "datasets", "spaces"
-    api_repo_type = f"{repo_type}s/" if repo_type in ("dataset", "space") else ""
-
-    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN") or get_token()
-    headers = {}
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-
-    for commit in recent_commits:
-        try:
-            # FIX 3: Fetch detailed commit info (including files) via raw API
-            # HfApi() does not have a helper to get the "diff" directly,
-            # so we query the API endpoint standard for commit details.
-            commit_url = f"https://huggingface.co/api/{api_repo_type}{repo_id}/commit/{commit.commit_id}.diff"
-            logger.info(f"Fetching commit details from {commit_url}")
-
-            # This works for public repos even if headers is empty
-            resp = requests.get(commit_url, headers=headers)
-            if resp.status_code != 200:
-                logger.warning(f"Failed to fetch commit details for {commit.commit_id}: {resp.status_code}")
-                continue
-
-            # Author email logic
-            # The list_repo_commits object has 'authors', usually a list of names.
-            # The raw API JSON usually has 'author' object with 'email' if available.
-
-            author_emails = ["unknown"]
-            if hasattr(commit, 'authors') and commit.authors:
-                # commit.authors is usually a list of usernames (e.g. ['System', 'User'])
-                author_emails = commit.authors
-
-            author_email = author_email.lower()
-
-            # FIX 4: Use the 'files' list from the API response instead of parsing diff text
-            # commit_data['files'] is usually a list of dicts with 'path'
-            diff_text = resp.text
-            logger.info(f"Commit {commit.commit_id} diff text length: {len(diff_text)}")
-            files_changed = re.findall(r'^diff --git a/.*? b/(.*?)$', diff_text, re.MULTILINE)
-            logger.info(f"Commit {commit.commit_id} changed files: {files_changed}")
-
-            for f in files_changed:
-                # if not f or not _is_code_like(f):
-                #     continue
-                total_by_file[f] += 1
-                for author in author_emails:
-                    dl[f][author] += 1
-                    contributors[f].add(author)
-
-                # Record the author of the first commit touching a file
-                if f not in file_creators:
-                    file_creators[f] = author_emails[0]
-
-        except Exception as e:
-            logger.warning(f"Skipping commit {commit.commit_id} due to error: {e}")
-
-    creators = file_creators
-    return dl, total_by_file, contributors, creators
+    return dl, total_by_file, contributors, file_creators
 
 
 def _doa(author, file_path, dl, total_by_file, contributors, creators):
