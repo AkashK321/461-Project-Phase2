@@ -5,12 +5,14 @@ the number of downloads, likes
 
 import os
 import time
+import logging
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login
 from .base import get_repo_id
 import math
 from typing import Tuple, Optional
 
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 # HF_TOKEN = os.getenv("HF_Token")
@@ -56,25 +58,34 @@ def normalize(value: int, target: int) -> float:
 def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float], int]:
     _maybe_login()
     start_time = time.time()
+    logger.info(f"Starting dataset quality scoring for {url}")
 
     if url_type != "dataset":
-        print("Dataset quality score is only applicable to datasets")
+        logger.warning("Dataset quality score is only applicable to datasets")
         latency = int((time.time() - start_time) * 1000)
         return None, latency
 
     # Get repo id
     try:
         repo_id = get_repo_id(url, url_type)
+        logger.info(f"Repo ID for {url} is {repo_id}")
     except Exception as e:
-        print(f"Error getting repo id {e}")
+        logger.error(f"Error getting repo id for {url}: {e}")
         latency = int((time.time() - start_time) * 1000)
         return None, latency
 
     dataset_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=False)
+    try:
+        dataset_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=False)
+    except Exception as e:
+        logger.error(f"Could not fetch dataset info for {repo_id}: {e}")
+        latency = int((time.time() - start_time) * 1000)
+        return 0.0, latency
 
     # Look at number of downloads and likes
     downloads = getattr(dataset_info, "downloads", 0) or 0
     likes = getattr(dataset_info, "likes", 0) or getattr(dataset_info, "stars", 0) or 0
+    logger.info(f"Dataset {repo_id} has {downloads} downloads and {likes} likes.")
 
     # Normalize these scores
     downloads_score = normalize(downloads, max_downloads)
@@ -83,10 +94,17 @@ def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float],
     # If likes/stars don't exist, return downloads score
     if likes == 0:
         return round(downloads_score, 2)
+    score = 0.0
+    if likes == 0 and downloads > 0:
+        score = downloads_score
+    elif downloads > 0 or likes > 0:
+        # Weighted sum of downloads and likes scores
+        score = 0.8 * downloads_score + 0.2 * likes_score
 
     # Weighted sum of downloads and likes scores
     score = 0.8 * downloads_score + 0.2 * likes_score
 
+    logger.info(f"Final dataset quality score for {repo_id}: {score:.2f}")
     latency = int((time.time() - start_time) * 1000)
 
     return round(score, 2), latency

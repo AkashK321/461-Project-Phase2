@@ -1,17 +1,13 @@
-import pytest
 from unittest.mock import patch, MagicMock
-import tempfile
 import os
-from pathlib import Path
 from src.scorer.metrics.rampup import (
     get_ramp_up,
-    _read_first_readme,
-    _top_level_summary,
+    _parse_repo_id,
+    _get_repo_tree_hf,
     _ask_llm,
     _heuristic_rampup,
-    _to_clone_url,
     _extract_json_first,
-    SKIP_DIRS,
+    _fetch_file_content,
 )
 
 
@@ -34,116 +30,119 @@ def test_extract_json_first_no_json():
     assert result is None
 
 
-# Test URL normalization
-def test_to_clone_url_github():
-    """Test GitHub URL normalization."""
-    url = "https://github.com/owner/repo"
-    result = _to_clone_url(url, "code")
-    assert result == "https://github.com/owner/repo.git"
-
-
-def test_to_clone_url_github_with_tree():
-    """Test GitHub URL with /tree/main suffix."""
-    url = "https://github.com/owner/repo/tree/main"
-    result = _to_clone_url(url, "code")
-    assert result == "https://github.com/owner/repo.git"
-
-
-def test_to_clone_url_hf_model():
-    """Test HuggingFace model URL normalization."""
+# Test URL/repo_id parsing
+def test_parse_repo_id_hf_model():
+    """Test HuggingFace model URL parsing."""
     url = "https://huggingface.co/owner/model"
-    result = _to_clone_url(url, "model")
-    assert result == "https://huggingface.co/owner/model"
+    repo_id, repo_type = _parse_repo_id(url)
+    assert repo_id == "owner/model"
+    assert repo_type == "model"
 
 
-def test_to_clone_url_hf_dataset():
-    """Test HuggingFace dataset URL normalization."""
+def test_parse_repo_id_hf_dataset():
+    """Test HuggingFace dataset URL parsing."""
     url = "https://huggingface.co/datasets/owner/dataset"
-    result = _to_clone_url(url, "dataset")
-    assert result == "https://huggingface.co/datasets/owner/dataset"
+    repo_id, repo_type = _parse_repo_id(url)
+    assert repo_id == "owner/dataset"
+    assert repo_type == "dataset"
 
 
-def test_to_clone_url_invalid_github():
-    """Test invalid GitHub URL."""
-    with pytest.raises(ValueError):
-        _to_clone_url("https://github.com/owner", "code")
+def test_parse_repo_id_hf_space():
+    """Test HuggingFace space URL parsing."""
+    url = "https://huggingface.co/spaces/owner/space"
+    repo_id, repo_type = _parse_repo_id(url)
+    assert repo_id == "owner/space"
+    assert repo_type == "space"
 
 
-def test_to_clone_url_invalid_hf_model():
-    """Test invalid HF model URL."""
-    with pytest.raises(ValueError):
-        _to_clone_url("https://huggingface.co/owner", "model")
+def test_parse_repo_id_simple_string():
+    """Test simple 'user/repo' string parsing."""
+    url = "owner/model"
+    repo_id, repo_type = _parse_repo_id(url)
+    assert repo_id == "owner/model"
+    assert repo_type == "model"
 
 
-def test_to_clone_url_invalid_hf_dataset():
-    """Test invalid HF dataset URL."""
-    with pytest.raises(ValueError):
-        _to_clone_url("https://huggingface.co/datasets/owner", "dataset")
+def test_parse_repo_id_invalid():
+    """Test invalid URL returns None."""
+    url = "https://invalid.com/single"
+    repo_id, repo_type = _parse_repo_id(url)
+    assert repo_id is None
+    assert repo_type is None
 
 
-def test_read_first_readme_found(tmp_path):
-    f = tmp_path / "README.md"
-    f.write_text("Hello World")
-    content = _read_first_readme(str(tmp_path))
-    assert content == "Hello World"
+def test_parse_repo_id_empty_path():
+    """Test URL with no path components."""
+    url = "https://huggingface.co/"
+    repo_id, repo_type = _parse_repo_id(url)
+    assert repo_id is None
+    assert repo_type is None
 
 
-def test_read_first_readme_missing(tmp_path):
-    # No README files
-    content = _read_first_readme(str(tmp_path))
-    assert content == ""
+# Test file tree and README fetching via HF API
+@patch("src.scorer.metrics.rampup.HF_API.list_repo_files")
+@patch("src.scorer.metrics.rampup._fetch_file_content")
+def test_get_repo_tree_hf_success(mock_fetch, mock_list):
+    """Test successful repo tree retrieval."""
+    mock_list.return_value = ["file1.py", "file2.py", "README.md"]
+    mock_fetch.return_value = "# README\npip install test"
+
+    tree, readme = _get_repo_tree_hf("owner/repo", "model")
+
+    assert "file1.py" in tree
+    assert "file2.py" in tree
+    assert readme == "# README\npip install test"
 
 
-# Test file tree summary
-def test_top_level_summary_basic(tmp_path):
-    """Test basic file tree generation."""
-    files = ["file1.py", "file2.txt", "subdir/file3.py"]
-    for f in files:
-        path = tmp_path / f
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("content")
+@patch("src.scorer.metrics.rampup.HF_API.list_repo_files")
+def test_get_repo_tree_hf_skip_dirs(mock_list):
+    """Test that SKIP_DIRS are excluded from tree."""
+    mock_list.return_value = [
+        "normal_file.py",
+        ".git/config",
+        "__pycache__/cache.pkl",
+        "src/main.py",
+    ]
 
-    result = _top_level_summary(str(tmp_path))
-    assert "file1.py" in result
-    assert "file2.txt" in result
+    tree, readme = _get_repo_tree_hf("owner/repo", "model")
 
-
-def test_top_level_summary_skip_dirs(tmp_path):
-    """Test that skipped directories are excluded."""
-    # Create files in directories that should be skipped
-    for skip_dir in SKIP_DIRS:
-        skip_path = tmp_path / skip_dir
-        skip_path.mkdir()
-        (skip_path / "file.py").write_text("should be skipped")
-
-    # Create a normal file
-    (tmp_path / "normal_file.py").write_text("should be included")
-
-    result = _top_level_summary(str(tmp_path))
-    assert "normal_file.py" in result
-    # Should not include files from skipped directories
-    for skip_dir in SKIP_DIRS:
-        assert skip_dir not in result
+    assert "normal_file.py" in tree
+    assert ".git" not in tree
+    assert "__pycache__" not in tree
+    assert "src/main.py" in tree
 
 
-def test_top_level_summary_max_files(tmp_path):
-    """Test file count limit."""
-    # Create more than max_files
-    for i in range(150):
-        (tmp_path / f"file{i}.txt").write_text("content")
+@patch("src.scorer.metrics.rampup.HF_API.list_repo_files")
+def test_get_repo_tree_hf_api_error(mock_list):
+    """Test graceful handling of API errors."""
+    mock_list.side_effect = Exception("API error")
 
-    result = _top_level_summary(str(tmp_path), max_files=50)
-    lines = result.split("\n")
-    assert len(lines) <= 50
+    tree, readme = _get_repo_tree_hf("owner/repo", "model")
+
+    assert tree == ""
+    assert readme is None
 
 
-def test_top_level_summary_empty_dir(tmp_path):
-    """Test empty directory."""
-    result = _top_level_summary(str(tmp_path))
+@patch("src.scorer.metrics.rampup.hf_hub_download")
+def test_fetch_file_content_success(mock_download):
+    """Test successful file fetch."""
+    mock_download.return_value = "/tmp/README.md"
+
+    with patch("builtins.open", create=True) as mock_open:
+        mock_open.return_value.__enter__.return_value.read.return_value = "# Content"
+        result = _fetch_file_content("owner/repo", "model", "README.md")
+
+    assert result == "# Content"
+
+
+@patch("src.scorer.metrics.rampup.hf_hub_download")
+def test_fetch_file_content_not_found(mock_download):
+    """Test file not found returns empty string."""
+    mock_download.side_effect = Exception("File not found")
+
+    result = _fetch_file_content("owner/repo", "model", "README.md")
     assert result == ""
 
-
-def test_heuristic_rampup_low_score():
     """Test heuristic with few patterns."""
     readme = "# Project\nThis is a project."
     tree = "file1.txt\nfile2.txt"
@@ -174,96 +173,95 @@ def test_ask_llm_no_env_vars():
         assert score is None
 
 
-@patch("src.scorer.metrics.rampup._ask_llm", return_value=0.77)
-def test_ask_llm_json_and_regex(mock_ask_llm):
-    from src.scorer.metrics.rampup import get_ramp_up
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
+@patch("src.scorer.metrics.rampup._ask_llm")
+def test_get_ramp_up_with_llm_mock(mock_ask_llm, mock_get_tree):
+    """Test get_ramp_up with mocked LLM."""
+    score, latency = get_ramp_up("https://huggingface.co/mock/repo", "model")
 
-    score, _ = get_ramp_up("https://huggingface.co/mock/repo", "model")
-
-    # Now score is always a float between 0 and 1
+    # Score should be a float between 0 and 1
     assert 0.0 <= score <= 1.0
+    assert isinstance(latency, int)
 
 
-# Helper to create dummy repo structure
-def create_dummy_repo_files(tmpdir, files=None, readme_content="Example README"):
-    files = files or ["README.md", "train.py", "requirements.txt"]
-    for f in files:
-        path = Path(tmpdir) / f
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            readme_content if f.lower().startswith("readme") else "print('hello')"
-        )
-    return tmpdir
-
-
-@patch("src.scorer.metrics.rampup.Repo.clone_from")
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
 @patch("src.scorer.metrics.rampup._ask_llm")
-def test_get_ramp_up_clone_fail(mock_ask_llm, mock_clone_from):
-    """Simulate clone error; should return score 0."""
-    mock_clone_from.side_effect = Exception("clone failed")
-    score, latency = get_ramp_up("https://huggingface.co/fake/repo", "model")
+def test_get_ramp_up_parse_error_returns_zero(mock_ask_llm, mock_get_tree):
+    """Test that parsing errors return score 0."""
+    mock_get_tree.side_effect = Exception("Parse error")
+
+    score, latency = get_ramp_up("https://huggingface.co/invalid", "model")
     assert score == 0.0
     assert isinstance(latency, int)
 
 
-@patch("src.scorer.metrics.rampup.Repo.clone_from")
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
 @patch("src.scorer.metrics.rampup._ask_llm")
-def test_get_ramp_up_llm_fail(mock_ask_llm, mock_clone_from):
-    """Simulate LLM error; should return score 0."""
-    mock_ask_llm.side_effect = Exception("LLM failure")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        create_dummy_repo_files(tmpdir)
-        mock_clone_from.side_effect = lambda url, to_path: tmpdir
-
-        score, latency = get_ramp_up("https://huggingface.co/mock/repo", "model")
-
+def test_get_ramp_up_invalid_repo_id_returns_zero(mock_ask_llm, mock_get_tree):
+    """Test invalid repo_id returns score 0."""
+    score, latency = get_ramp_up("https://invalid.com/single", "model")
     assert score == 0.0
     assert isinstance(latency, int)
 
 
-# Additional test to verify the exact LLM failure scenario
-@patch("src.scorer.metrics.rampup.Repo.clone_from")
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
 @patch("src.scorer.metrics.rampup._ask_llm")
-@patch("src.scorer.metrics.rampup._read_first_readme")
-@patch("src.scorer.metrics.rampup._top_level_summary")
-def test_get_ramp_up_llm_exception(
-    mock_summary, mock_readme, mock_ask_llm, mock_clone_from
-):
-    """Test that LLM exceptions are handled gracefully."""
-    readme_content = "# Test README\nNo special patterns here"
-    tree_content = "file1.txt\nfile2.txt"
+def test_get_ramp_up_llm_success(mock_ask_llm, mock_get_tree):
+    """Test successful LLM evaluation."""
+    mock_get_tree.return_value = (
+        "setup.py\nREADME.md\nrequirements.txt",
+        "# Test README\npip install test",
+    )
+    mock_ask_llm.return_value = 0.85
 
-    mock_readme.return_value = readme_content
-    mock_summary.return_value = tree_content
+    score, latency = get_ramp_up("https://huggingface.co/owner/repo", "model")
 
-    # Mock _ask_llm to raise an exception (different from returning None)
-    mock_ask_llm.side_effect = Exception("LLM service error")
-    mock_clone_from.return_value = MagicMock()
-
-    score, latency = get_ramp_up("https://huggingface.co/mock/repo", "model")
-    assert score == 0.0
+    # Should use LLM score
+    assert score == 0.85
     assert isinstance(latency, int)
 
-    mock_clone_from.assert_called_once()
-    mock_ask_llm.assert_called_once()
 
-
-# Test with empty content to verify heuristic minimum score
-@patch("src.scorer.metrics.rampup.Repo.clone_from")
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
 @patch("src.scorer.metrics.rampup._ask_llm")
-@patch("src.scorer.metrics.rampup._read_first_readme")
-@patch("src.scorer.metrics.rampup._top_level_summary")
-def test_get_ramp_up_empty_content(
-    mock_summary, mock_readme, mock_ask_llm, mock_clone_from
-):
-    """Test heuristic fallback with empty README and file list."""
-    mock_readme.return_value = ""
-    mock_summary.return_value = ""
+def test_get_ramp_up_heuristic_fallback(mock_ask_llm, mock_get_tree):
+    """Test fallback to heuristic when LLM returns None."""
+    mock_get_tree.return_value = ("file1.py\nfile2.py", "# README\npip install test")
     mock_ask_llm.return_value = None
-    mock_clone_from.return_value = MagicMock()
 
-    score, latency = get_ramp_up("https://huggingface.co/mock/repo", "model")
+    score, latency = get_ramp_up("https://huggingface.co/owner/repo", "model")
+
+    # Should use heuristic scoring (which includes boosts)
+    assert 0.0 <= score <= 1.0
+    assert isinstance(latency, int)
+    # With heuristic and "pip install" pattern, should be > 0.15
+    assert score > 0.15
+
+
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
+@patch("src.scorer.metrics.rampup._ask_llm")
+def test_get_ramp_up_llm_score_clamping(mock_ask_llm, mock_get_tree):
+    """Test that scores are clamped to [0.0, 1.0] range."""
+    mock_get_tree.return_value = ("files", "README")
+
+    # Test score > 1.0 gets clamped
+    mock_ask_llm.return_value = 1.5
+    score, _ = get_ramp_up("https://huggingface.co/owner/repo", "model")
+    assert score == 1.0
+
+    # Test score < 0.0 gets clamped
+    mock_ask_llm.return_value = -0.5
+    score, _ = get_ramp_up("https://huggingface.co/owner/repo", "model")
+    assert score == 0.0
+
+
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
+@patch("src.scorer.metrics.rampup._ask_llm")
+def test_get_ramp_up_empty_content_heuristic(mock_ask_llm, mock_get_tree):
+    """Test heuristic fallback with empty README and file list."""
+    mock_get_tree.return_value = ("", "")
+    mock_ask_llm.return_value = None
+
+    score, latency = get_ramp_up("https://huggingface.co/owner/repo", "model")
 
     # Heuristic should return minimum score (0.15) when no patterns found
     expected_score = _heuristic_rampup("", "")
@@ -272,53 +270,18 @@ def test_get_ramp_up_empty_content(
     assert isinstance(latency, int)
 
 
-# Test successful LLM response
-@patch("src.scorer.metrics.rampup.Repo.clone_from")
+@patch("src.scorer.metrics.rampup._get_repo_tree_hf")
 @patch("src.scorer.metrics.rampup._ask_llm")
-@patch("src.scorer.metrics.rampup._read_first_readme")
-@patch("src.scorer.metrics.rampup._top_level_summary")
-def test_get_ramp_up_llm_success(
-    mock_summary, mock_readme, mock_ask_llm, mock_clone_from
-):
-    """Test successful LLM evaluation."""
-    mock_readme.return_value = "# Test README\npip install test"
-    mock_summary.return_value = "setup.py\nREADME.md"
+def test_get_ramp_up_type_detection(mock_ask_llm, mock_get_tree):
+    """Test URL type detection when url_type is not provided."""
+    mock_get_tree.return_value = ("files", "README")
+    mock_ask_llm.return_value = 0.7
 
-    # Mock LLM to return a specific score
-    mock_ask_llm.return_value = 0.85
-    mock_clone_from.return_value = MagicMock()
+    # Pass just the URL and let it parse the type
+    score, latency = get_ramp_up("owner/repo", "")
 
-    score, latency = get_ramp_up("https://huggingface.co/mock/repo", "model")
-
-    # Should use LLM score, not heuristic
-    assert score == 0.85
+    assert 0.0 <= score <= 1.0
     assert isinstance(latency, int)
-
-    mock_ask_llm.assert_called_once()
-
-
-# Test score clamping
-@patch("src.scorer.metrics.rampup.Repo.clone_from")
-@patch("src.scorer.metrics.rampup._ask_llm")
-@patch("src.scorer.metrics.rampup._read_first_readme")
-@patch("src.scorer.metrics.rampup._top_level_summary")
-def test_get_ramp_up_score_clamping(
-    mock_summary, mock_readme, mock_ask_llm, mock_clone_from
-):
-    """Test that scores are clamped to [0.0, 1.0] range."""
-    mock_readme.return_value = "README"
-    mock_summary.return_value = "files"
-    mock_clone_from.return_value = MagicMock()
-
-    # Test score > 1.0 gets clamped
-    mock_ask_llm.return_value = 1.5
-    score, _ = get_ramp_up("https://huggingface.co/mock/repo", "model")
-    assert score == 1.0
-
-    # Test score < 0.0 gets clamped
-    mock_ask_llm.return_value = -0.5
-    score, _ = get_ramp_up("https://huggingface.co/mock/repo", "model")
-    assert score == 0.0
 
 
 @patch("src.scorer.metrics.rampup.requests.Session.post")

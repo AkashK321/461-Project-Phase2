@@ -27,11 +27,11 @@ from scorer.metrics.license import get_license_score
 from scorer.metrics.dataset_quality import get_dataset_quality_score
 
 # from scorer.metrics.code_quality import get_code_quality
-# from scorer.metrics.performance_claims import get_performance_claims
+from scorer.metrics.performance_claims import get_performance_claims
 from scorer.metrics.dataset_and_code import get_dataset_and_code_score
 
-# from scorer.metrics.rampup import get_ramp_up
-# from scorer.metrics.busfactor import get_bus_factor
+from scorer.metrics.rampup import get_ramp_up
+from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
@@ -65,8 +65,8 @@ def score_url(url: str, url_type: str) -> dict:
     if url_type == "code":
         pass
         # tasks["code_quality"] = lambda: get_code_quality(url, url_type)
-        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        # tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
     elif url_type == "dataset":
         pass
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
@@ -77,9 +77,9 @@ def score_url(url: str, url_type: str) -> dict:
         pass
         tasks["size"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
-        # tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        # tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
 
     results = {"name": name, "category": url_type.upper()}
     latencies = {}

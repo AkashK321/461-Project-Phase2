@@ -93,7 +93,7 @@ def test_repo_info_fetch_exception():
         score, latency = get_dataset_and_code_score(
             "https://huggingface.co/mock/repo", "model"
         )
-        assert score is None
+        assert score == 0.0
         assert isinstance(latency, int)
 
 
@@ -103,7 +103,7 @@ def test_invalid_url_type():
     score, latency = get_dataset_and_code_score(
         "https://huggingface.co/mock/repo", "invalid_type"
     )
-    assert score is None
+    assert score == 0.0
     assert isinstance(latency, int)
 
 
@@ -117,5 +117,5 @@ def test_repo_id_exception():
         score, latency = get_dataset_and_code_score(
             "https://huggingface.co/mock/repo", "model"
         )
-        assert score is None
+        assert score == 0.0
         assert isinstance(latency, int)

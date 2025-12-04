@@ -3,50 +3,55 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
 import json
-import shutil
-import tempfile
-from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import Tuple, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from git import Repo
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
+
+HF_API = HfApi()
+
 # Load .env if present so GEN_AI_STUDIO_API_KEY / GENAI_* vars are picked up
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
-def _to_clone_url(url: str, url_type: str) -> str:
+def _parse_repo_id(url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parses a URL to determine repo_id and repo_type (model, dataset, space).
+    Returns (repo_id, repo_type).
+    """
     p = urlparse(url)
-    host = p.netloc.lower()
-    parts = [x for x in p.path.split("/") if x]
 
-    if "github.com" in host:
-        if len(parts) < 2:
-            raise ValueError("GitHub URL must be /owner/repo")
-        return f"https://github.com/{parts[0]}/{parts[1]}.git"
+    # Handle direct "huggingface.co" links
+    if "huggingface.co" in p.netloc:
+        parts = [x for x in p.path.split("/") if x]
+        if not parts:
+            return None, None
 
-    if "huggingface.co" in host:
-        if parts and parts[0].lower() == "datasets":
-            if len(parts) < 3:
-                raise ValueError("HF dataset URL must be /datasets/<ns>/<name>")
-            repo_id = f"{parts[1]}/{parts[2]}"
-            return f"https://huggingface.co/datasets/{repo_id}"
-        else:
-            if len(parts) < 2:
-                raise ValueError("HF model URL must be /<ns>/<name>")
-            repo_id = f"{parts[0]}/{parts[1]}"
-            return f"https://huggingface.co/{repo_id}"
+        if parts[0] == "datasets" and len(parts) >= 3:
+            return f"{parts[1]}/{parts[2]}", "dataset"
+        elif parts[0] == "spaces" and len(parts) >= 3:
+            return f"{parts[1]}/{parts[2]}", "space"
+        elif len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}", "model"
 
-    return url
+    # Fallback for simple strings like "user/repo"
+    if url.count("/") == 1:
+        return url, "model"
+
+    return None, None
 
 
 README_CANDIDATES = [
@@ -73,35 +78,55 @@ SKIP_DIRS = {
 }
 
 
-def _read_first_readme(repo_dir: str) -> str:
-    for rel in README_CANDIDATES:
-        p = Path(repo_dir) / rel
-        if p.exists() and p.is_file():
-            try:
-                return p.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
-                pass
-    return ""
+def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
+    """Downloads a specific file from HF Hub into memory."""
+    try:
+        local_path = hf_hub_download(
+            repo_id=repo_id, filename=filename, repo_type=repo_type, local_dir=None
+        )
+        with open(local_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    except (EntryNotFoundError, RepositoryNotFoundError, Exception):
+        return ""
 
 
-def _top_level_summary(repo_dir: str, max_files: int = 120) -> str:
-    entries: List[str] = []
-    root = Path(repo_dir)
+def _get_repo_tree_hf(
+    repo_id: str, repo_type: str, max_files: int = 120
+) -> Tuple[str, Optional[str]]:
+    """
+    Uses HfApi to list files. Returns (tree_string, readme_content).
+    """
+    try:
+        files = HF_API.list_repo_files(repo_id=repo_id, repo_type=repo_type)
+    except Exception:
+        return "", None
+
+    filtered_files = []
+    readme_filename = None
     count = 0
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        rel_dir = os.path.relpath(dirpath, root)
-        for f in filenames:
-            rel = os.path.normpath(os.path.join(rel_dir, f))
-            if rel.startswith("./"):
-                rel = rel[2:]
-            entries.append(rel)
-            count += 1
-            if count >= max_files:
-                break
-        if count >= max_files:
+
+    for f in files:
+        # Simple skip logic matches your original SKIP_DIRS
+        if any(p in SKIP_DIRS for p in f.split("/")):
+            continue
+
+        filtered_files.append(f)
+
+        # Identify readme without reading content yet
+        if readme_filename is None and f in README_CANDIDATES:
+            readme_filename = f
+
+        count += 1
+        if count >= max_files * 2:
             break
-    return "\n".join(entries)
+
+    tree_str = "\n".join(filtered_files[:max_files])
+
+    readme_content = ""
+    if readme_filename:
+        readme_content = _fetch_file_content(repo_id, repo_type, readme_filename)
+
+    return tree_str, readme_content
 
 
 SYSTEM_PROMPT = (
@@ -145,6 +170,7 @@ def _heuristic_rampup(readme: str, tree: str) -> float:
 
 
 def _session_with_retry() -> requests.Session:
+    logger.info("Creating session with retries")
     s = requests.Session()
     r = Retry(
         total=3,
@@ -258,6 +284,9 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
     payload = _build_payload(user_prompt_1)
     payload_str = json.dumps(payload)
     # Send with retries
+
+    logger.info(f"Payload: {payload_str}")
+
     session = _session_with_retry()
     try:
         resp = session.post(
@@ -269,6 +298,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
             data=payload_str,
             timeout=90,
         )
+        logger.info(f"Response: {resp}")
     except requests.exceptions.Timeout:
         return None
     except requests.exceptions.SSLError:
@@ -307,6 +337,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
         '{"score": <float 0..1>, "rationale": "<=200 chars>"}'
     )
     payload2 = _build_payload(user_prompt_2)
+    logger.info(f"Second pass payload: {json.dumps(payload2)}")
     try:
         resp2 = session.post(
             url,
@@ -317,6 +348,7 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
             data=json.dumps(payload2),
             timeout=60,
         )
+        logger.info(f"Second pass response: {resp2}")
     except Exception:
         return None
 
@@ -334,7 +366,10 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
     except Exception:
         txt2 = data2.get("output_text") or data2.get("text") or ""
 
+    logger.info(f"Second pass content: {txt2}")
+
     score2 = _parse_or_salvage(txt2)
+    logger.info(f"Second pass extracted score: {score2}")
     if isinstance(score2, float):
         return max(0.0, min(1.0, score2))
 
@@ -343,20 +378,21 @@ def _ask_llm(readme: str, tree: str) -> Optional[float]:
 
 def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
     start = time.time()
-    temp_dir = tempfile.mkdtemp()
     try:
-        kind = (
-            "dataset"
-            if url_type.lower() == "dataset"
-            else "model" if url_type.lower() == "model" else "code"
-        )
-        clone_url = _to_clone_url(url, kind)
-        env = os.environ.copy()
-        env.setdefault("GIT_LFS_SKIP_SMUDGE", "1")
-        Repo.clone_from(clone_url, temp_dir, multi_options=["--depth=100"], env=env)
+        # --- CHANGED: URL Parsing ---
+        repo_id, parsed_type = _parse_repo_id(url)
 
-        readme = _read_first_readme(temp_dir)
-        tree = _top_level_summary(temp_dir, max_files=120)
+        # Determine strict type if provided, else use parsed
+        if url_type and url_type.lower() in ["model", "dataset", "space"]:
+            final_type = url_type.lower()
+        else:
+            final_type = parsed_type if parsed_type else "model"
+
+        if not repo_id:
+            return 0.0, int((time.time() - start) * 1000)
+
+        # --- CHANGED: Retrieve Data via API instead of Clone ---
+        tree, readme = _get_repo_tree_hf(repo_id, final_type, max_files=120)
 
         llm_score = _ask_llm(readme, tree)
 
@@ -364,8 +400,7 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
             # Clamp LLM score to valid range
             llm_score = max(0.0, min(1.0, float(llm_score)))
 
-            latency_ms = int((time.time() - start) * 1000)
-            return llm_score, latency_ms
+            return llm_score, int((time.time() - start) * 1000)
 
         # Fallback heuristic
         score = _heuristic_rampup(readme, tree)
@@ -406,11 +441,7 @@ def get_ramp_up(url: str, url_type: str) -> Tuple[float, int]:
 
         score = max(0.0, min(1.0, score))
 
-        latency_ms = int((time.time() - start) * 1000)
-        return float(score), latency_ms
+        return float(score), int((time.time() - start) * 1000)
 
     except Exception:
         return 0.0, int((time.time() - start) * 1000)
-
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)

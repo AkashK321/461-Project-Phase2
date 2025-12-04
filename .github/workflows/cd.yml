@@ -20,6 +20,7 @@ on:
       - rbac-auth
       - dataset-and-code-urls
       - search-for-artifact-by-name
+      - refactor-metrics-to-use-hp-api-instead-of-github
 
 # Define the permissions the job will need
 permissions:
