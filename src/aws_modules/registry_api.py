@@ -35,6 +35,10 @@ from aws_modules.auth import (
     register_user,
     hash_password,
     ensure_default_user,
+    DEFAULT_ADMIN_ID,
+    DEFAULT_ADMIN_USERNAME,
+    DEFAULT_ADMIN_PASSWORD,
+    TOKEN_USE_LIMIT,
 )
 
 # logging setup
@@ -53,10 +57,6 @@ USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a-very-unsafe-default-secret")
 SCORER_FUNCTION_NAME = os.getenv("SCORER_FUNCTION_NAME", "scorer_function")
 
-# Default admin user credentials from environment variables
-# Fall back to the specification defaults if not set
-DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "")
-DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
 DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "10"))
 
 FEATURE_FLAG_FORCE_INGESTION = (
@@ -230,8 +230,8 @@ def initialize_system():
     _initialized = True
 
 
-def reset_state():
-    # wipe the main registry table
+def reset_state(restore_jti=None):
+    # 1. Wipe Registry
     tbl = dynamodb.Table(TABLE_NAME)
     scan = tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
     ids = [it["id"] for it in scan.get("Items", [])]
@@ -240,7 +240,7 @@ def reset_state():
             for _id in ids:
                 batch.delete_item(Key={"id": _id})
 
-    # and clear any model objects in S3 under models/
+    # 2. Wipe S3
     if BUCKET_NAME:
         paginator = s3.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
@@ -248,10 +248,9 @@ def reset_state():
             if objs:
                 s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
+    # 3. Wipe User Table and Restore
     if USER_TABLE_NAME:
-        # rebuild the user table with the default admin from the spec
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
-
         scan = user_tbl.scan(
             ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
         )
@@ -262,13 +261,22 @@ def reset_state():
                 for _id in user_ids:
                     batch.delete_item(Key={"id": _id})
 
-        admin_id = str(uuid.uuid4())
+        # Use DETERMINISTIC ID so the token's 'sub' claim remains valid
+        admin_id = DEFAULT_ADMIN_ID
+        active_tokens = {}
+
+        # If a JTI was passed, restore it to the allowlist
+        if restore_jti:
+            logger.info(f"Restoring token {restore_jti} for admin {admin_id}")
+            active_tokens[restore_jti] = TOKEN_USE_LIMIT
+
         user_tbl.put_item(
             Item={
                 "id": admin_id,
                 "username": DEFAULT_ADMIN_USERNAME,
                 "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
                 "roles": ["admin", "upload", "search", "download"],
+                "active_tokens": active_tokens,  # <--- Map is saved here
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -773,29 +781,26 @@ def handler(event, context):
     user_payload = get_validated_user(event)
 
     # Reset (admin only but has bypass)
-    # reset route: needed by the autograder and for local testing
     if path == "/reset" and method == "DELETE":
+        # Extract JTI to restore
+        current_jti = user_payload.get("jti") if user_payload else None
+
         if not user_payload:
-            # This bypass is for the autograder/testing.
-            logger.warning("Allowing unauthenticated /reset")
+            # Bypass for testing
             try:
-                out = reset_state()
-                return make_response(200, out)
+                return make_response(200, reset_state())
             except Exception as e:
                 return make_response(500, {"error": str(e)})
 
-        # If we have a user, enforce admin role
-        user_roles = user_payload.get("roles", [])
-        if "admin" not in user_roles:
-            return make_response(
-                401, {"error": "You do not have permission to reset the registry."}
-            )
+        if "admin" not in user_payload.get("roles", []):
+            return make_response(403, {"error": "Permission denied"})
+
         try:
-            out = reset_state()
+            # Pass JTI to reset_state
+            out = reset_state(restore_jti=current_jti)
             return make_response(200, out)
         except Exception as e:
             return make_response(500, {"error": str(e)})
-
     # Main Authentication Check
 
     if not user_payload:
