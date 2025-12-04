@@ -355,6 +355,7 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         bf, total_authors = _compute_bus_factor_approximation(total_by_file, dl)
         # score = _normalize_score(bf, authors_of_file)
         score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
+        score = max(0.0, min(1.0, score))
         logger.info(f"Bus factor score for {repo_id}: {score} (bus factor: {bf}) (total authors: {total_authors})")
         return score, int((time.time() - start) * 1000)
 
