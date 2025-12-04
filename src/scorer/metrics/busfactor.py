@@ -279,6 +279,7 @@ def _normalize_score(bus_factor: int, authors_of_file) -> float:
         return 0.0
 
     total_authors = len(active_authors)
+    logger.info(f"Total active authors: {total_authors}, Bus factor: {bus_factor}")
 
     score = 1.0 - (bus_factor / total_authors)
 
