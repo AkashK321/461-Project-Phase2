@@ -198,8 +198,9 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
     """
     since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
 
-    dl: defaultdict[str, defaultdict[str, int]] = \
-        defaultdict(lambda: defaultdict(int))  # type: ignore
+    dl: defaultdict[str, defaultdict[str, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )  # type: ignore
     total_by_file = defaultdict(int)
     contributors = defaultdict(set)
     file_creators: dict[str, str] = (
@@ -235,7 +236,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
         # 2. Identify Author
         # Try to get author name from object, fallback to title or unknown
-        # Note: HF commit objects often don't have 'author' 
+        # Note: HF commit objects often don't have 'author'
         #   filled if not a signed-up user
         author_names = ["unknown"]
         if hasattr(c, "authors") and c.authors:
@@ -251,7 +252,7 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
             dl[virtual_filename][auth_norm] += 1
             contributors[virtual_filename].add(auth_norm)
 
-            # Set creator as the first person found 
+            # Set creator as the first person found
             #   (since we iterate new->old or old->new)
             # This matters less for the approximation
             if virtual_filename not in file_creators:

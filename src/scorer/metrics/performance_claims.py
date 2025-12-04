@@ -210,7 +210,8 @@ def _check_model_card_performance(model_url: str) -> float:
         keyword_count = 0
 
         logger.info(
-            "Analyzing README for performance keywords on {len(sentences)} sentences from readme."
+            "Analyzing README for performance keywords on "
+            "{len(sentences)} sentences from readme."
         )
 
         for sent in sentences:
