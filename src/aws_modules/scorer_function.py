@@ -6,7 +6,6 @@ It receives a list of URLs via an event payload, processes them using the
 existing scorer logic, and returns the results as a list of JSON objects.
 """
 
-import traceback
 import os
 
 from scorer.metrics.code_quality import get_code_quality
@@ -56,7 +55,8 @@ log.setLevel(logging.INFO)
 
 
 def score_url(url: str, url_type: str) -> dict:
-    """Scores a single URL and returns a dictionary of results matching the strict API schema order."""
+    """Scores a single URL and returns a dictionary
+    of results matching the strict API schema order."""
     repo = get_repo_id(url, url_type) or ""
     parts = repo.split("/", 1)
     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")

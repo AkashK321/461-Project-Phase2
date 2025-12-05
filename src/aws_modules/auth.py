@@ -167,7 +167,8 @@ def delete_user(target_user_id, current_user_id, current_user_roles):
         return make_response(
             403,
             {
-                "error": "Permission denied: You can only delete yourself unless you are an admin."
+                "error": "Permission denied: You can only "
+                "delete yourself unless you are an admin."
             },
         )
 
@@ -178,7 +179,7 @@ def delete_user(target_user_id, current_user_id, current_user_roles):
     try:
         user_table = dynamodb.Table(USER_TABLE_NAME)
 
-        # 3. Check if user exists (Optional, ensures we don't return 200 for phantom deletes)
+        # 3. Check if user exists
         resp = user_table.get_item(Key={"id": target_user_id})
         if "Item" not in resp:
             return make_response(404, {"error": "User not found"})

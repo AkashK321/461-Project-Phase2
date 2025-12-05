@@ -129,13 +129,13 @@ def parse_event(event):
     if is_b64:
         try:
             raw_body = base64.b64decode(raw_body).decode("utf-8")
-        except:
+        except Exception:
             raw_body = ""
     body = {}
     if raw_body:
         try:
             body = json.loads(raw_body)
-        except:
+        except Exception:
             pass
     return method, path, body, query_params
 
@@ -322,7 +322,8 @@ def ingest_artifact(artifact_type, payload):
             if r_zip.status_code != 200:
                 # LOGGING UPDATED HERE
                 logger.error(
-                    f"Failed to download zip from {zip_url}. Status: {r_zip.status_code}"
+                    f"Failed to download zip from {zip_url}. \
+                    Status: {r_zip.status_code}"
                 )
                 raise Exception(
                     f"Failed to download repo zip: HTTP {r_zip.status_code}"
@@ -381,7 +382,8 @@ def ingest_artifact(artifact_type, payload):
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #c = :c, #fn = :fn, #url = :url, #rid = :rid, #bm = :bm",
+            UpdateExpression="SET #c = :c, #fn = :fn, \
+            #url = :url, #rid = :rid, #bm = :bm",
             ExpressionAttributeNames={
                 "#c": "created_at",
                 "#fn": "filename",
@@ -425,7 +427,7 @@ def ingest_artifact(artifact_type, payload):
 def search_artifacts(query_array, query_params):
     try:
         page = int(query_params.get("offset", "1"))
-    except:
+    except Exception:
         page = 1
     if page < 1:
         page = 1
@@ -607,7 +609,8 @@ def rate_model(art_id):
         return make_response(
             500,
             {
-                "error": "The artifact rating system encountered an error while computing at least one metric."
+                "error": "The artifact rating system encountered "
+                "an error while computing at least one metric."
             },
         )
     else:
@@ -618,7 +621,8 @@ def rate_model(art_id):
                 return make_response(
                     500,
                     {
-                        "error": "The artifact rating system encountered an error while computing at least one metric."
+                        "error": "The artifact rating system encountered an error "
+                        "while computing at least one metric."
                     },
                 )
 
@@ -752,7 +756,6 @@ def handler(event, context):
     # GET /artifact/{type}/{id}
     get_match = re.match(r"/artifacts/([^/]+)/([^/]+)", path)
     if method == "GET" and get_match and path.count("/") == 3:
-        art_type = get_match.group(1)
         art_id = get_match.group(2)
 
         item = get_model_by_id(art_id)

@@ -59,16 +59,6 @@ class TestFrontend:
         """Verify nav buttons (Logout/Admin) are hidden initially."""
         driver = self.driver
 
-        # Find buttons by text context since specific IDs (logout-btn) might not exist in HTML
-        logout_btn = driver.find_element(
-            By.XPATH, "//button[contains(text(), 'Log Out')]"
-        )
-
-        # Admin buttons are separate now, check for one of them like "Reset Registry"
-        admin_btn = driver.find_element(
-            By.XPATH, "//button[contains(text(), 'Reset Registry')]"
-        )
-
         # They should be inside the nav-bar which is hidden
         nav_bar = driver.find_element(By.ID, "nav-bar")
         assert "hidden" in nav_bar.get_attribute("class")
