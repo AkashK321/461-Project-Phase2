@@ -5,8 +5,8 @@ import shutil
 import uuid
 import re
 import logging
-import requests  # Replaces GitPython
-import zipfile  # Handles extraction
+import requests
+import zipfile
 import io
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
@@ -29,7 +29,6 @@ from utils.lineage_utils import (
     get_descendant_items,
 )
 from scorer.metrics.base import get_repo_id
-from scorer.url_handler.base import classify_url
 from aws_modules.api_utils import make_response
 
 from aws_modules.auth import (
