@@ -8,7 +8,9 @@ import tempfile
 import time
 import subprocess
 import sys
-from git import Repo
+import requests
+import zipfile
+import io
 from typing import Tuple, Dict, Optional
 import ast
 import re
@@ -65,7 +67,6 @@ def run_lizard(path: str) -> Optional[Dict]:
         return None
 
     if result.returncode != 0:
-        # print("Lizard failed with non-zero exit code.")
         return None
 
     # find the last summary row using regex
@@ -76,23 +77,15 @@ def run_lizard(path: str) -> Optional[Dict]:
             total_row = line.strip()
 
     if not total_row:
-        print("Could not find totals in Lizard output")
+        # print("Could not find totals in Lizard output")
         return None
 
     # extract numeric values from the totals row
     parts = total_row.split()
     if len(parts) < 8:
-        print("Unexpected totals format:", total_row)
+        # print("Unexpected totals format:", total_row)
         return None
 
-    # NLOC = non-comment lines of code
-    # CNN = cyclomatic complexity number - measures paths through function
-    # token = number of syntactic (operators, keywords, identifiers, etc)
-    # PARAM = number of parameters
-    # length = total lines of code, including comments
-    # location = path where function is defined
-
-    # put values into a dict
     totals = {
         "Total NLOC": float(parts[0]),
         "Avg NLOC": float(parts[1]),
@@ -114,8 +107,7 @@ def score_from_lizard_totals(totals: dict) -> float:
     if not totals:
         return 0.0
 
-    # metric 1: Cyclomatic complexity - measures paths through function
-    # decrease score as number of paths increase
+    # metric 1: Cyclomatic complexity
     avg_ccn = totals.get("Avg CCN", 0)
     if avg_ccn <= 5:
         ccn_score = 1.0
@@ -126,8 +118,7 @@ def score_from_lizard_totals(totals: dict) -> float:
     else:
         ccn_score = 0.2
 
-    # metric 2: Average NLOC (function size) - non-comment lines of code
-    # reward shorter functions - often easier to read
+    # metric 2: Average NLOC (function size)
     avg_nloc = totals.get("Avg NLOC", 0)
     if avg_nloc <= 30:
         nloc_score = 1.0
@@ -139,7 +130,6 @@ def score_from_lizard_totals(totals: dict) -> float:
         nloc_score = 0.2
 
     # metric 3: Warnings
-    # decrease with increasing warnings
     warnings = totals.get("Warning Count", 0)
     if warnings == 0:
         warning_score = 1.0
@@ -182,6 +172,8 @@ def docstring_ratio(path: str) -> float:
                     except Exception:
                         continue
 
+    if total == 0:
+        return 0.0
     score = documented / total
     return score
 
@@ -189,16 +181,53 @@ def docstring_ratio(path: str) -> float:
 def _check_code_repo_quality(code_url: str) -> float:
     """
     Function to analyze the quality of the code.
+    Uses 'requests' and 'zipfile' to download code without git binary.
     """
 
     temp_dir = tempfile.mkdtemp()
     try:
-        # clone the repo
+        # --- DOWNLOAD LOGIC ---
         try:
-            Repo.clone_from(code_url, temp_dir)
+            # 1. Parse Owner/Repo from URL
+            if "github.com" in code_url:
+                repo_path = code_url.split("github.com/")[-1].strip("/")
+                if repo_path.endswith(".git"):
+                    repo_path = repo_path[:-4]
+            else:
+                # Fallback if not a standard github URL, though we assume valid input
+                repo_path = code_url.split("/")[-1]
+
+            # 2. Try 'main' branch first
+            zip_url = f"https://github.com/{repo_path}/archive/refs/heads/main.zip"
+            r = requests.get(zip_url, stream=True)
+            
+            # 3. Fallback to 'master' branch if main fails
+            if r.status_code != 200:
+                zip_url = f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
+                r = requests.get(zip_url, stream=True)
+            
+            if r.status_code != 200:
+                print(f"Failed to download zip from {code_url}")
+                return 0.0
+
+            # 4. Extract
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                z.extractall(temp_dir)
+            
+            # 5. Flatten Directory structure
+            items = os.listdir(temp_dir)
+            if len(items) == 1 and os.path.isdir(os.path.join(temp_dir, items[0])):
+                top_level = os.path.join(temp_dir, items[0])
+                for item in os.listdir(top_level):
+                    shutil.move(os.path.join(top_level, item), temp_dir)
+                os.rmdir(top_level)
+
         except Exception as e:
-            print(f"Cannot clone repo for code quality check: {e}")
-            raise
+            print(f"Cannot download/extract repo for code quality check: {e}")
+            return 0.0
+        
+        # --- END DOWNLOAD LOGIC ---
+
         # first reliability check - check for the word test in the files
         reliability = 0.0
         for _, _, files in os.walk(temp_dir):
@@ -279,22 +308,8 @@ def get_code_quality(url: str, url_type: str) -> Tuple[float, int]:
     score = 0.0
 
     if url_type == "code":
-        # clone GitHub repo and check readme for performance claims
+        # check code quality by downloading repo
         score = _check_code_repo_quality(url)
+    
     latency = int((time.time() - start_time) * 1000)
     return score, latency
-
-
-# # TEMPORARY MAIN FUNCTION
-# if __name__ == "__main__":
-#     print("Starting code quality check...")
-#     load_dotenv(dotenv_path=Path(__file__).resolve().parents[3] / ".env")
-#     hf_token = os.getenv("HF_TOKEN")
-#     if not hf_token:
-#         raise RuntimeError("HF_TOKEN not found")
-#     print("Loaded token starts with:", hf_token[:10])
-#     # code URL test
-#     url_code = "https://github.com/google-research/bert"
-#     url_type_code = "code"
-#     score, latency = get_code_quality(url_code, url_type_code)
-#     print(f"Code quality: Score = {score:.2f}, Latency = {latency}ms")
