@@ -306,7 +306,7 @@ def ingest_artifact(artifact_type, payload):
         else:
             # --- Use HF Hub ---
             snapshot_download(repo_id=repo, local_dir=tmp_dir, repo_type=artifact_type,
-                              allow_patterns=["*.json", "*.md", "*.txt", "*.py", "*.pt", "*.bin", "*.safetensors", "*.yaml", "*.csv"])
+                              allow_patterns=["*.json", "*.md", "*.txt", "*.py", "*.yaml", "*.csv", "*.parquet"])
 
         # Create Zip
         zip_name = f"{name}"
