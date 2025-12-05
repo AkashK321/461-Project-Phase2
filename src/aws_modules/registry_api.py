@@ -5,7 +5,6 @@ import shutil
 import uuid
 import re
 import logging
-import git
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -293,170 +292,204 @@ def reset_state(restore_jti=None):
 
 def ingest_artifact(artifact_type, payload):
     """
-    Ingests an artifact. Supports 'model', 'dataset', 'code'.
-    Assumes payload['url'] is a valid HTTPS URL.
+    Ingests an artifact.
+    'artifact_type' is initially passed from the URL path (e.g., 'model'),
+    but we verify the URL content and update 'artifact_type' if it detects a mismatch.
     """
-    logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
-    
+    logger.info(f"--- Starting Ingestion (Path Type: {artifact_type}) ---")
+    logger.info(f"Payload: {json.dumps(payload)}")
+
     try:
         url = payload.get("url")
         if not url or not isinstance(url, str):
-            return make_response(400, {"error": "payload must have a non-empty 'url' string"})
+            return make_response(
+                400, {"error": "payload must have a non-empty 'url' string"}
+            )
 
         urls = [url]
-        
-        # 1. Classification & Type override
-        # If user uploads GitHub URL to /artifact/model, we switch type to 'code'
-        if "github.com" in url:
-            if artifact_type != "code":
-                logger.info(f"Detected GitHub URL. Switching type from {artifact_type} to code.")
-                artifact_type = "code"
-        elif "huggingface.co" in url:
-            if "/datasets/" in url and artifact_type != "dataset":
-                artifact_type = "dataset"
-        
-        # 2. Extract Name/Repo
-        # Simple extraction since we assume valid URLs
-        if "github.com" in url:
-            # https://github.com/user/repo -> user/repo
-            parts = url.split("github.com/")[-1].strip("/").split("/")
-            repo = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else parts[0]
+
+        # 1. Classify the URL
+        detected_type = classify_url(url)
+
+        logger.info(f"URL: {url} | Classified as: {detected_type}")
+
+        if detected_type != "unknown":
+            if detected_type != artifact_type:
+                logger.info(
+                    f"Overriding path type '{artifact_type}' "
+                    f"with detected type '{detected_type}'."
+                )
+                artifact_type = detected_type
         else:
-            # HuggingFace: user/repo
-            repo = get_repo_id(url, artifact_type) or url.split("/")[-1]
+            logger.info(
+                f"URL classification unknown. Keeping path type '{artifact_type}'."
+            )
 
-        # Use payload name or fallback to repo name
-        name_part = repo.split("/")[-1] if "/" in repo else repo
-        name = payload.get("name", name_part).strip()
+        # 2. Extract Repo ID using the resolved artifact_type
+        repo = get_repo_id(url, artifact_type) or ""
+        logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
 
+        if not repo:
+            parts = url.strip("/").split("/")
+            repo = parts[-1] if parts else "unknown_repo"
+
+        parts = repo.split("/", 1)
+        parsed_name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+        name = payload.get("name", parsed_name).strip()
+        logger.info(f"Derived Artifact Name: {name}")
+
+    except KeyError:
+        return make_response(
+            400, {"error": "payload must have a non-empty 'url' string"}
+        )
     except Exception as e:
         logger.error(f"URL parsing error: {e}")
-        return make_response(400, {"error": "unable to parse url"})
+        return make_response(400, {"error": "unable to parse model url in payload"})
 
     # --- Invoke Scorer ---
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
-    if scorer_function_name:
-        try:
-            scorer_payload = json.dumps({"urls": urls})
-            response = lambda_client.invoke(
-                FunctionName=scorer_function_name,
-                InvocationType="RequestResponse",
-                Payload=scorer_payload,
-            )
-            raw_response = response["Payload"].read().decode()
-            response_payload = json.loads(raw_response)
-            if response_payload.get("statusCode") == 200:
-                scores_list = json.loads(response_payload["body"])
-                if scores_list: scores = scores_list[0]
-        except Exception as e:
-            logger.error(f"Scorer error: {e}")
-            # We continue even if scorer fails, unless strictly required otherwise
+    if not scorer_function_name:
+        logger.error("Scorer function not configured")
+        return make_response(500, {"error": "Metric scoring service not available"})
 
-    # --- Quality Gate ---
-    # Define metric thresholds per type
-    metrics_map = {
-        "code": ["code_quality", "bus_factor", "license"],
-        "dataset": ["dataset_quality", "license"],
-        "model": ["model_quality", "license", "bus_factor"]
-    }
-    
-    required_metrics = metrics_map.get(artifact_type, [])
+    logger.info(f"Invoking scorer function: {scorer_function_name}")
+    try:
+        scorer_payload = json.dumps({"urls": urls})
+        response = lambda_client.invoke(
+            FunctionName=scorer_function_name,
+            InvocationType="RequestResponse",
+            Payload=scorer_payload,
+        )
+        raw_response = response["Payload"].read().decode()
+        response_payload = json.loads(raw_response)
+
+        if response_payload.get("statusCode") == 200:
+            scores_list = json.loads(response_payload["body"])
+            if scores_list:
+                scores = scores_list[0]
+        else:
+            logger.error(f"Scorer function returned error: {response_payload}")
+            return make_response(500, {"error": "Failed to calculate metrics"})
+    except Exception as e:
+        logger.error(f"Failed to invoke or parse scorer response: {e}")
+        return make_response(500, {"error": "Failed to calculate metrics"})
+
+    # --- Validate Metrics ---
+    if artifact_type == "code":
+        non_latency_metrics = ["code_quality"]
+    elif artifact_type == "dataset":
+        non_latency_metrics = [
+            "dataset_and_code",
+            "dataset_quality",
+        ]
+    elif artifact_type == "model":
+        non_latency_metrics = [
+            "size",
+            "license",
+            "performance_claims",
+            "bus_factor",
+            "ramp_up",
+        ]
+    else:
+        non_latency_metrics = []
+
     failing_metrics = []
-    
-    for metric in required_metrics:
-        if metric in scores:
-            val = scores[metric]
-            # Handle nested score objects if they exist
-            if isinstance(val, dict): 
-                val = sum(val.values()) / len(val) if val else 0
-            
+    for metric in non_latency_metrics:
+        score = scores.get(metric, 0)
+        if isinstance(score, dict):
+            val = sum(score.values()) / len(score) if score else 0
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
+        else:
+            if score < 0.5:
+                failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
-        return make_response(424, {"error": "Insufficient quality metrics", "failing": failing_metrics})
+        logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
+        # Uncomment to enforce quality gates:
+        return make_response(
+            424,
+            {
+                "error": "Insufficient quality metrics",
+                "failing_metrics": failing_metrics,
+            },
+        )
 
-    # --- Download & Package ---
+    # --- Download and Upload ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    
-    # Metadata helpers
-    base_model_repo = None
-    if artifact_type == "model":
-        base_model_repo, _, _ = get_base_model_from_card(repo)
+    base_model_repo, lineage_type, source = get_base_model_from_card(repo)
 
     try:
-        logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
-        
-        if artifact_type == "code":
-            # Use GitPython to clone. Supports HTTPS auth-less cloning for public repos.
-            git.Repo.clone_from(url, tmp_dir)
-            
-            # Remove .git to save space/time
-            git_folder = os.path.join(tmp_dir, ".git")
-            if os.path.exists(git_folder):
-                shutil.rmtree(git_folder)
-        else:
-            # Use HF Hub for Models and Datasets
-            # allow_patterns prevents downloading massive unrelated files if not needed
-            snapshot_download(repo_id=repo, local_dir=tmp_dir, 
-                              allow_patterns=["*.json", "*.md", "*.txt", "*.py", "*.pt", "*.bin", "*.safetensors", "*.yaml", "*.csv"])
+        logger.info(f"Downloading artifact '{repo}' to '{tmp_dir}'")
+        snapshot_download(repo_id=repo, local_dir=tmp_dir)
 
-        # Create Zip
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
 
-        # Upload to S3
         model_id = str(uuid.uuid4())
-        s3_key = f"artifacts/{artifact_type}/{model_id}/{final_zip_name}"
+        s3_key = f"models/{model_id}/{final_zip_name}"
 
         if upload_model(tmp_zip_file, s3_key) is False:
             return make_response(500, {"error": "S3 upload failed"})
 
-        # Save Metadata to DB
-        version = "1.0.0" # Simplification for now
+        version = "v1"
         created_at = datetime.now(timezone.utc).isoformat()
-        
-        # Save basic metadata
-        item = save_model_metadata(name, version, s3_key, scores, artifact_type)
-        if not item: return make_response(500, {"error": "failed to store metadata"})
 
-        # Update with extra fields that save_model_metadata might not handle
+        # Save metadata to DynamoDB
+        item = save_model_metadata(name, version, s3_key, scores)
+        if not item:
+            return make_response(500, {"error": "failed to store metadata"})
+
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #c = :c, #fn = :fn, #url = :url, #rid = :rid, #bm = :bm",
+            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
+                #url = :url, #rid = :rid, #brid = :brid, \
+                #ling = :ling, #linsrc = :linsrc",
             ExpressionAttributeNames={
-                "#c": "created_at", 
-                "#fn": "filename", 
-                "#url": "source_url", 
+                "#t": "type",
+                "#c": "created_at",
+                "#fn": "filename",
+                "#url": "source_url",
                 "#rid": "repo_id",
-                "#bm": "base_model_repo_id"
+                "#brid": "base_model_repo_id",
+                "#ling": "lineage_type",
+                "#linsrc": "lineage_source",
             },
             ExpressionAttributeValues={
+                ":t": artifact_type,  # Uses the correctly resolved type
                 ":c": created_at,
                 ":fn": final_zip_name,
                 ":url": url,
                 ":rid": repo,
-                ":bm": base_model_repo
-            }
+                ":brid": base_model_repo,
+                ":ling": lineage_type,
+                ":linsrc": source,
+            },
         )
-        
-        return make_response(201, {
-            "metadata": {"name": name, "id": item["id"], "type": artifact_type, "version": version},
-            "data": {"url": url}
-        })
+
+        logger.info(f"Successfully ingested {artifact_type} {model_id}")
+
+        metadata = {
+            "name": item.get("model_name"),
+            "id": item.get("id"),
+            "type": artifact_type,
+        }
+        data = {"url": item.get("source_url")}
+        return make_response(201, {"metadata": metadata, "data": data})
 
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
-        return make_response(500, {"error": f"Internal error: {str(e)}"})
+        logger.error(f"Ingestion processing failed: {e}")
+        return make_response(500, {"error": f"Internal server error: {str(e)}"})
     finally:
-        # Cleanup
-        if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
-        if tmp_zip_file and os.path.exists(tmp_zip_file): os.remove(tmp_zip_file)
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        if os.path.exists(tmp_zip_file):
+            os.remove(tmp_zip_file)
 
 
 def search_artifacts(query_array, query_params):
