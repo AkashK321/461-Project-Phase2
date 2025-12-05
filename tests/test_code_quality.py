@@ -35,7 +35,8 @@ def test_code_url(load_env):
     assert latency > 0
 
 
-@patch("src.scorer.metrics.code_quality.Repo.clone_from")
+@patch("src.scorer.metrics.code_quality.requests.get")
+@patch("src.scorer.metrics.code_quality.zipfile.ZipFile")
 @patch("src.scorer.metrics.code_quality.os.walk")
 @patch("src.scorer.metrics.code_quality.os.path.exists")
 @patch("src.scorer.metrics.code_quality.run_radon")
