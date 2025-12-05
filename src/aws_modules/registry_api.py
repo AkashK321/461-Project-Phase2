@@ -366,6 +366,7 @@ def search_artifacts(query_array, query_params):
 
     name_query = (query.get("name") or "").strip()
     types = query.get("types", []) 
+    version_query = query.get("version") or query.get("version_range")
     if name_query == "*": name_query = ""
 
     items = []
@@ -378,6 +379,9 @@ def search_artifacts(query_array, query_params):
     if types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
+
+    if version_query:
+        items = [it for it in items if version_satisfies(it.get("version"), version_query)]
 
     def _sort_key(it): return (str(it.get("model_name", "")), str(it.get("version", "")))
     items.sort(key=_sort_key)

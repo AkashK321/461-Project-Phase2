@@ -4,7 +4,7 @@ Test code_quality.py
 
 import os
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 from src.scorer.metrics.code_quality import (
@@ -42,35 +42,48 @@ def test_code_url(load_env):
 @patch("src.scorer.metrics.code_quality.run_lizard")
 @patch("src.scorer.metrics.code_quality.docstring_ratio")
 def test_check_code_repo_quality_all_branches(
-    mock_docstring, mock_lizard, mock_radon, mock_exists, mock_walk, mock_clone
+    mock_docstring, mock_lizard, mock_radon, mock_exists, mock_walk, mock_zip, mock_requests
 ):
-    # Mock repo clone does nothing
-    mock_clone.return_value = None
+    # 1. Mock Network Call (requests.get)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b"fake-zip-content"
+    mock_requests.return_value = mock_response
 
-    # Mock files in repo to cover different branches
+    # 2. Mock Zip Extraction
+    # ZipFile context manager
+    mock_zip_instance = MagicMock()
+    mock_zip.return_value.__enter__.return_value = mock_zip_instance
+    mock_zip_instance.extractall.return_value = None
+
+    # 3. Mock Filesystem Walk
+    # Simulate a flattened directory structure
     mock_walk.return_value = [
         ("/tmp/mockrepo", [], ["README.md", "test_file.py", "setup.py"])
     ]
 
-    # Simulate that .github exists and Dockerfile exists
+    # 4. Mock File Existence checks
+    # Simulate that .github exists and Dockerfile exists to trigger those branches
     def exists_side(path):
         return any(
             x in path
             for x in [".github", "Dockerfile", "requirements.txt", "README.md"]
         )
-
     mock_exists.side_effect = exists_side
 
-    # Radon score branch
+    # 5. Mock Analysis Tools
     mock_radon.return_value = 0.8
-    # Lizard branch
     mock_lizard.return_value = {"Avg CCN": 6, "Avg NLOC": 25, "Warning Count": 1}
-    # Docstring ratio
     mock_docstring.return_value = 0.6
 
+    # Execute
     score = _check_code_repo_quality("https://fake.repo")
+    
+    # Assert
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
+    # Ensure we tried to download
+    mock_requests.assert_called()
 
 
 def test_score_from_lizard_totals_various():
