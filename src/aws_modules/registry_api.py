@@ -6,6 +6,16 @@ import uuid
 import re
 import logging
 
+# --- CONFIGURATION FOR BUNDLED GIT ---
+if os.path.exists("/var/task/bin/git"):
+    os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = "/var/task/bin/git"
+    os.environ["GIT_PYTHON_REFRESH"] = "quiet"
+    # Add bundled libraries to the linker path so git can run
+    current_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+    os.environ["LD_LIBRARY_PATH"] = f"{current_ld_path}:/var/task/lib"
+
+import git
+
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
 os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
@@ -292,308 +302,194 @@ def reset_state(restore_jti=None):
 
 def ingest_artifact(artifact_type, payload):
     """
-    Ingests an artifact.
-    'artifact_type' is initially passed from the URL path (e.g., 'model'),
-    but we verify the URL content and update 'artifact_type' if it detects a mismatch.
+    Ingests an artifact. Supports 'model', 'dataset', 'code'.
+    Assumes payload['url'] is a valid HTTPS URL.
     """
-    logger.info(f"--- Starting Ingestion (Path Type: {artifact_type}) ---")
-    logger.info(f"Payload: {json.dumps(payload)}")
-
+    logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
+    
     try:
         url = payload.get("url")
         if not url or not isinstance(url, str):
-            return make_response(
-                400, {"error": "payload must have a non-empty 'url' string"}
-            )
+            return make_response(400, {"error": "payload must have a non-empty 'url' string"})
 
         urls = [url]
-
-        # 1. Classify the URL
-        detected_type = classify_url(url)
-
-        logger.info(f"URL: {url} | Classified as: {detected_type}")
-
-        if detected_type != "unknown":
-            if detected_type != artifact_type:
-                logger.info(
-                    f"Overriding path type '{artifact_type}' "
-                    f"with detected type '{detected_type}'."
-                )
-                artifact_type = detected_type
+        
+        # 1. Classification & Type override
+        if "github.com" in url:
+            if artifact_type != "code":
+                logger.info(f"Detected GitHub URL. Switching type from {artifact_type} to code.")
+                artifact_type = "code"
+        elif "huggingface.co" in url:
+            if "/datasets/" in url and artifact_type != "dataset":
+                artifact_type = "dataset"
+        
+        # 2. Extract Name/Repo
+        if "github.com" in url:
+            parts = url.split("github.com/")[-1].strip("/").split("/")
+            repo = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else parts[0]
         else:
-            logger.info(
-                f"URL classification unknown. Keeping path type '{artifact_type}'."
-            )
+            repo = get_repo_id(url, artifact_type) or url.split("/")[-1]
 
-        # 2. Extract Repo ID using the resolved artifact_type
-        repo = get_repo_id(url, artifact_type) or ""
-        logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
+        name_part = repo.split("/")[-1] if "/" in repo else repo
+        name = payload.get("name", name_part).strip()
 
-        if not repo:
-            parts = url.strip("/").split("/")
-            repo = parts[-1] if parts else "unknown_repo"
-
-        parts = repo.split("/", 1)
-        parsed_name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
-        name = payload.get("name", parsed_name).strip()
-        logger.info(f"Derived Artifact Name: {name}")
-
-    except KeyError:
-        return make_response(
-            400, {"error": "payload must have a non-empty 'url' string"}
-        )
     except Exception as e:
         logger.error(f"URL parsing error: {e}")
-        return make_response(400, {"error": "unable to parse model url in payload"})
+        return make_response(400, {"error": "unable to parse url"})
 
     # --- Invoke Scorer ---
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
-    if not scorer_function_name:
-        logger.error("Scorer function not configured")
-        return make_response(500, {"error": "Metric scoring service not available"})
+    if scorer_function_name:
+        try:
+            scorer_payload = json.dumps({"urls": urls})
+            response = lambda_client.invoke(
+                FunctionName=scorer_function_name,
+                InvocationType="RequestResponse",
+                Payload=scorer_payload,
+            )
+            raw_response = response["Payload"].read().decode()
+            response_payload = json.loads(raw_response)
+            if response_payload.get("statusCode") == 200:
+                scores_list = json.loads(response_payload["body"])
+                if scores_list: scores = scores_list[0]
+        except Exception as e:
+            logger.error(f"Scorer error: {e}")
 
-    logger.info(f"Invoking scorer function: {scorer_function_name}")
-    try:
-        scorer_payload = json.dumps({"urls": urls})
-        response = lambda_client.invoke(
-            FunctionName=scorer_function_name,
-            InvocationType="RequestResponse",
-            Payload=scorer_payload,
-        )
-        raw_response = response["Payload"].read().decode()
-        response_payload = json.loads(raw_response)
-
-        if response_payload.get("statusCode") == 200:
-            scores_list = json.loads(response_payload["body"])
-            if scores_list:
-                scores = scores_list[0]
-        else:
-            logger.error(f"Scorer function returned error: {response_payload}")
-            return make_response(500, {"error": "Failed to calculate metrics"})
-    except Exception as e:
-        logger.error(f"Failed to invoke or parse scorer response: {e}")
-        return make_response(500, {"error": "Failed to calculate metrics"})
-
-    # --- Validate Metrics ---
-    if artifact_type == "code":
-        non_latency_metrics = ["code_quality"]
-    elif artifact_type == "dataset":
-        non_latency_metrics = [
-            "dataset_and_code",
-            "dataset_quality",
-        ]
-    elif artifact_type == "model":
-        non_latency_metrics = [
-            "size",
-            "license",
-            "performance_claims",
-            "bus_factor",
-            "ramp_up",
-        ]
-    else:
-        non_latency_metrics = []
-
+    # --- Quality Gate ---
+    metrics_map = {
+        "code": ["code_quality", "bus_factor", "license"],
+        "dataset": ["dataset_quality", "license"],
+        "model": ["model_quality", "license", "bus_factor"]
+    }
+    required_metrics = metrics_map.get(artifact_type, [])
     failing_metrics = []
-    for metric in non_latency_metrics:
-        score = scores.get(metric, 0)
-        if isinstance(score, dict):
-            val = sum(score.values()) / len(score) if score else 0
+    
+    for metric in required_metrics:
+        if metric in scores:
+            val = scores[metric]
+            if isinstance(val, dict): 
+                val = sum(val.values()) / len(val) if val else 0
+            
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
-        else:
-            if score < 0.5:
-                failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
-        logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-        # Uncomment to enforce quality gates:
-        return make_response(
-            424,
-            {
-                "error": "Insufficient quality metrics",
-                "failing_metrics": failing_metrics,
-            },
-        )
+        return make_response(424, {"error": "Insufficient quality metrics", "failing": failing_metrics})
 
-    # --- Download and Upload ---
+    # --- Download & Package ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    base_model_repo, lineage_type, source = get_base_model_from_card(repo)
+    
+    base_model_repo = None
+    if artifact_type == "model":
+        base_model_repo, _, _ = get_base_model_from_card(repo)
 
     try:
-        logger.info(f"Downloading artifact '{repo}' to '{tmp_dir}'")
-        snapshot_download(repo_id=repo, local_dir=tmp_dir)
+        os.makedirs(tmp_dir, exist_ok=True)
+        logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
+        
+        if artifact_type == "code":
+            # --- Use GitPython ---
+            # NOTE: THIS REQUIRES A 'GIT' LAMBDA LAYER
+            # Using HTTPS URL (public repo) avoids key prompts
+            git.Repo.clone_from(url, tmp_dir)
+            
+            # Remove .git folder
+            git_folder = os.path.join(tmp_dir, ".git")
+            if os.path.exists(git_folder):
+                shutil.rmtree(git_folder)
+        else:
+            # --- Use HF Hub ---
+            snapshot_download(repo_id=repo, local_dir=tmp_dir, 
+                              allow_patterns=["*.json", "*.md", "*.txt", "*.py", "*.pt", "*.bin", "*.safetensors", "*.yaml", "*.csv"])
 
+        # Create Zip
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
 
+        # Upload to S3
         model_id = str(uuid.uuid4())
-        s3_key = f"models/{model_id}/{final_zip_name}"
+        s3_key = f"artifacts/{artifact_type}/{model_id}/{final_zip_name}"
 
         if upload_model(tmp_zip_file, s3_key) is False:
             return make_response(500, {"error": "S3 upload failed"})
 
-        version = "v1"
+        # Save Metadata
+        version = "1.0.0"
         created_at = datetime.now(timezone.utc).isoformat()
-
-        # Save metadata to DynamoDB
-        item = save_model_metadata(name, version, s3_key, scores)
-        if not item:
-            return make_response(500, {"error": "failed to store metadata"})
+        
+        item = save_model_metadata(name, version, s3_key, scores, artifact_type)
+        if not item: return make_response(500, {"error": "failed to store metadata"})
 
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
-                #url = :url, #rid = :rid, #brid = :brid, \
-                #ling = :ling, #linsrc = :linsrc",
+            UpdateExpression="SET #c = :c, #fn = :fn, #url = :url, #rid = :rid, #bm = :bm",
             ExpressionAttributeNames={
-                "#t": "type",
-                "#c": "created_at",
-                "#fn": "filename",
-                "#url": "source_url",
-                "#rid": "repo_id",
-                "#brid": "base_model_repo_id",
-                "#ling": "lineage_type",
-                "#linsrc": "lineage_source",
+                "#c": "created_at", "#fn": "filename", "#url": "source_url", "#rid": "repo_id", "#bm": "base_model_repo_id"
             },
             ExpressionAttributeValues={
-                ":t": artifact_type,  # Uses the correctly resolved type
-                ":c": created_at,
-                ":fn": final_zip_name,
-                ":url": url,
-                ":rid": repo,
-                ":brid": base_model_repo,
-                ":ling": lineage_type,
-                ":linsrc": source,
-            },
+                ":c": created_at, ":fn": final_zip_name, ":url": url, ":rid": repo, ":bm": base_model_repo
+            }
         )
-
-        logger.info(f"Successfully ingested {artifact_type} {model_id}")
-
-        metadata = {
-            "name": item.get("model_name"),
-            "id": item.get("id"),
-            "type": artifact_type,
-        }
-        data = {"url": item.get("source_url")}
-        return make_response(201, {"metadata": metadata, "data": data})
+        
+        return make_response(201, {
+            "metadata": {"name": name, "id": item["id"], "type": artifact_type, "version": version},
+            "data": {"url": url}
+        })
 
     except Exception as e:
-        logger.error(f"Ingestion processing failed: {e}")
-        return make_response(500, {"error": f"Internal server error: {str(e)}"})
+        logger.error(f"Ingestion failed: {e}")
+        return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
-        if os.path.exists(tmp_zip_file):
-            os.remove(tmp_zip_file)
+        if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
+        if tmp_zip_file and os.path.exists(tmp_zip_file): os.remove(tmp_zip_file)
 
 
 def search_artifacts(query_array, query_params):
-    """
-    Handle POST /artifacts.
-
-    - query_array: The request body, which is a list of query objects.
-    - query_params: The query string parameters, containing the 'offset'.
-    """
-    logger.info(
-        f"Searching artifacts with queries: {query_array} and params: {query_params}"
-    )
     try:
-        offset_str = query_params.get("offset", "1")
-        page = int(offset_str)
-    except (TypeError, ValueError):
-        page = 1
-
-    if page < 1:
-        page = 1
-
+        page = int(query_params.get("offset", "1"))
+    except: page = 1
+    if page < 1: page = 1
     page_size = DEFAULT_PAGE_SIZE
 
-    if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
-        query = {}
-    else:
-        query = query_array[0]  # Use the first query object
-
-    logger.info(f"Using query: {query}")
+    if not query_array or not isinstance(query_array, list): query = {}
+    else: query = query_array[0]
 
     name_query = (query.get("name") or "").strip()
-    types = query.get("types", [])
-    want_all_types = not types
-
-    logger.info(
-        f"name_query: {name_query}, types: {types}, want_all_types: {want_all_types}"
-    )
-
-    # Handle the wildcard "*" search
-    if name_query == "*":
-        name_query = ""  # This will match all names
-
-    version_query = (query.get("version") or query.get("version_range") or "").strip()
+    types = query.get("types", []) 
+    if name_query == "*": name_query = ""
 
     items = []
-    # If a specific name is given, use the optimized query via db_utils,
-    # passing this module's dynamodb and TABLE_NAME so tests can monkeypatch
-    # `reg.dynamodb`/`reg.TABLE_NAME` and have that honored.
-    # Otherwise, scan the whole table (for wildcard or no-name queries).
     if name_query:
-        items = (
-            get_model_by_model_name(
-                name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
-            )
-            or []
-        )
+        items = get_model_by_model_name(name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME) or []
     else:
         tbl = dynamodb.Table(TABLE_NAME)
-        scan_resp = tbl.scan()
-        items = scan_resp.get("Items", [])
+        items = tbl.scan().get("Items", [])
 
-    # filter by type (if provided)
-    if not want_all_types:
+    if types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
 
-    logger.info(f"Items after name/type filtering: {len(items)}")
-    if version_query:
-        items = [
-            it
-            for it in items
-            if version_satisfies(str(it.get("version", "")), version_query)
-        ]
-
-    def _sort_key(it):
-        return (
-            str(it.get("model_name", "")),
-            parse_semver(str(it.get("version", ""))) or (0, 0, 0),
-        )
-
+    def _sort_key(it): return (str(it.get("model_name", "")), str(it.get("version", "")))
     items.sort(key=_sort_key)
-
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_items = items[start_idx:end_idx]
-
+    
+    start = (page - 1) * page_size
+    page_items = items[start : start + page_size]
+    
+    results = [
+        {"name": it.get("model_name"), "id": it.get("id"), "type": it.get("type")} 
+        for it in page_items
+    ]
+    
     headers = {}
-    if end_idx < len(items):
-        next_offset = str(page + 1)
-        headers = {"Offset": next_offset}
+    if start + page_size < len(items):
+        headers = {"Offset": str(page + 1)}
 
-    artifacts = []
-
-    for it in page_items:
-        artifact = {
-            "name": it.get("model_name"),
-            "id": it.get("id"),
-            "type": it.get("type"),
-        }
-        artifacts.append(artifact)
-
-    logger.info(f"Returning {artifacts} items for page {page}")
-
-    return make_response(200, artifacts, headers)
+    return make_response(200, results, headers)
 
 
 def get_lineage_graph(start_art_id):
@@ -852,13 +748,8 @@ def handler(event, context):
 
     # POST /artifact/{type}
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:
-        art_type = path.split("/artifact/", 1)[-1]
-        try:
-            return ingest_artifact(art_type, body)
-        except KeyError as ke:
-            return make_response(400, {"error": f"missing field: {str(ke)}"})
-        except Exception as e:
-            return make_response(400, {"error": str(e)})
+        atype = path.split("/")[-1]
+        return ingest_artifact(atype, body)
 
     # GET /artifact/{type}/{id}
     get_match = re.match(r"/artifacts/([^/]+)/([^/]+)", path)
