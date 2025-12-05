@@ -52,20 +52,16 @@ jobs:
 
       - name: Create Lambda deployment package
         run: |
+          # Create a directory to hold the package contents
           mkdir package
 
-          # 1. Install Python dependencies
+          # Install dependencies from requirements.txt into the package directory
           pip install -r requirements.txt -t ./package
 
-          # 2. Copy source code
+          # Copy the application source code into the package directory
           cp -r src/* ./package/
 
-          # 3. DOWNLOAD AND BUNDLE GIT (The Fix)
-          # We use a public layer artifact compatible with Amazon Linux
-          curl -L https://github.com/lambci/git-lambda-layer/releases/download/v2.25.1/git-2.25.1-lambda-layer.zip -o git-layer.zip
-          unzip git-layer.zip -d package/
-
-          # 4. Create the final Zip
+          # Create the zip file from the contents of the package directory
           cd package
           zip -r ../lambda_deployment.zip .
 

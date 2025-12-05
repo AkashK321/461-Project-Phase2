@@ -5,16 +5,9 @@ import shutil
 import uuid
 import re
 import logging
-
-# --- CONFIGURATION FOR BUNDLED GIT ---
-if os.path.exists("/var/task/bin/git"):
-    os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = "/var/task/bin/git"
-    os.environ["GIT_PYTHON_REFRESH"] = "quiet"
-    # Add bundled libraries to the linker path so git can run
-    current_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
-    os.environ["LD_LIBRARY_PATH"] = f"{current_ld_path}:/var/task/lib"
-
-import git
+import requests  # Replaces GitPython
+import zipfile   # Handles extraction
+import io
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -43,15 +36,10 @@ from aws_modules.auth import (
     authenticate_user,
     get_validated_user,
     register_user,
-    hash_password,
-    ensure_default_user,
     delete_user,
     get_all_users,
     update_user_roles,
-    DEFAULT_ADMIN_ID,
-    DEFAULT_ADMIN_USERNAME,
-    DEFAULT_ADMIN_PASSWORD,
-    TOKEN_USE_LIMIT,
+    ensure_default_user,
 )
 
 # logging setup
@@ -80,7 +68,7 @@ FEATURE_FLAG_FORCE_INGESTION = (
 _initialized = False
 
 
-# simple helpers for semver-ish ranges
+# --- Helpers ---
 
 SEMVER_PATTERN = re.compile(
     r"^v?(?P<maj>0|[1-9]\d*)"
@@ -88,101 +76,36 @@ SEMVER_PATTERN = re.compile(
     r"(?:\.(?P<patch>0|[1-9]\d*))?$"
 )
 
-
 def parse_semver(version: str):
-    """
-    Turn "1.2.3" / "1.2" / "v1.2.3" into (major, minor, patch).
-
-    Returns None if it doesn't look like a (loose) semver.
-    """
-    if not version:
-        return None
+    if not version: return None
     s = version.strip()
-    if s.lower().startswith("v"):
-        s = s[1:]
-
+    if s.lower().startswith("v"): s = s[1:]
     m = SEMVER_PATTERN.match(s)
-    if not m:
-        return None
-
-    maj = int(m.group("maj"))
-    min_ = int(m.group("min") or 0)
-    patch = int(m.group("patch") or 0)
-    return (maj, min_, patch)
-
+    if not m: return None
+    return (int(m.group("maj")), int(m.group("min") or 0), int(m.group("patch") or 0))
 
 def version_satisfies(ver: str, constraint: str) -> bool:
-    """
-    Check if a version string matches a constraint.
-
-    Supported patterns:
-      - exact: "1.2.3"
-      - bounded: "1.2.3-2.1.0"
-      - tilde: "~1.2.0"
-      - caret: "^1.2.0"
-    """
-    if not constraint:
-        # no filter -> everything matches
-        return True
-
+    if not constraint: return True
     v = parse_semver(ver)
     c = constraint.strip()
-
-    # if the stored version doesn't parse, only do exact string match
-    if v is None:
-        return ver == c
-
-    # "1.2.3-2.1.0" (inclusive)
+    if v is None: return ver == c
     if "-" in c and not c.startswith(("~", "^")):
         lo_s, hi_s = [p.strip() for p in c.split("-", 1)]
-        lo = parse_semver(lo_s)
-        hi = parse_semver(hi_s)
-        if lo is None or hi is None:
-            return False
-        return lo <= v <= hi
-
-    # "~1.2.0" -> >=1.2.0 and <1.3.0
+        lo, hi = parse_semver(lo_s), parse_semver(hi_s)
+        return False if (lo is None or hi is None) else (lo <= v <= hi)
     if c.startswith("~"):
-        base = c[1:].strip()
-        b = parse_semver(base)
-        if b is None:
-            return False
-
-        if v < b:
-            return False
-
+        b = parse_semver(c[1:].strip())
+        if b is None: return False
         maj, min_, _ = b
-        upper = (maj, min_ + 1, 0)
-        return v < upper
-
-    # caret rules:
-    #   ^1.2.0  -> >=1.2.0, <2.0.0
-    #   ^0.2.3  -> >=0.2.3, <0.3.0
-    #   ^0.0.3  -> >=0.0.3, <0.0.4
+        return v >= b and v < (maj, min_ + 1, 0)
     if c.startswith("^"):
-        base = c[1:].strip()
-        b = parse_semver(base)
-        if b is None:
-            return False
-
-        if v < b:
-            return False
-
+        b = parse_semver(c[1:].strip())
+        if b is None: return False
         maj, min_, pat = b
-        if maj > 0:
-            upper = (maj + 1, 0, 0)
-        elif min_ > 0:
-            upper = (0, min_ + 1, 0)
-        else:
-            upper = (0, 0, pat + 1)
-        return v < upper
-
-    # exact match (or last-resort raw equality)
+        upper = (maj + 1, 0, 0) if maj > 0 else ((0, min_ + 1, 0) if min_ > 0 else (0, 0, pat + 1))
+        return v >= b and v < upper
     cver = parse_semver(c)
-    if cver is None:
-        return ver == c
-    return v == cver
-
+    return v == cver if cver else ver == c
 
 def parse_event(event):
     path = event.get("rawPath", "") or "/"
@@ -190,58 +113,20 @@ def parse_event(event):
     query_params = event.get("queryStringParameters") or {}
     is_b64 = event.get("isBase64Encoded", False)
     raw_body = event.get("body") or ""
-
     if is_b64:
-        try:
-            raw_body = base64.b64decode(raw_body).decode("utf-8")
-        except Exception as e:
-            logger.error(f"Base64 decode failed: {e}")
-            raw_body = ""
-
-    logger.info(f"Parsing event for: {method} {path}")
-    logger.info(
-        f"Raw event body: {raw_body}"
-    )  # Optional: Comment out to hide passwords in logs
-
+        try: raw_body = base64.b64decode(raw_body).decode("utf-8")
+        except: raw_body = ""
     body = {}
-
-    if not raw_body:
-        logger.info("Raw body is empty, returning empty dict.")
-        return method, path, body, query_params
-
-    logger.info(f"Using standard JSON parser for {path}.")
-    try:
-        body = json.loads(raw_body)
-        logger.info("JSON parsing SUCCEEDED.")
-
-    except json.JSONDecodeError as e:
-        logger.error(f"JSONDecodeError on '{path}': {e}")
-        # distinct error lets you know the client sent bad JSON
-        return method, path, {}, query_params
-
-    except Exception as e:
-        logger.error(f"Unexpected error parsing body for {path}: {e}")
-        body = {}
-
+    if raw_body:
+        try: body = json.loads(raw_body)
+        except: pass
     return method, path, body, query_params
 
-
 def initialize_system():
-    """
-    Initialize the system by ensuring the default admin user exists.
-    This should be called once per Lambda container initialization.
-    """
     global _initialized
-
-    if _initialized:
-        return
-
-    # Only initialize if we have authentication support
-    if USER_TABLE_NAME and JWT_SECRET_KEY:
-        ensure_default_user()
-
+    if _initialized: return
+    if USER_TABLE_NAME and JWT_SECRET_KEY: ensure_default_user()
     _initialized = True
-
 
 def reset_state(restore_jti=None):
     # 1. Wipe Registry
@@ -250,54 +135,42 @@ def reset_state(restore_jti=None):
     ids = [it["id"] for it in scan.get("Items", [])]
     if ids:
         with tbl.batch_writer() as batch:
-            for _id in ids:
-                batch.delete_item(Key={"id": _id})
+            for _id in ids: batch.delete_item(Key={"id": _id})
 
     # 2. Wipe S3
     if BUCKET_NAME:
+        prefixes = ["models/", "artifacts/"]
         paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
-            objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
-            if objs:
-                s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
+        for prefix in prefixes:
+            for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
+                objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+                if objs: s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
     # 3. Wipe User Table and Restore
     if USER_TABLE_NAME:
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
-        scan = user_tbl.scan(
-            ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
-        )
+        scan = user_tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
         user_ids = [it["id"] for it in scan.get("Items", [])]
-
         if user_ids:
             with user_tbl.batch_writer() as batch:
-                for _id in user_ids:
-                    batch.delete_item(Key={"id": _id})
-
-        # Use DETERMINISTIC ID so the token's 'sub' claim remains valid
-        admin_id = DEFAULT_ADMIN_ID
-        active_tokens = {}
-
-        # If a JTI was passed, restore it to the allowlist
+                for _id in user_ids: batch.delete_item(Key={"id": _id})
+        
+        ensure_default_user()
+        
         if restore_jti:
-            logger.info(f"Restoring token {restore_jti} for admin {admin_id}")
-            active_tokens[restore_jti] = TOKEN_USE_LIMIT
+            default_admin_user = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+            default_admin_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, default_admin_user))
+            try:
+                user_tbl.update_item(
+                    Key={"id": default_admin_id},
+                    UpdateExpression="SET active_tokens.#j = :l",
+                    ExpressionAttributeNames={"#j": restore_jti},
+                    ExpressionAttributeValues={":l": 1000}
+                )
+            except Exception as e:
+                logger.error(f"Failed to restore JTI after reset: {e}")
 
-        user_tbl.put_item(
-            Item={
-                "id": admin_id,
-                "username": DEFAULT_ADMIN_USERNAME,
-                "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
-                "roles": ["admin", "upload", "search", "download"],
-                "active_tokens": active_tokens,  # <--- Map is saved here
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        logger.info(
-            f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}"
-        )
-
-    return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
+    return {"reset": "ok"}
 
 
 def ingest_artifact(artifact_type, payload):
@@ -390,15 +263,36 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
         
         if artifact_type == "code":
-            # --- Use GitPython ---
-            # NOTE: THIS REQUIRES A 'GIT' LAMBDA LAYER
-            # Using HTTPS URL (public repo) avoids key prompts
-            git.Repo.clone_from(url, tmp_dir)
+            # --- Use Requests + Zipfile (Pure Python) ---
+            # This works on Lambda without requiring 'git' binary
             
-            # Remove .git folder
-            git_folder = os.path.join(tmp_dir, ".git")
-            if os.path.exists(git_folder):
-                shutil.rmtree(git_folder)
+            # 1. Determine Default Branch (simplified)
+            # Try main, then master
+            zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
+            logger.info(f"Attempting download from: {zip_url}")
+            
+            r_zip = requests.get(zip_url, stream=True)
+            if r_zip.status_code != 200:
+                zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
+                logger.info(f"Main failed, trying master: {zip_url}")
+                r_zip = requests.get(zip_url, stream=True)
+            
+            if r_zip.status_code != 200:
+                raise Exception(f"Failed to download repo zip: HTTP {r_zip.status_code}")
+
+            # 2. Extract
+            with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
+                z.extractall(tmp_dir)
+            
+            # 3. Flatten Directory
+            # GitHub zips are nested in a folder 'repo-branch'. We need to move contents up.
+            items = os.listdir(tmp_dir)
+            if len(items) == 1 and os.path.isdir(os.path.join(tmp_dir, items[0])):
+                top_level = os.path.join(tmp_dir, items[0])
+                for item in os.listdir(top_level):
+                    shutil.move(os.path.join(top_level, item), tmp_dir)
+                os.rmdir(top_level)
+
         else:
             # --- Use HF Hub ---
             snapshot_download(repo_id=repo, local_dir=tmp_dir, 
@@ -490,7 +384,6 @@ def search_artifacts(query_array, query_params):
         headers = {"Offset": str(page + 1)}
 
     return make_response(200, results, headers)
-
 
 def get_lineage_graph(start_art_id):
     """
