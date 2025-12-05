@@ -47,7 +47,7 @@ class TestFrontend:
         wait = WebDriverWait(driver, 5)
         driver.find_element(By.ID, "username").send_keys("fakeuser")
         driver.find_element(By.ID, "password").send_keys("badpass")
-        
+
         # Match button by text "Login"
         login_btn = driver.find_element(By.XPATH, "//button[normalize-space()='Login']")
         login_btn.click()
@@ -58,12 +58,16 @@ class TestFrontend:
     def test_navigation_bar_state(self):
         """Verify nav buttons (Logout/Admin) are hidden initially."""
         driver = self.driver
-        
+
         # Find buttons by text context since specific IDs (logout-btn) might not exist in HTML
-        logout_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Log Out')]")
-        
+        logout_btn = driver.find_element(
+            By.XPATH, "//button[contains(text(), 'Log Out')]"
+        )
+
         # Admin buttons are separate now, check for one of them like "Reset Registry"
-        admin_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Reset Registry')]")
+        admin_btn = driver.find_element(
+            By.XPATH, "//button[contains(text(), 'Reset Registry')]"
+        )
 
         # They should be inside the nav-bar which is hidden
         nav_bar = driver.find_element(By.ID, "nav-bar")
@@ -71,26 +75,34 @@ class TestFrontend:
 
     def test_upload_ui_interaction(self):
         driver = self.driver
-        driver.execute_script("document.getElementById('dashboard').classList.remove('hidden');")
+        driver.execute_script(
+            "document.getElementById('dashboard').classList.remove('hidden');"
+        )
 
         upload_input = driver.find_element(By.ID, "pkg-url")
         assert upload_input.is_displayed()
 
         upload_input.send_keys("https://github.com/fake/repo")
-        upload_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Upload')]")
+        upload_btn = driver.find_element(
+            By.XPATH, "//button[contains(text(), 'Upload')]"
+        )
         assert upload_btn.is_displayed()
 
     def test_search_ui_interaction(self):
         driver = self.driver
-        driver.execute_script("document.getElementById('dashboard').classList.remove('hidden');")
+        driver.execute_script(
+            "document.getElementById('dashboard').classList.remove('hidden');"
+        )
 
         search_input = driver.find_element(By.ID, "search-q")
-        
+
         # Check default value (regex string)
         assert search_input.get_attribute("value") == ".*"
 
         search_input.clear()
         search_input.send_keys("React")
 
-        search_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Search')]")
+        search_btn = driver.find_element(
+            By.XPATH, "//button[contains(text(), 'Search')]"
+        )
         search_btn.click()

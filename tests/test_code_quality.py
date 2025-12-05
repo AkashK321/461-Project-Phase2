@@ -43,7 +43,13 @@ def test_code_url(load_env):
 @patch("src.scorer.metrics.code_quality.run_lizard")
 @patch("src.scorer.metrics.code_quality.docstring_ratio")
 def test_check_code_repo_quality_all_branches(
-    mock_docstring, mock_lizard, mock_radon, mock_exists, mock_walk, mock_zip, mock_requests
+    mock_docstring,
+    mock_lizard,
+    mock_radon,
+    mock_exists,
+    mock_walk,
+    mock_zip,
+    mock_requests,
 ):
     # 1. Mock Network Call (requests.get)
     mock_response = MagicMock()
@@ -70,6 +76,7 @@ def test_check_code_repo_quality_all_branches(
             x in path
             for x in [".github", "Dockerfile", "requirements.txt", "README.md"]
         )
+
     mock_exists.side_effect = exists_side
 
     # 5. Mock Analysis Tools
@@ -79,7 +86,7 @@ def test_check_code_repo_quality_all_branches(
 
     # Execute
     score = _check_code_repo_quality("https://fake.repo")
-    
+
     # Assert
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0

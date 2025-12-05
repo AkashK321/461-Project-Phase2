@@ -6,7 +6,7 @@ import uuid
 import re
 import logging
 import requests  # Replaces GitPython
-import zipfile   # Handles extraction
+import zipfile  # Handles extraction
 import io
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
@@ -76,36 +76,50 @@ SEMVER_PATTERN = re.compile(
     r"(?:\.(?P<patch>0|[1-9]\d*))?$"
 )
 
+
 def parse_semver(version: str):
-    if not version: return None
+    if not version:
+        return None
     s = version.strip()
-    if s.lower().startswith("v"): s = s[1:]
+    if s.lower().startswith("v"):
+        s = s[1:]
     m = SEMVER_PATTERN.match(s)
-    if not m: return None
+    if not m:
+        return None
     return (int(m.group("maj")), int(m.group("min") or 0), int(m.group("patch") or 0))
 
+
 def version_satisfies(ver: str, constraint: str) -> bool:
-    if not constraint: return True
+    if not constraint:
+        return True
     v = parse_semver(ver)
     c = constraint.strip()
-    if v is None: return ver == c
+    if v is None:
+        return ver == c
     if "-" in c and not c.startswith(("~", "^")):
         lo_s, hi_s = [p.strip() for p in c.split("-", 1)]
         lo, hi = parse_semver(lo_s), parse_semver(hi_s)
         return False if (lo is None or hi is None) else (lo <= v <= hi)
     if c.startswith("~"):
         b = parse_semver(c[1:].strip())
-        if b is None: return False
+        if b is None:
+            return False
         maj, min_, _ = b
         return v >= b and v < (maj, min_ + 1, 0)
     if c.startswith("^"):
         b = parse_semver(c[1:].strip())
-        if b is None: return False
+        if b is None:
+            return False
         maj, min_, pat = b
-        upper = (maj + 1, 0, 0) if maj > 0 else ((0, min_ + 1, 0) if min_ > 0 else (0, 0, pat + 1))
+        upper = (
+            (maj + 1, 0, 0)
+            if maj > 0
+            else ((0, min_ + 1, 0) if min_ > 0 else (0, 0, pat + 1))
+        )
         return v >= b and v < upper
     cver = parse_semver(c)
     return v == cver if cver else ver == c
+
 
 def parse_event(event):
     path = event.get("rawPath", "") or "/"
@@ -114,19 +128,27 @@ def parse_event(event):
     is_b64 = event.get("isBase64Encoded", False)
     raw_body = event.get("body") or ""
     if is_b64:
-        try: raw_body = base64.b64decode(raw_body).decode("utf-8")
-        except: raw_body = ""
+        try:
+            raw_body = base64.b64decode(raw_body).decode("utf-8")
+        except:
+            raw_body = ""
     body = {}
     if raw_body:
-        try: body = json.loads(raw_body)
-        except: pass
+        try:
+            body = json.loads(raw_body)
+        except:
+            pass
     return method, path, body, query_params
+
 
 def initialize_system():
     global _initialized
-    if _initialized: return
-    if USER_TABLE_NAME and JWT_SECRET_KEY: ensure_default_user()
+    if _initialized:
+        return
+    if USER_TABLE_NAME and JWT_SECRET_KEY:
+        ensure_default_user()
     _initialized = True
+
 
 def reset_state(restore_jti=None):
     # 1. Wipe Registry
@@ -135,7 +157,8 @@ def reset_state(restore_jti=None):
     ids = [it["id"] for it in scan.get("Items", [])]
     if ids:
         with tbl.batch_writer() as batch:
-            for _id in ids: batch.delete_item(Key={"id": _id})
+            for _id in ids:
+                batch.delete_item(Key={"id": _id})
 
     # 2. Wipe S3
     if BUCKET_NAME:
@@ -144,19 +167,23 @@ def reset_state(restore_jti=None):
         for prefix in prefixes:
             for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
                 objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
-                if objs: s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
+                if objs:
+                    s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
     # 3. Wipe User Table and Restore
     if USER_TABLE_NAME:
         user_tbl = dynamodb.Table(USER_TABLE_NAME)
-        scan = user_tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
+        scan = user_tbl.scan(
+            ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
+        )
         user_ids = [it["id"] for it in scan.get("Items", [])]
         if user_ids:
             with user_tbl.batch_writer() as batch:
-                for _id in user_ids: batch.delete_item(Key={"id": _id})
-        
+                for _id in user_ids:
+                    batch.delete_item(Key={"id": _id})
+
         ensure_default_user()
-        
+
         if restore_jti:
             default_admin_user = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
             default_admin_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, default_admin_user))
@@ -165,7 +192,7 @@ def reset_state(restore_jti=None):
                     Key={"id": default_admin_id},
                     UpdateExpression="SET active_tokens.#j = :l",
                     ExpressionAttributeNames={"#j": restore_jti},
-                    ExpressionAttributeValues={":l": 1000}
+                    ExpressionAttributeValues={":l": 1000},
                 )
             except Exception as e:
                 logger.error(f"Failed to restore JTI after reset: {e}")
@@ -179,30 +206,34 @@ def ingest_artifact(artifact_type, payload):
     Assumes payload['url'] is a valid HTTPS URL.
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
-    
+
     # LOGGING ADDED HERE
     logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
-        
+
         # LOGGING ADDED HERE
         logger.info(f"Received URL: {url}")
 
         if not url or not isinstance(url, str):
-            return make_response(400, {"error": "payload must have a non-empty 'url' string"})
+            return make_response(
+                400, {"error": "payload must have a non-empty 'url' string"}
+            )
 
         urls = [url]
-        
+
         # 1. Classification & Type override
         if "github.com" in url:
             if artifact_type != "code":
-                logger.info(f"Detected GitHub URL. Switching type from {artifact_type} to code.")
+                logger.info(
+                    f"Detected GitHub URL. Switching type from {artifact_type} to code."
+                )
                 artifact_type = "code"
         elif "huggingface.co" in url:
             if "/datasets/" in url and artifact_type != "dataset":
                 artifact_type = "dataset"
-        
+
         # 2. Extract Name/Repo
         if "github.com" in url:
             parts = url.split("github.com/")[-1].strip("/").split("/")
@@ -236,7 +267,8 @@ def ingest_artifact(artifact_type, payload):
             response_payload = json.loads(raw_response)
             if response_payload.get("statusCode") == 200:
                 scores_list = json.loads(response_payload["body"])
-                if scores_list: scores = scores_list[0]
+                if scores_list:
+                    scores = scores_list[0]
         except Exception as e:
             logger.error(f"Scorer error: {e}")
 
@@ -244,28 +276,30 @@ def ingest_artifact(artifact_type, payload):
     metrics_map = {
         "code": ["code_quality", "bus_factor", "license"],
         "dataset": ["dataset_quality", "license"],
-        "model": ["model_quality", "license", "bus_factor"]
+        "model": ["model_quality", "license", "bus_factor"],
     }
     required_metrics = metrics_map.get(artifact_type, [])
     failing_metrics = []
-    
+
     for metric in required_metrics:
         if metric in scores:
             val = scores[metric]
-            if isinstance(val, dict): 
+            if isinstance(val, dict):
                 val = sum(val.values()) / len(val) if val else 0
-            
+
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
         logger.warning(f"Rejecting {url} due to metrics: {failing_metrics}")
-        return make_response(424, {"error": "Insufficient quality metrics", "failing": failing_metrics})
+        return make_response(
+            424, {"error": "Insufficient quality metrics", "failing": failing_metrics}
+        )
 
     # --- Download & Package ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    
+
     base_model_repo = None
     if artifact_type == "model":
         base_model_repo, _, _ = get_base_model_from_card(repo)
@@ -273,28 +307,32 @@ def ingest_artifact(artifact_type, payload):
     try:
         os.makedirs(tmp_dir, exist_ok=True)
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
-        
+
         if artifact_type == "code":
             # --- Use Requests + Zipfile (Pure Python) ---
             # 1. Determine Default Branch (simplified)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
-            
+
             r_zip = requests.get(zip_url, stream=True)
             if r_zip.status_code != 200:
                 zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
                 logger.info(f"Main failed, trying master: {zip_url}")
                 r_zip = requests.get(zip_url, stream=True)
-            
+
             if r_zip.status_code != 200:
                 # LOGGING UPDATED HERE
-                logger.error(f"Failed to download zip from {zip_url}. Status: {r_zip.status_code}")
-                raise Exception(f"Failed to download repo zip: HTTP {r_zip.status_code}")
+                logger.error(
+                    f"Failed to download zip from {zip_url}. Status: {r_zip.status_code}"
+                )
+                raise Exception(
+                    f"Failed to download repo zip: HTTP {r_zip.status_code}"
+                )
 
             # 2. Extract
             with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
                 z.extractall(tmp_dir)
-            
+
             # 3. Flatten Directory
             items = os.listdir(tmp_dir)
             if len(items) == 1 and os.path.isdir(os.path.join(tmp_dir, items[0])):
@@ -305,8 +343,20 @@ def ingest_artifact(artifact_type, payload):
 
         else:
             # --- Use HF Hub ---
-            snapshot_download(repo_id=repo, local_dir=tmp_dir, repo_type=artifact_type,
-                              allow_patterns=["*.json", "*.md", "*.txt", "*.py", "*.yaml", "*.csv", "*.parquet"])
+            snapshot_download(
+                repo_id=repo,
+                local_dir=tmp_dir,
+                repo_type=artifact_type,
+                allow_patterns=[
+                    "*.json",
+                    "*.md",
+                    "*.txt",
+                    "*.py",
+                    "*.yaml",
+                    "*.csv",
+                    "*.parquet",
+                ],
+            )
 
         # Create Zip
         zip_name = f"{name}"
@@ -324,54 +374,83 @@ def ingest_artifact(artifact_type, payload):
         # Save Metadata
         version = "1.0.0"
         created_at = datetime.now(timezone.utc).isoformat()
-        
+
         item = save_model_metadata(name, version, s3_key, scores, artifact_type)
-        if not item: return make_response(500, {"error": "failed to store metadata"})
+        if not item:
+            return make_response(500, {"error": "failed to store metadata"})
 
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #c = :c, #fn = :fn, #url = :url, #rid = :rid, #bm = :bm",
             ExpressionAttributeNames={
-                "#c": "created_at", "#fn": "filename", "#url": "source_url", "#rid": "repo_id", "#bm": "base_model_repo_id"
+                "#c": "created_at",
+                "#fn": "filename",
+                "#url": "source_url",
+                "#rid": "repo_id",
+                "#bm": "base_model_repo_id",
             },
             ExpressionAttributeValues={
-                ":c": created_at, ":fn": final_zip_name, ":url": url, ":rid": repo, ":bm": base_model_repo
-            }
+                ":c": created_at,
+                ":fn": final_zip_name,
+                ":url": url,
+                ":rid": repo,
+                ":bm": base_model_repo,
+            },
         )
-        
-        return make_response(201, {
-            "metadata": {"name": name, "id": item["id"], "type": artifact_type, "version": version},
-            "data": {"url": url}
-        })
+
+        return make_response(
+            201,
+            {
+                "metadata": {
+                    "name": name,
+                    "id": item["id"],
+                    "type": artifact_type,
+                    "version": version,
+                },
+                "data": {"url": url},
+            },
+        )
 
     except Exception as e:
         # LOGGING UPDATED HERE
         logger.error(f"Ingestion failed for URL '{url}': {e}")
         return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
-        if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
-        if tmp_zip_file and os.path.exists(tmp_zip_file): os.remove(tmp_zip_file)
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        if tmp_zip_file and os.path.exists(tmp_zip_file):
+            os.remove(tmp_zip_file)
 
 
 def search_artifacts(query_array, query_params):
     try:
         page = int(query_params.get("offset", "1"))
-    except: page = 1
-    if page < 1: page = 1
+    except:
+        page = 1
+    if page < 1:
+        page = 1
     page_size = DEFAULT_PAGE_SIZE
 
-    if not query_array or not isinstance(query_array, list): query = {}
-    else: query = query_array[0]
+    if not query_array or not isinstance(query_array, list):
+        query = {}
+    else:
+        query = query_array[0]
 
     name_query = (query.get("name") or "").strip()
-    types = query.get("types", []) 
+    types = query.get("types", [])
     version_query = query.get("version") or query.get("version_range")
-    if name_query == "*": name_query = ""
+    if name_query == "*":
+        name_query = ""
 
     items = []
     if name_query:
-        items = get_model_by_model_name(name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME) or []
+        items = (
+            get_model_by_model_name(
+                name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
+            )
+            or []
+        )
     else:
         tbl = dynamodb.Table(TABLE_NAME)
         items = tbl.scan().get("Items", [])
@@ -381,24 +460,29 @@ def search_artifacts(query_array, query_params):
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
 
     if version_query:
-        items = [it for it in items if version_satisfies(it.get("version"), version_query)]
+        items = [
+            it for it in items if version_satisfies(it.get("version"), version_query)
+        ]
 
-    def _sort_key(it): return (str(it.get("model_name", "")), str(it.get("version", "")))
+    def _sort_key(it):
+        return (str(it.get("model_name", "")), str(it.get("version", "")))
+
     items.sort(key=_sort_key)
-    
+
     start = (page - 1) * page_size
     page_items = items[start : start + page_size]
-    
+
     results = [
-        {"name": it.get("model_name"), "id": it.get("id"), "type": it.get("type")} 
+        {"name": it.get("model_name"), "id": it.get("id"), "type": it.get("type")}
         for it in page_items
     ]
-    
+
     headers = {}
     if start + page_size < len(items):
         headers = {"Offset": str(page + 1)}
 
     return make_response(200, results, headers)
+
 
 def get_lineage_graph(start_art_id):
     """
@@ -495,13 +579,13 @@ def rate_model(art_id):
         try:
             url = item.get("source_url")
             if not url:
-                 logger.error(f"No source URL for artifact {art_id}")
-                 # Cannot rate without URL
-                 return make_response(500, {"error": "Failed to calculate metrics"})
+                logger.error(f"No source URL for artifact {art_id}")
+                # Cannot rate without URL
+                return make_response(500, {"error": "Failed to calculate metrics"})
 
             logger.info(f"Calculating scores for artifact {art_id} at URL {url}")
             scorer_payload = json.dumps({"urls": [url]})
-            
+
             response = lambda_client.invoke(
                 FunctionName=scorer_function_name,
                 InvocationType="RequestResponse",
@@ -521,13 +605,23 @@ def rate_model(art_id):
 
     if not scores:
         logger.error(f"Scores not found for artifact {art_id}, but item exists.")
-        return make_response(500, {"error": "The artifact rating system encountered an error while computing at least one metric."})
+        return make_response(
+            500,
+            {
+                "error": "The artifact rating system encountered an error while computing at least one metric."
+            },
+        )
     else:
         for metric, score in scores.items():
             logger.info(f"Metric: {metric}, Score: {score}")
             if score is None:
                 logger.warning(f"Score for metric '{metric}' is None.")
-                return make_response(500, {"error": "The artifact rating system encountered an error while computing at least one metric."})
+                return make_response(
+                    500,
+                    {
+                        "error": "The artifact rating system encountered an error while computing at least one metric."
+                    },
+                )
 
     return make_response(200, scores)
 
@@ -645,7 +739,7 @@ def handler(event, context):
         # DELETE /users/{id}
         if method == "DELETE":
             return delete_user(target_id, user_id, user_roles)
-        
+
         # PUT /users/{id} (Update Roles)
         if method == "PUT":
             new_roles = body.get("roles")

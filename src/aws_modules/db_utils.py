@@ -55,7 +55,7 @@ def save_model_metadata(name, version, s3_key, scores, artifact_type="model"):
             "version": version,
             "s3_key": s3_key,
             "scores": scores_with_decimal,
-            "type": artifact_type
+            "type": artifact_type,
         }
 
         table.put_item(Item=item)

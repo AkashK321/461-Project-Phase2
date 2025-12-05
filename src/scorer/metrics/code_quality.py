@@ -200,12 +200,14 @@ def _check_code_repo_quality(code_url: str) -> float:
             # 2. Try 'main' branch first
             zip_url = f"https://github.com/{repo_path}/archive/refs/heads/main.zip"
             r = requests.get(zip_url, stream=True)
-            
+
             # 3. Fallback to 'master' branch if main fails
             if r.status_code != 200:
-                zip_url = f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
+                zip_url = (
+                    f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
+                )
                 r = requests.get(zip_url, stream=True)
-            
+
             if r.status_code != 200:
                 print(f"Failed to download zip from {code_url}")
                 return 0.0
@@ -213,7 +215,7 @@ def _check_code_repo_quality(code_url: str) -> float:
             # 4. Extract
             with zipfile.ZipFile(io.BytesIO(r.content)) as z:
                 z.extractall(temp_dir)
-            
+
             # 5. Flatten Directory structure
             items = os.listdir(temp_dir)
             if len(items) == 1 and os.path.isdir(os.path.join(temp_dir, items[0])):
@@ -225,7 +227,7 @@ def _check_code_repo_quality(code_url: str) -> float:
         except Exception as e:
             print(f"Cannot download/extract repo for code quality check: {e}")
             return 0.0
-        
+
         # --- END DOWNLOAD LOGIC ---
 
         # first reliability check - check for the word test in the files
@@ -310,6 +312,6 @@ def get_code_quality(url: str, url_type: str) -> Tuple[float, int]:
     if url_type == "code":
         # check code quality by downloading repo
         score = _check_code_repo_quality(url)
-    
+
     latency = int((time.time() - start_time) * 1000)
     return score, latency

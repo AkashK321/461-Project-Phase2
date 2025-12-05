@@ -62,19 +62,21 @@ def score_url(url: str, url_type: str) -> dict:
     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
 
     tasks = {}
-    
+
     # --- Define Tasks ---
     if url_type == "code":
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
-        tasks["code_quality"] = lambda: get_code_quality(url, url_type) 
+        tasks["code_quality"] = lambda: get_code_quality(url, url_type)
         # tasks["license"] = lambda: get_license_score(url, url_type)
-        
+
     elif url_type == "dataset":
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(url, url_type)
+        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+            url, url_type
+        )
         tasks["license"] = lambda: get_license_score(url, url_type)
-        
+
     elif url_type == "model":
         tasks["size_score"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
@@ -103,15 +105,18 @@ def score_url(url: str, url_type: str) -> dict:
     # --- Prepare Values with Defaults ---
     def get_val(key, default=0.0):
         val = calc_results.get(key)
-        return float(val) if val is not None and isinstance(val, (int, float)) else default
+        return (
+            float(val) if val is not None and isinstance(val, (int, float)) else default
+        )
 
     def get_lat(key):
         return float(latencies.get(f"{key}_latency", 0.0))
 
     # Special handling for size_score dict
     size_data = calc_results.get("size_score", {})
-    if not isinstance(size_data, dict): size_data = {}
-    
+    if not isinstance(size_data, dict):
+        size_data = {}
+
     size_score_obj = {
         "raspberry_pi": float(size_data.get("raspberry_pi", 0)),
         "jetson_nano": float(size_data.get("jetson_nano", 0)),
@@ -122,7 +127,8 @@ def score_url(url: str, url_type: str) -> dict:
     # Calculate scalar size score for Net Score formula
     size_scalar = 0.0
     size_vals = [v for v in size_score_obj.values()]
-    if size_vals: size_scalar = sum(size_vals) / len(size_vals)
+    if size_vals:
+        size_scalar = sum(size_vals) / len(size_vals)
 
     # --- Calculate Net Score ---
     net_score = (
@@ -158,46 +164,35 @@ def score_url(url: str, url_type: str) -> dict:
     final_output = {
         "name": name,
         "category": url_type.upper(),
-        
         "net_score": net_score,
-        "net_score_latency": 0.0, # Net score latency is negligible/sum of others
-        
+        "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
         "ramp_up_time": get_val("ramp_up_time"),
         "ramp_up_time_latency": get_lat("ramp_up_time"),
-        
         "bus_factor": get_val("bus_factor"),
         "bus_factor_latency": get_lat("bus_factor"),
-        
         "performance_claims": get_val("performance_claims"),
         "performance_claims_latency": get_lat("performance_claims"),
-        
         "license": get_val("license"),
         "license_latency": get_lat("license"),
-        
         "dataset_and_code_score": get_val("dataset_and_code_score"),
         "dataset_and_code_score_latency": get_lat("dataset_and_code_score"),
-        
         "dataset_quality": get_val("dataset_quality"),
         "dataset_quality_latency": get_lat("dataset_quality"),
-        
         "code_quality": get_val("code_quality"),
         "code_quality_latency": get_lat("code_quality"),
-        
         "reproducibility": get_val("reproducibility"),
         "reproducibility_latency": get_lat("reproducibility"),
-        
         "reviewedness": get_val("reviewedness"),
         "reviewedness_latency": get_lat("reviewedness"),
-        
         "tree_score": round(float(tree_score), 2),
-        "tree_score_latency": 0.0, 
-        
+        "tree_score_latency": 0.0,
         "size_score": size_score_obj,
-        "size_score_latency": get_lat("size_score")
+        "size_score_latency": get_lat("size_score"),
     }
 
     log.info(f"Scoring complete for URL: {url} | Net Score: {net_score}")
     return final_output
+
 
 def handler(event, context):
     """
