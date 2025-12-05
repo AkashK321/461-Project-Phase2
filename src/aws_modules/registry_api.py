@@ -207,6 +207,8 @@ def ingest_artifact(artifact_type, payload):
         if "github.com" in url:
             parts = url.split("github.com/")[-1].strip("/").split("/")
             repo = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else parts[0]
+            if repo.endswith(".git"):
+                repo = repo[:-4]
         else:
             repo = get_repo_id(url, artifact_type) or url.split("/")[-1]
 
