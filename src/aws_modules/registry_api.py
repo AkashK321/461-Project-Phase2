@@ -180,8 +180,15 @@ def ingest_artifact(artifact_type, payload):
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
     
+    # LOGGING ADDED HERE
+    logger.info(f"Raw Payload: {json.dumps(payload)}")
+
     try:
         url = payload.get("url")
+        
+        # LOGGING ADDED HERE
+        logger.info(f"Received URL: {url}")
+
         if not url or not isinstance(url, str):
             return make_response(400, {"error": "payload must have a non-empty 'url' string"})
 
@@ -205,9 +212,11 @@ def ingest_artifact(artifact_type, payload):
 
         name_part = repo.split("/")[-1] if "/" in repo else repo
         name = payload.get("name", name_part).strip()
+        logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
-        logger.error(f"URL parsing error: {e}")
+        # LOGGING UPDATED HERE
+        logger.error(f"URL parsing error for payload '{payload}': {e}")
         return make_response(400, {"error": "unable to parse url"})
 
     # --- Invoke Scorer ---
@@ -248,6 +257,7 @@ def ingest_artifact(artifact_type, payload):
                 failing_metrics.append(f"{metric}: {val}")
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
+        logger.warning(f"Rejecting {url} due to metrics: {failing_metrics}")
         return make_response(424, {"error": "Insufficient quality metrics", "failing": failing_metrics})
 
     # --- Download & Package ---
@@ -264,10 +274,7 @@ def ingest_artifact(artifact_type, payload):
         
         if artifact_type == "code":
             # --- Use Requests + Zipfile (Pure Python) ---
-            # This works on Lambda without requiring 'git' binary
-            
             # 1. Determine Default Branch (simplified)
-            # Try main, then master
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
             
@@ -278,6 +285,8 @@ def ingest_artifact(artifact_type, payload):
                 r_zip = requests.get(zip_url, stream=True)
             
             if r_zip.status_code != 200:
+                # LOGGING UPDATED HERE
+                logger.error(f"Failed to download zip from {zip_url}. Status: {r_zip.status_code}")
                 raise Exception(f"Failed to download repo zip: HTTP {r_zip.status_code}")
 
             # 2. Extract
@@ -285,7 +294,6 @@ def ingest_artifact(artifact_type, payload):
                 z.extractall(tmp_dir)
             
             # 3. Flatten Directory
-            # GitHub zips are nested in a folder 'repo-branch'. We need to move contents up.
             items = os.listdir(tmp_dir)
             if len(items) == 1 and os.path.isdir(os.path.join(tmp_dir, items[0])):
                 top_level = os.path.join(tmp_dir, items[0])
@@ -336,7 +344,8 @@ def ingest_artifact(artifact_type, payload):
         })
 
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        # LOGGING UPDATED HERE
+        logger.error(f"Ingestion failed for URL '{url}': {e}")
         return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
         if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
