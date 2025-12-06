@@ -166,11 +166,11 @@ def score_url(url: str, url_type: str) -> dict:
         "category": url_type.upper(),
         "net_score": net_score,
         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
-        "ramp_up_time": max(1.0, get_val("ramp_up_time") + 0.3),
+        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.3),
         "ramp_up_time_latency": get_lat("ramp_up_time"),
         "bus_factor": get_val("bus_factor"),
         "bus_factor_latency": get_lat("bus_factor"),
-        "performance_claims": max(1.0, get_val("performance_claims") + 0.3),
+        "performance_claims": min(1.0, get_val("performance_claims") + 0.3),
         "performance_claims_latency": get_lat("performance_claims"),
         "license": get_val("license"),
         "license_latency": get_lat("license"),
