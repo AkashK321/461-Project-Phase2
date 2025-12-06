@@ -6,8 +6,9 @@ It receives a list of URLs via an event payload, processes them using the
 existing scorer logic, and returns the results as a list of JSON objects.
 """
 
-import traceback
 import os
+
+from scorer.metrics.code_quality import get_code_quality
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -54,99 +55,142 @@ log.setLevel(logging.INFO)
 
 
 def score_url(url: str, url_type: str) -> dict:
-    """Scores a single URL and returns a dictionary of results."""
+    """Scores a single URL and returns a dictionary
+    of results matching the strict API schema order."""
     repo = get_repo_id(url, url_type) or ""
     parts = repo.split("/", 1)
     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
 
-    # TODO refactor metrics that rely on git
-    # (will do this once metrics work for the phase 1 autograder)
     tasks = {}
+
+    # --- Define Tasks ---
     if url_type == "code":
-        pass
-        # tasks["code_quality"] = lambda: get_code_quality(url, url_type)
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
+        tasks["code_quality"] = lambda: get_code_quality(url, url_type)
+        # tasks["license"] = lambda: get_license_score(url, url_type)
+
     elif url_type == "dataset":
-        pass
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
             url, url_type
         )
+        tasks["license"] = lambda: get_license_score(url, url_type)
+
     elif url_type == "model":
-        pass
-        tasks["size"] = lambda: get_size_score(url, url_type)
+        tasks["size_score"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
+        tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
 
-    results = {"name": name, "category": url_type.upper()}
+    # Temporary storage for calculation
+    calc_results = {}
     latencies = {}
 
+    # --- Execute Metrics ---
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
         for future in as_completed(future_to_metric):
             metric_name = future_to_metric[future]
             try:
                 val, lat = future.result()
-                results[metric_name] = val
+                calc_results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
             except Exception as e:
                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
-                results[metric_name] = 0.0 if metric_name not in ["size"] else {}
-                latencies[f"{metric_name}_latency"] = 0
+                calc_results[metric_name] = None
+                latencies[f"{metric_name}_latency"] = 0.0
 
-    # Calculate net_score (simplified for clarity, can be adjusted)
-    # This logic should mirror your CLI's net score calculation
-    size_score = 0.0
-    if "size" in results and results["size"]:
-        size_score = sum(results["size"].values()) / len(results["size"])
+    # --- Prepare Values with Defaults ---
+    def get_val(key, default=0.0):
+        val = calc_results.get(key)
+        return (
+            float(val) if val is not None and isinstance(val, (int, float)) else default
+        )
 
+    def get_lat(key):
+        return float(latencies.get(f"{key}_latency", 0.0))
+
+    # Special handling for size_score dict
+    size_data = calc_results.get("size_score", {})
+    if not isinstance(size_data, dict):
+        size_data = {}
+
+    size_score_obj = {
+        "raspberry_pi": float(size_data.get("raspberry_pi", 0)),
+        "jetson_nano": float(size_data.get("jetson_nano", 0)),
+        "desktop_pc": float(size_data.get("desktop_pc", 0)),
+        "aws_server": float(size_data.get("aws_server", 0)),
+    }
+
+    # Calculate scalar size score for Net Score formula
+    size_scalar = 0.0
+    size_vals = [v for v in size_score_obj.values()]
+    if size_vals:
+        size_scalar = sum(size_vals) / len(size_vals)
+
+    # --- Calculate Net Score ---
     net_score = (
-        0.15 * size_score
-        + 0.15 * results.get("license", 0.0)
-        + 0.10 * results.get("ramp_up", 0.0)
-        + 0.10 * results.get("bus_factor", 0.0)
-        + 0.15 * results.get("dataset_quality", 0.0)
-        + 0.10 * results.get("code_quality", 0.0)
-        + 0.15 * results.get("performance_claims", 0.0)
-        + 0.10 * results.get("dataset_and_code_score", 0.0)
+        0.15 * size_scalar
+        + 0.15 * get_val("license")
+        + 0.10 * get_val("ramp_up_time")
+        + 0.10 * get_val("bus_factor")
+        + 0.15 * get_val("dataset_quality")
+        + 0.10 * get_val("code_quality")
+        + 0.15 * get_val("performance_claims")
+        + 0.10 * get_val("dataset_and_code_score")
     )
-    results["net_score"] = round(net_score, 2)
+    net_score = round(net_score, 2)
 
-    # --- Calculate Treescore if applicable ---
-    # This model might already be in the DB if it's being re-scored.
-    # If so, check if it has a parent model and calculate its treescore.
+    # --- Calculate Tree Score ---
+    tree_score = 0.0
     try:
         item_in_db = get_model_by_repo_id(repo)
-        log.info(f"Fetched item from DB for repo '{repo}': {item_in_db}")
         if item_in_db:
             item_id = item_in_db.get("id")
             if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
-                log.info("Calculating treescore...")
                 base_model_repo_id = get_attribute_value(item_id, "base_model_repo_id")
-                log.info(f"Base model repo ID: {base_model_repo_id}")
                 if base_model_repo_id:
-                    treescore = _calculate_treescore(base_model_repo_id)
-                    results["treescore"] = round(treescore, 2)
-                    log.info(f"Treescore for {repo}: {treescore}")
+                    tree_score = _calculate_treescore(base_model_repo_id)
         else:
-            base_model_repo_id, lineage_type, source = get_base_model_from_card(repo)
-            log.info(f"Base model from card: {base_model_repo_id}")
+            base_model_repo_id, _, _ = get_base_model_from_card(repo)
             if base_model_repo_id:
-                log.info("Calculating treescore for new model...")
-                treescore = _calculate_treescore(base_model_repo_id)
-                results["treescore"] = round(treescore, 2)
-
+                tree_score = _calculate_treescore(base_model_repo_id)
     except Exception as e:
-        log.error(f"Failed to calculate treescore for {repo}: {e}")
-        log.error(traceback.format_exc())
+        log.error(f"Failed to calculate tree_score for {repo}: {e}")
 
-    log.info(f"Scoring complete for URL: {url} | Results: {results}")
+    # --- Construct Final Ordered Dictionary ---
+    final_output = {
+        "name": name,
+        "category": url_type.upper(),
+        "net_score": net_score,
+        "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
+        "ramp_up_time": get_val("ramp_up_time"),
+        "ramp_up_time_latency": get_lat("ramp_up_time"),
+        "bus_factor": get_val("bus_factor"),
+        "bus_factor_latency": get_lat("bus_factor"),
+        "performance_claims": get_val("performance_claims"),
+        "performance_claims_latency": get_lat("performance_claims"),
+        "license": get_val("license"),
+        "license_latency": get_lat("license"),
+        "dataset_and_code_score": get_val("dataset_and_code_score"),
+        "dataset_and_code_score_latency": get_lat("dataset_and_code_score"),
+        "dataset_quality": get_val("dataset_quality"),
+        "dataset_quality_latency": get_lat("dataset_quality"),
+        "code_quality": get_val("code_quality"),
+        "code_quality_latency": get_lat("code_quality"),
+        "reproducibility": get_val("reproducibility"),
+        "reproducibility_latency": get_lat("reproducibility"),
+        "reviewedness": get_val("reviewedness"),
+        "reviewedness_latency": get_lat("reviewedness"),
+        "tree_score": round(float(tree_score), 2),
+        "tree_score_latency": 0.0,
+        "size_score": size_score_obj,
+        "size_score_latency": get_lat("size_score"),
+    }
 
-    # Combine results and latencies
-    final_output = {**results, **latencies}
+    log.info(f"Scoring complete for URL: {url} | Net Score: {net_score}")
     return final_output
 
 

@@ -5,6 +5,9 @@ import shutil
 import uuid
 import re
 import logging
+import requests
+import zipfile
+import io
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -26,19 +29,16 @@ from utils.lineage_utils import (
     get_descendant_items,
 )
 from scorer.metrics.base import get_repo_id
-from scorer.url_handler.base import classify_url
 from aws_modules.api_utils import make_response
 
 from aws_modules.auth import (
     authenticate_user,
     get_validated_user,
     register_user,
-    hash_password,
+    delete_user,
+    get_all_users,
+    update_user_roles,
     ensure_default_user,
-    DEFAULT_ADMIN_ID,
-    DEFAULT_ADMIN_USERNAME,
-    DEFAULT_ADMIN_PASSWORD,
-    TOKEN_USE_LIMIT,
 )
 
 # logging setup
@@ -67,7 +67,7 @@ FEATURE_FLAG_FORCE_INGESTION = (
 _initialized = False
 
 
-# simple helpers for semver-ish ranges
+# --- Helpers ---
 
 SEMVER_PATTERN = re.compile(
     r"^v?(?P<maj>0|[1-9]\d*)"
@@ -77,98 +77,47 @@ SEMVER_PATTERN = re.compile(
 
 
 def parse_semver(version: str):
-    """
-    Turn "1.2.3" / "1.2" / "v1.2.3" into (major, minor, patch).
-
-    Returns None if it doesn't look like a (loose) semver.
-    """
     if not version:
         return None
     s = version.strip()
     if s.lower().startswith("v"):
         s = s[1:]
-
     m = SEMVER_PATTERN.match(s)
     if not m:
         return None
-
-    maj = int(m.group("maj"))
-    min_ = int(m.group("min") or 0)
-    patch = int(m.group("patch") or 0)
-    return (maj, min_, patch)
+    return (int(m.group("maj")), int(m.group("min") or 0), int(m.group("patch") or 0))
 
 
 def version_satisfies(ver: str, constraint: str) -> bool:
-    """
-    Check if a version string matches a constraint.
-
-    Supported patterns:
-      - exact: "1.2.3"
-      - bounded: "1.2.3-2.1.0"
-      - tilde: "~1.2.0"
-      - caret: "^1.2.0"
-    """
     if not constraint:
-        # no filter -> everything matches
         return True
-
     v = parse_semver(ver)
     c = constraint.strip()
-
-    # if the stored version doesn't parse, only do exact string match
     if v is None:
         return ver == c
-
-    # "1.2.3-2.1.0" (inclusive)
     if "-" in c and not c.startswith(("~", "^")):
         lo_s, hi_s = [p.strip() for p in c.split("-", 1)]
-        lo = parse_semver(lo_s)
-        hi = parse_semver(hi_s)
-        if lo is None or hi is None:
-            return False
-        return lo <= v <= hi
-
-    # "~1.2.0" -> >=1.2.0 and <1.3.0
+        lo, hi = parse_semver(lo_s), parse_semver(hi_s)
+        return False if (lo is None or hi is None) else (lo <= v <= hi)
     if c.startswith("~"):
-        base = c[1:].strip()
-        b = parse_semver(base)
+        b = parse_semver(c[1:].strip())
         if b is None:
             return False
-
-        if v < b:
-            return False
-
         maj, min_, _ = b
-        upper = (maj, min_ + 1, 0)
-        return v < upper
-
-    # caret rules:
-    #   ^1.2.0  -> >=1.2.0, <2.0.0
-    #   ^0.2.3  -> >=0.2.3, <0.3.0
-    #   ^0.0.3  -> >=0.0.3, <0.0.4
+        return v >= b and v < (maj, min_ + 1, 0)
     if c.startswith("^"):
-        base = c[1:].strip()
-        b = parse_semver(base)
+        b = parse_semver(c[1:].strip())
         if b is None:
             return False
-
-        if v < b:
-            return False
-
         maj, min_, pat = b
-        if maj > 0:
-            upper = (maj + 1, 0, 0)
-        elif min_ > 0:
-            upper = (0, min_ + 1, 0)
-        else:
-            upper = (0, 0, pat + 1)
-        return v < upper
-
-    # exact match (or last-resort raw equality)
+        upper = (
+            (maj + 1, 0, 0)
+            if maj > 0
+            else ((0, min_ + 1, 0) if min_ > 0 else (0, 0, pat + 1))
+        )
+        return v >= b and v < upper
     cver = parse_semver(c)
-    if cver is None:
-        return ver == c
-    return v == cver
+    return v == cver if cver else ver == c
 
 
 def parse_event(event):
@@ -177,56 +126,26 @@ def parse_event(event):
     query_params = event.get("queryStringParameters") or {}
     is_b64 = event.get("isBase64Encoded", False)
     raw_body = event.get("body") or ""
-
     if is_b64:
         try:
             raw_body = base64.b64decode(raw_body).decode("utf-8")
-        except Exception as e:
-            logger.error(f"Base64 decode failed: {e}")
+        except Exception:
             raw_body = ""
-
-    logger.info(f"Parsing event for: {method} {path}")
-    logger.info(
-        f"Raw event body: {raw_body}"
-    )  # Optional: Comment out to hide passwords in logs
-
     body = {}
-
-    if not raw_body:
-        logger.info("Raw body is empty, returning empty dict.")
-        return method, path, body, query_params
-
-    logger.info(f"Using standard JSON parser for {path}.")
-    try:
-        body = json.loads(raw_body)
-        logger.info("JSON parsing SUCCEEDED.")
-
-    except json.JSONDecodeError as e:
-        logger.error(f"JSONDecodeError on '{path}': {e}")
-        # distinct error lets you know the client sent bad JSON
-        return method, path, {}, query_params
-
-    except Exception as e:
-        logger.error(f"Unexpected error parsing body for {path}: {e}")
-        body = {}
-
+    if raw_body:
+        try:
+            body = json.loads(raw_body)
+        except Exception:
+            pass
     return method, path, body, query_params
 
 
 def initialize_system():
-    """
-    Initialize the system by ensuring the default admin user exists.
-    This should be called once per Lambda container initialization.
-    """
     global _initialized
-
     if _initialized:
         return
-
-    # Only initialize if we have authentication support
     if USER_TABLE_NAME and JWT_SECRET_KEY:
         ensure_default_user()
-
     _initialized = True
 
 
@@ -242,11 +161,13 @@ def reset_state(restore_jti=None):
 
     # 2. Wipe S3
     if BUCKET_NAME:
+        prefixes = ["models/", "artifacts/"]
         paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix="models/"):
-            objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
-            if objs:
-                s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
+        for prefix in prefixes:
+            for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
+                objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+                if objs:
+                    s3.delete_objects(Bucket=BUCKET_NAME, Delete={"Objects": objs})
 
     # 3. Wipe User Table and Restore
     if USER_TABLE_NAME:
@@ -255,49 +176,45 @@ def reset_state(restore_jti=None):
             ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"}
         )
         user_ids = [it["id"] for it in scan.get("Items", [])]
-
         if user_ids:
             with user_tbl.batch_writer() as batch:
                 for _id in user_ids:
                     batch.delete_item(Key={"id": _id})
 
-        # Use DETERMINISTIC ID so the token's 'sub' claim remains valid
-        admin_id = DEFAULT_ADMIN_ID
-        active_tokens = {}
+        ensure_default_user()
 
-        # If a JTI was passed, restore it to the allowlist
         if restore_jti:
-            logger.info(f"Restoring token {restore_jti} for admin {admin_id}")
-            active_tokens[restore_jti] = TOKEN_USE_LIMIT
+            default_admin_user = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+            default_admin_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, default_admin_user))
+            try:
+                user_tbl.update_item(
+                    Key={"id": default_admin_id},
+                    UpdateExpression="SET active_tokens.#j = :l",
+                    ExpressionAttributeNames={"#j": restore_jti},
+                    ExpressionAttributeValues={":l": 1000},
+                )
+            except Exception as e:
+                logger.error(f"Failed to restore JTI after reset: {e}")
 
-        user_tbl.put_item(
-            Item={
-                "id": admin_id,
-                "username": DEFAULT_ADMIN_USERNAME,
-                "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
-                "roles": ["admin", "upload", "search", "download"],
-                "active_tokens": active_tokens,  # <--- Map is saved here
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        logger.info(
-            f"Reset user table and added default admin {DEFAULT_ADMIN_USERNAME}"
-        )
-
-    return {"reset": "ok", "deleted": {"dynamodb": len(ids)}}
+    return {"reset": "ok"}
 
 
 def ingest_artifact(artifact_type, payload):
     """
-    Ingests an artifact.
-    'artifact_type' is initially passed from the URL path (e.g., 'model'),
-    but we verify the URL content and update 'artifact_type' if it detects a mismatch.
+    Ingests an artifact. Supports 'model', 'dataset', 'code'.
+    Assumes payload['url'] is a valid HTTPS URL.
     """
-    logger.info(f"--- Starting Ingestion (Path Type: {artifact_type}) ---")
-    logger.info(f"Payload: {json.dumps(payload)}")
+    logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
+
+    # LOGGING ADDED HERE
+    logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
+
+        # LOGGING ADDED HERE
+        logger.info(f"Received URL: {url}")
+
         if not url or not isinstance(url, str):
             return make_response(
                 400, {"error": "payload must have a non-empty 'url' string"}
@@ -305,237 +222,229 @@ def ingest_artifact(artifact_type, payload):
 
         urls = [url]
 
-        # 1. Classify the URL
-        detected_type = classify_url(url)
-
-        logger.info(f"URL: {url} | Classified as: {detected_type}")
-
-        if detected_type != "unknown":
-            if detected_type != artifact_type:
+        # 1. Classification & Type override
+        if "github.com" in url:
+            if artifact_type != "code":
                 logger.info(
-                    f"Overriding path type '{artifact_type}' "
-                    f"with detected type '{detected_type}'."
+                    f"Detected GitHub URL. Switching type from {artifact_type} to code."
                 )
-                artifact_type = detected_type
+                artifact_type = "code"
+        elif "huggingface.co" in url:
+            if "/datasets/" in url and artifact_type != "dataset":
+                artifact_type = "dataset"
+
+        # 2. Extract Name/Repo
+        if "github.com" in url:
+            parts = url.split("github.com/")[-1].strip("/").split("/")
+            repo = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else parts[0]
+            if repo.endswith(".git"):
+                repo = repo[:-4]
         else:
-            logger.info(
-                f"URL classification unknown. Keeping path type '{artifact_type}'."
-            )
+            repo = get_repo_id(url, artifact_type) or url.split("/")[-1]
 
-        # 2. Extract Repo ID using the resolved artifact_type
-        repo = get_repo_id(url, artifact_type) or ""
-        logger.info(f"Resolved Repo ID: '{repo}' for URL: '{url}'")
+        name_part = repo.split("/")[-1] if "/" in repo else repo
+        name = payload.get("name", name_part).strip()
+        logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
-        if not repo:
-            parts = url.strip("/").split("/")
-            repo = parts[-1] if parts else "unknown_repo"
-
-        parts = repo.split("/", 1)
-        parsed_name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
-        name = payload.get("name", parsed_name).strip()
-        logger.info(f"Derived Artifact Name: {name}")
-
-    except KeyError:
-        return make_response(
-            400, {"error": "payload must have a non-empty 'url' string"}
-        )
     except Exception as e:
-        logger.error(f"URL parsing error: {e}")
-        return make_response(400, {"error": "unable to parse model url in payload"})
+        # LOGGING UPDATED HERE
+        logger.error(f"URL parsing error for payload '{payload}': {e}")
+        return make_response(400, {"error": "unable to parse url"})
 
     # --- Invoke Scorer ---
     scorer_function_name = SCORER_FUNCTION_NAME
     scores = {}
-    if not scorer_function_name:
-        logger.error("Scorer function not configured")
-        return make_response(500, {"error": "Metric scoring service not available"})
+    if scorer_function_name:
+        try:
+            scorer_payload = json.dumps({"urls": urls})
+            response = lambda_client.invoke(
+                FunctionName=scorer_function_name,
+                InvocationType="RequestResponse",
+                Payload=scorer_payload,
+            )
+            raw_response = response["Payload"].read().decode()
+            response_payload = json.loads(raw_response)
+            if response_payload.get("statusCode") == 200:
+                scores_list = json.loads(response_payload["body"])
+                if scores_list:
+                    scores = scores_list[0]
+        except Exception as e:
+            logger.error(f"Scorer error: {e}")
 
-    logger.info(f"Invoking scorer function: {scorer_function_name}")
-    try:
-        scorer_payload = json.dumps({"urls": urls})
-        response = lambda_client.invoke(
-            FunctionName=scorer_function_name,
-            InvocationType="RequestResponse",
-            Payload=scorer_payload,
-        )
-        raw_response = response["Payload"].read().decode()
-        response_payload = json.loads(raw_response)
-
-        if response_payload.get("statusCode") == 200:
-            scores_list = json.loads(response_payload["body"])
-            if scores_list:
-                scores = scores_list[0]
-        else:
-            logger.error(f"Scorer function returned error: {response_payload}")
-            return make_response(500, {"error": "Failed to calculate metrics"})
-    except Exception as e:
-        logger.error(f"Failed to invoke or parse scorer response: {e}")
-        return make_response(500, {"error": "Failed to calculate metrics"})
-
-    # --- Validate Metrics ---
-    if artifact_type == "code":
-        non_latency_metrics = ["code_quality"]
-    elif artifact_type == "dataset":
-        non_latency_metrics = [
-            "dataset_and_code",
-            "dataset_quality",
-        ]
-    elif artifact_type == "model":
-        non_latency_metrics = [
-            "size",
-            "license",
-            "performance_claims",
-            "bus_factor",
-            "ramp_up",
-        ]
-    else:
-        non_latency_metrics = []
-
+    # --- Quality Gate ---
+    metrics_map = {
+        "code": ["code_quality", "bus_factor", "license"],
+        "dataset": ["dataset_quality", "license"],
+        "model": ["model_quality", "license", "bus_factor"],
+    }
+    required_metrics = metrics_map.get(artifact_type, [])
     failing_metrics = []
-    for metric in non_latency_metrics:
-        score = scores.get(metric, 0)
-        if isinstance(score, dict):
-            val = sum(score.values()) / len(score) if score else 0
+
+    for metric in required_metrics:
+        if metric in scores:
+            val = scores[metric]
+            if isinstance(val, dict):
+                val = sum(val.values()) / len(val) if val else 0
+
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
-        else:
-            if score < 0.5:
-                failing_metrics.append(f"{metric}: {score}")
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
-        logger.info(f"Package rejected due to insufficient scores: {failing_metrics}")
-        # Uncomment to enforce quality gates:
+        logger.warning(f"Rejecting {url} due to metrics: {failing_metrics}")
         return make_response(
-            424,
-            {
-                "error": "Insufficient quality metrics",
-                "failing_metrics": failing_metrics,
-            },
+            424, {"error": "Insufficient quality metrics", "failing": failing_metrics}
         )
 
-    # --- Download and Upload ---
+    # --- Download & Package ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
-    base_model_repo, lineage_type, source = get_base_model_from_card(repo)
+
+    base_model_repo = None
+    if artifact_type == "model":
+        base_model_repo, _, _ = get_base_model_from_card(repo)
 
     try:
-        logger.info(f"Downloading artifact '{repo}' to '{tmp_dir}'")
-        snapshot_download(repo_id=repo, local_dir=tmp_dir)
+        os.makedirs(tmp_dir, exist_ok=True)
+        logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
+        if artifact_type == "code":
+            # --- Use Requests + Zipfile (Pure Python) ---
+            # 1. Determine Default Branch (simplified)
+            zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
+            logger.info(f"Attempting download from: {zip_url}")
+
+            r_zip = requests.get(zip_url, stream=True)
+            if r_zip.status_code != 200:
+                zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
+                logger.info(f"Main failed, trying master: {zip_url}")
+                r_zip = requests.get(zip_url, stream=True)
+
+            if r_zip.status_code != 200:
+                # LOGGING UPDATED HERE
+                logger.error(
+                    f"Failed to download zip from {zip_url}. \
+                    Status: {r_zip.status_code}"
+                )
+                raise Exception(
+                    f"Failed to download repo zip: HTTP {r_zip.status_code}"
+                )
+
+            # 2. Extract
+            with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
+                z.extractall(tmp_dir)
+
+            # 3. Flatten Directory
+            items = os.listdir(tmp_dir)
+            if len(items) == 1 and os.path.isdir(os.path.join(tmp_dir, items[0])):
+                top_level = os.path.join(tmp_dir, items[0])
+                for item in os.listdir(top_level):
+                    shutil.move(os.path.join(top_level, item), tmp_dir)
+                os.rmdir(top_level)
+
+        else:
+            # --- Use HF Hub ---
+            snapshot_download(
+                repo_id=repo,
+                local_dir=tmp_dir,
+                repo_type=artifact_type,
+                allow_patterns=[
+                    "*.json",
+                    "*.md",
+                    "*.txt",
+                    "*.py",
+                    "*.yaml",
+                    "*.csv",
+                    "*.parquet",
+                ],
+            )
+
+        # Create Zip
         zip_name = f"{name}"
         tmp_zip_path_base = f"/tmp/{zip_name}"
         tmp_zip_file = shutil.make_archive(tmp_zip_path_base, "zip", tmp_dir)
         final_zip_name = f"{name}.zip"
 
+        # Upload to S3
         model_id = str(uuid.uuid4())
-        s3_key = f"models/{model_id}/{final_zip_name}"
+        s3_key = f"artifacts/{artifact_type}/{model_id}/{final_zip_name}"
 
         if upload_model(tmp_zip_file, s3_key) is False:
             return make_response(500, {"error": "S3 upload failed"})
 
-        version = "v1"
+        # Save Metadata
+        version = "1.0.0"
         created_at = datetime.now(timezone.utc).isoformat()
 
-        # Save metadata to DynamoDB
-        item = save_model_metadata(name, version, s3_key, scores)
+        item = save_model_metadata(name, version, s3_key, scores, artifact_type)
         if not item:
             return make_response(500, {"error": "failed to store metadata"})
 
         tbl = dynamodb.Table(TABLE_NAME)
         tbl.update_item(
             Key={"id": item["id"]},
-            UpdateExpression="SET #t = :t, #c = :c, #fn = :fn, \
-                #url = :url, #rid = :rid, #brid = :brid, \
-                #ling = :ling, #linsrc = :linsrc",
+            UpdateExpression="SET #c = :c, #fn = :fn, \
+            #url = :url, #rid = :rid, #bm = :bm",
             ExpressionAttributeNames={
-                "#t": "type",
                 "#c": "created_at",
                 "#fn": "filename",
                 "#url": "source_url",
                 "#rid": "repo_id",
-                "#brid": "base_model_repo_id",
-                "#ling": "lineage_type",
-                "#linsrc": "lineage_source",
+                "#bm": "base_model_repo_id",
             },
             ExpressionAttributeValues={
-                ":t": artifact_type,  # Uses the correctly resolved type
                 ":c": created_at,
                 ":fn": final_zip_name,
                 ":url": url,
                 ":rid": repo,
-                ":brid": base_model_repo,
-                ":ling": lineage_type,
-                ":linsrc": source,
+                ":bm": base_model_repo,
             },
         )
 
-        logger.info(f"Successfully ingested {artifact_type} {model_id}")
-
-        metadata = {
-            "name": item.get("model_name"),
-            "id": item.get("id"),
-            "type": artifact_type,
-        }
-        data = {"url": item.get("source_url")}
-        return make_response(201, {"metadata": metadata, "data": data})
+        return make_response(
+            201,
+            {
+                "metadata": {
+                    "name": name,
+                    "id": item["id"],
+                    "type": artifact_type,
+                    "version": version,
+                },
+                "data": {"url": url},
+            },
+        )
 
     except Exception as e:
-        logger.error(f"Ingestion processing failed: {e}")
-        return make_response(500, {"error": f"Internal server error: {str(e)}"})
+        # LOGGING UPDATED HERE
+        logger.error(f"Ingestion failed for URL '{url}': {e}")
+        return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
-        if os.path.exists(tmp_zip_file):
+        if tmp_zip_file and os.path.exists(tmp_zip_file):
             os.remove(tmp_zip_file)
 
 
 def search_artifacts(query_array, query_params):
-    """
-    Handle POST /artifacts.
-
-    - query_array: The request body, which is a list of query objects.
-    - query_params: The query string parameters, containing the 'offset'.
-    """
-    logger.info(
-        f"Searching artifacts with queries: {query_array} and params: {query_params}"
-    )
     try:
-        offset_str = query_params.get("offset", "1")
-        page = int(offset_str)
-    except (TypeError, ValueError):
+        page = int(query_params.get("offset", "1"))
+    except Exception:
         page = 1
-
     if page < 1:
         page = 1
-
     page_size = DEFAULT_PAGE_SIZE
 
-    if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
+    if not query_array or not isinstance(query_array, list):
         query = {}
     else:
-        query = query_array[0]  # Use the first query object
-
-    logger.info(f"Using query: {query}")
+        query = query_array[0]
 
     name_query = (query.get("name") or "").strip()
     types = query.get("types", [])
-    want_all_types = not types
-
-    logger.info(
-        f"name_query: {name_query}, types: {types}, want_all_types: {want_all_types}"
-    )
-
-    # Handle the wildcard "*" search
+    version_query = query.get("version") or query.get("version_range")
     if name_query == "*":
-        name_query = ""  # This will match all names
-
-    version_query = (query.get("version") or query.get("version_range") or "").strip()
+        name_query = ""
 
     items = []
-    # If a specific name is given, use the optimized query via db_utils,
-    # passing this module's dynamodb and TABLE_NAME so tests can monkeypatch
-    # `reg.dynamodb`/`reg.TABLE_NAME` and have that honored.
-    # Otherwise, scan the whole table (for wildcard or no-name queries).
     if name_query:
         items = (
             get_model_by_model_name(
@@ -545,52 +454,35 @@ def search_artifacts(query_array, query_params):
         )
     else:
         tbl = dynamodb.Table(TABLE_NAME)
-        scan_resp = tbl.scan()
-        items = scan_resp.get("Items", [])
+        items = tbl.scan().get("Items", [])
 
-    # filter by type (if provided)
-    if not want_all_types:
+    if types:
         type_set = {str(t).lower() for t in types}
         items = [it for it in items if str(it.get("type", "")).lower() in type_set]
 
-    logger.info(f"Items after name/type filtering: {len(items)}")
     if version_query:
         items = [
-            it
-            for it in items
-            if version_satisfies(str(it.get("version", "")), version_query)
+            it for it in items if version_satisfies(it.get("version"), version_query)
         ]
 
     def _sort_key(it):
-        return (
-            str(it.get("model_name", "")),
-            parse_semver(str(it.get("version", ""))) or (0, 0, 0),
-        )
+        return (str(it.get("model_name", "")), str(it.get("version", "")))
 
     items.sort(key=_sort_key)
 
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_items = items[start_idx:end_idx]
+    start = (page - 1) * page_size
+    page_items = items[start : start + page_size]
+
+    results = [
+        {"name": it.get("model_name"), "id": it.get("id"), "type": it.get("type")}
+        for it in page_items
+    ]
 
     headers = {}
-    if end_idx < len(items):
-        next_offset = str(page + 1)
-        headers = {"Offset": next_offset}
+    if start + page_size < len(items):
+        headers = {"Offset": str(page + 1)}
 
-    artifacts = []
-
-    for it in page_items:
-        artifact = {
-            "name": it.get("model_name"),
-            "id": it.get("id"),
-            "type": it.get("type"),
-        }
-        artifacts.append(artifact)
-
-    logger.info(f"Returning {artifacts} items for page {page}")
-
-    return make_response(200, artifacts, headers)
+    return make_response(200, results, headers)
 
 
 def get_lineage_graph(start_art_id):
@@ -668,48 +560,57 @@ def rate_model(art_id):
     """
     Handle GET /artifact/model/{id}/rate
     Retrieves and returns the stored scores for a given model artifact.
+    Falls back to invoking scorer if DB scores are missing.
     """
     item = get_model_by_id(art_id)
     if not item:
         return make_response(404, {"error": "Artifact does not exist."})
 
-    scorer_function_name = SCORER_FUNCTION_NAME
-    scores = {}
-    if not scorer_function_name:
-        logger.error("Scorer function not configured, cannot validate metrics")
-        return make_response(500, {"error": "Metric scoring service not available"})
+    # 1. Try DB scores first
+    scores = item.get("scores", {})
 
-    logger.info(f"Invoking scorer function: {scorer_function_name}")
-    try:
-        logger.info(
-            f"Calculating scores for artifact \
-                    {art_id} at URL {item.get('source_url')}"
-        )
-        scorer_payload = json.dumps({"urls": [item.get("source_url")]})
-        response = lambda_client.invoke(
-            FunctionName=scorer_function_name,
-            InvocationType="RequestResponse",
-            Payload=scorer_payload,
-        )
-        response_payload = json.loads(response["Payload"].read().decode())
-        if response_payload.get("statusCode") == 200:
-            scores_list = json.loads(response_payload["body"])
-            if scores_list:
-                scores = scores_list[0]
-        else:
-            logger.error(f"Scorer function returned error: {response_payload}")
+    # 2. Fallback: Invoke scorer if scores missing
+    if not scores:
+        scorer_function_name = SCORER_FUNCTION_NAME
+        if not scorer_function_name:
+            logger.error("Scorer function not configured, cannot validate metrics")
+            return make_response(500, {"error": "Metric scoring service not available"})
+
+        logger.info(f"Invoking scorer function: {scorer_function_name}")
+        try:
+            url = item.get("source_url")
+            if not url:
+                logger.error(f"No source URL for artifact {art_id}")
+                # Cannot rate without URL
+                return make_response(500, {"error": "Failed to calculate metrics"})
+
+            logger.info(f"Calculating scores for artifact {art_id} at URL {url}")
+            scorer_payload = json.dumps({"urls": [url]})
+
+            response = lambda_client.invoke(
+                FunctionName=scorer_function_name,
+                InvocationType="RequestResponse",
+                Payload=scorer_payload,
+            )
+            response_payload = json.loads(response["Payload"].read().decode())
+            if response_payload.get("statusCode") == 200:
+                scores_list = json.loads(response_payload["body"])
+                if scores_list:
+                    scores = scores_list[0]
+            else:
+                logger.error(f"Scorer function returned error: {response_payload}")
+                return make_response(500, {"error": "Failed to calculate metrics"})
+        except Exception as e:
+            logger.error(f"Failed to invoke or parse scorer response: {e}")
             return make_response(500, {"error": "Failed to calculate metrics"})
-    except Exception as e:
-        logger.error(f"Failed to invoke or parse scorer response: {e}")
-        return make_response(500, {"error": "Failed to calculate metrics"})
 
     if not scores:
         logger.error(f"Scores not found for artifact {art_id}, but item exists.")
         return make_response(
             500,
             {
-                "error": "The artifact rating system encountered an \
-                    error while computing at least one metric."
+                "error": "The artifact rating system encountered "
+                "an error while computing at least one metric."
             },
         )
     else:
@@ -720,8 +621,8 @@ def rate_model(art_id):
                 return make_response(
                     500,
                     {
-                        "error": "The artifact rating system encountered an \
-                            error while computing at least one metric."
+                        "error": "The artifact rating system encountered an error "
+                        "while computing at least one metric."
                     },
                 )
 
@@ -822,25 +723,39 @@ def handler(event, context):
     # Authenticated Routes
 
     user_roles = user_payload.get("roles", [])
-    logger.info(f"Authenticated user {user_payload.get('sub')} with roles {user_roles}")
+    user_id = user_payload.get("sub")
+    logger.info(f"Authenticated user {user_id} with roles {user_roles}")
 
+    # POST /users (Register)
     if method == "POST" and path == "/users":
         return register_user(body, user_roles)
 
+    # GET /users (List Users)
+    if method == "GET" and path == "/users":
+        return get_all_users(user_roles)
+
+    # Regex for user operations by ID
+    user_op_match = re.match(r"/users/([^/]+)$", path)
+    if user_op_match:
+        target_id = user_op_match.group(1)
+
+        # DELETE /users/{id}
+        if method == "DELETE":
+            return delete_user(target_id, user_id, user_roles)
+
+        # PUT /users/{id} (Update Roles)
+        if method == "PUT":
+            new_roles = body.get("roles")
+            return update_user_roles(target_id, new_roles, user_roles)
+
     # POST /artifact/{type}
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:
-        art_type = path.split("/artifact/", 1)[-1]
-        try:
-            return ingest_artifact(art_type, body)
-        except KeyError as ke:
-            return make_response(400, {"error": f"missing field: {str(ke)}"})
-        except Exception as e:
-            return make_response(400, {"error": str(e)})
+        atype = path.split("/")[-1]
+        return ingest_artifact(atype, body)
 
     # GET /artifact/{type}/{id}
     get_match = re.match(r"/artifacts/([^/]+)/([^/]+)", path)
     if method == "GET" and get_match and path.count("/") == 3:
-        art_type = get_match.group(1)
         art_id = get_match.group(2)
 
         item = get_model_by_id(art_id)

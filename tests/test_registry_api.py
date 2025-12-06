@@ -234,12 +234,6 @@ def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
     reg.TABLE_NAME = "table"
     reg.BUCKET_NAME = "bucket"
 
-    urls_seen = []
-
-    def fake_classify_url(url):
-        urls_seen.append(url)
-        return "model"
-
     def fake_get_repo_id(url, url_type):
         return "org/my-model"
 
@@ -277,7 +271,6 @@ def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
             return FakeTable2()
 
     # monkeypatch all externals used by ingest_artifact
-    monkeypatch.setattr(reg, "classify_url", fake_classify_url)
     monkeypatch.setattr(reg, "get_repo_id", fake_get_repo_id)
     monkeypatch.setattr(reg, "get_base_model_from_card", fake_get_base_model_from_card)
     monkeypatch.setattr(reg, "snapshot_download", fake_snapshot_download)
