@@ -262,12 +262,13 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     return dl, total_by_file, contributors, file_creators
 
+
 def _collect_doa_inputs_from_github(repo_id: str, since_days: int):
     """
     DETAILED: Uses GitHub API to get file-level commit data.
     """
     start_time = time.time()
-    
+
     # Setup Auth
     gh_token = os.getenv("GITHUB_TOKEN")
     headers = {
@@ -289,9 +290,9 @@ def _collect_doa_inputs_from_github(repo_id: str, since_days: int):
     page = 1
     commits_to_process = []
     base_url = f"https://api.github.com/repos/{repo_id}"
-    
+
     logger.info(f"Fetching commit list for {repo_id} since {since_str}...")
-    
+
     # 1. Fetch List of Commits (Pagination required)
     while True:
         params = {"since": since_str, "per_page": 100, "page": page}
@@ -300,16 +301,16 @@ def _collect_doa_inputs_from_github(repo_id: str, since_days: int):
             if resp.status_code != 200:
                 logger.error(f"GitHub API Error listing commits: {resp.status_code}")
                 break
-                
+
             batch = resp.json()
             if not batch:
                 break
-                
+
             commits_to_process.extend(batch)
             page += 1
-            
+
             # Safety break for huge repos
-            if len(commits_to_process) > 3000: 
+            if len(commits_to_process) > 3000:
                 logger.warning("Hit limit of 3000 commits for analysis.")
                 break
         except Exception as e:
@@ -318,12 +319,14 @@ def _collect_doa_inputs_from_github(repo_id: str, since_days: int):
 
     # Sort Oldest -> Newest to identify "creators" correctly
     commits_to_process.reverse()
-    logger.info(f"Processing {len(commits_to_process)} commits for detailed file stats...")
+    logger.info(
+        f"Processing {len(commits_to_process)} commits for detailed file stats..."
+    )
 
     # 2. Fetch Details for EACH Commit
     for i, summary in enumerate(commits_to_process):
-        sha = summary['sha']
-        
+        sha = summary["sha"]
+
         # Simple rate limit protection
         if i % 100 == 0:
             time.sleep(0.2)
@@ -332,24 +335,24 @@ def _collect_doa_inputs_from_github(repo_id: str, since_days: int):
             c_resp = requests.get(f"{base_url}/commits/{sha}", headers=headers)
             if c_resp.status_code != 200:
                 continue
-                
+
             commit_data = c_resp.json()
-            
+
             # Identify Author
             author = "unknown"
-            if commit_data.get('author') and commit_data['author'].get('login'):
-                author = commit_data['author']['login']
-            elif commit_data.get('commit') and commit_data['commit'].get('author'):
-                 author = commit_data['commit']['author']['email']
-            
+            if commit_data.get("author") and commit_data["author"].get("login"):
+                author = commit_data["author"]["login"]
+            elif commit_data.get("commit") and commit_data["commit"].get("author"):
+                author = commit_data["commit"]["author"]["email"]
+
             author = str(author).lower()
 
             # Identify Files
-            files = commit_data.get('files', [])
-            
+            files = commit_data.get("files", [])
+
             for file_obj in files:
-                fname = file_obj.get('filename')
-                
+                fname = file_obj.get("filename")
+
                 if not fname or not _is_code_like(fname):
                     continue
 
@@ -499,7 +502,7 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
         if url_type == "model":
             repo_info = _to_hf_repo_id(url)
             repo_type, repo_id = repo_info
-            
+
             dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
                 repo_id, repo_type, since_days
             )
@@ -513,7 +516,7 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
             bf, total_authors = _compute_bus_factor_approximation(total_by_file, dl)
             score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
             score = max(0.0, min(1.0, score))
-            
+
             logger.info(f"Bus factor score for {repo_id}: {score}")
             return score, int((time.time() - start) * 1000)
 
@@ -533,18 +536,20 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
             dl, total_by_file, contributors, creators = _collect_doa_inputs_from_github(
                 repo_id, since_days
             )
-            
+
             if not total_by_file:
                 return 0.0, int((time.time() - start) * 1000)
 
             # Use Original Math
-            authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
+            authors_of_file = _authors_by_file(
+                dl, total_by_file, contributors, creators
+            )
             bf, _ = _compute_bus_factor(authors_of_file)
             score = _normalize_score(bf, authors_of_file)
-            
+
             logger.info(f"Bus factor score for {repo_id}: {score}")
             return score, int((time.time() - start) * 1000)
-            
+
         else:
             logger.warning(f"Could not resolve '{url}' to a supported repo.")
             return 0.0, int((time.time() - start) * 1000)
