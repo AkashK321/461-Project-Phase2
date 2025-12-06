@@ -506,7 +506,7 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
             dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
                 repo_id, repo_type, since_days
             )
-            logger.info(f"HF Approx Inputs Collected")
+            logger.info("HF Approx Inputs Collected")
 
             if not total_by_file:
                 logger.info(f"No commit history found for {repo_id}.")
