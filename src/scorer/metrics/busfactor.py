@@ -9,6 +9,8 @@ import re
 import math
 import time
 import datetime as dt
+import os
+import requests
 from pathlib import Path
 from collections import defaultdict
 from urllib.parse import urlparse
@@ -260,6 +262,112 @@ def _collect_doa_inputs_from_hf(repo_id: str, repo_type: str, since_days: int):
 
     return dl, total_by_file, contributors, file_creators
 
+def _collect_doa_inputs_from_github(repo_id: str, since_days: int):
+    """
+    DETAILED: Uses GitHub API to get file-level commit data.
+    """
+    start_time = time.time()
+    
+    # Setup Auth
+    gh_token = os.getenv("GITHUB_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+    }
+    if gh_token:
+        headers["Authorization"] = f"token {gh_token}"
+    else:
+        logger.warning("No GITHUB_TOKEN set. Rate limits will be strict (60/hr).")
+
+    since_dt = dt.datetime.utcnow() - dt.timedelta(days=since_days)
+    since_str = since_dt.isoformat() + "Z"
+
+    dl = defaultdict(lambda: defaultdict(int))
+    total_by_file = defaultdict(int)
+    contributors = defaultdict(set)
+    file_creators = {}
+
+    page = 1
+    commits_to_process = []
+    base_url = f"https://api.github.com/repos/{repo_id}"
+    
+    logger.info(f"Fetching commit list for {repo_id} since {since_str}...")
+    
+    # 1. Fetch List of Commits (Pagination required)
+    while True:
+        params = {"since": since_str, "per_page": 100, "page": page}
+        try:
+            resp = requests.get(f"{base_url}/commits", headers=headers, params=params)
+            if resp.status_code != 200:
+                logger.error(f"GitHub API Error listing commits: {resp.status_code}")
+                break
+                
+            batch = resp.json()
+            if not batch:
+                break
+                
+            commits_to_process.extend(batch)
+            page += 1
+            
+            # Safety break for huge repos
+            if len(commits_to_process) > 3000: 
+                logger.warning("Hit limit of 3000 commits for analysis.")
+                break
+        except Exception as e:
+            logger.error(f"Network error listing commits: {e}")
+            break
+
+    # Sort Oldest -> Newest to identify "creators" correctly
+    commits_to_process.reverse()
+    logger.info(f"Processing {len(commits_to_process)} commits for detailed file stats...")
+
+    # 2. Fetch Details for EACH Commit
+    for i, summary in enumerate(commits_to_process):
+        sha = summary['sha']
+        
+        # Simple rate limit protection
+        if i % 100 == 0:
+            time.sleep(0.2)
+
+        try:
+            c_resp = requests.get(f"{base_url}/commits/{sha}", headers=headers)
+            if c_resp.status_code != 200:
+                continue
+                
+            commit_data = c_resp.json()
+            
+            # Identify Author
+            author = "unknown"
+            if commit_data.get('author') and commit_data['author'].get('login'):
+                author = commit_data['author']['login']
+            elif commit_data.get('commit') and commit_data['commit'].get('author'):
+                 author = commit_data['commit']['author']['email']
+            
+            author = str(author).lower()
+
+            # Identify Files
+            files = commit_data.get('files', [])
+            
+            for file_obj in files:
+                fname = file_obj.get('filename')
+                
+                if not fname or not _is_code_like(fname):
+                    continue
+
+                total_by_file[fname] += 1
+                dl[fname][author] += 1
+                contributors[fname].add(author)
+
+                # Since we are iterating Oldest -> Newest, the first time we see
+                # a file, this author is the "creator" (within the window)
+                if fname not in file_creators:
+                    file_creators[fname] = author
+
+        except Exception as e:
+            logger.error(f"Error processing commit {sha}: {e}")
+
+    logger.info(f"GitHub analysis finished in {time.time() - start_time:.2f}s")
+    return dl, total_by_file, contributors, file_creators
+
 
 def _doa(author, file_path, dl, total_by_file, contributors, creators):
     DL = dl[file_path].get(author, 0)
@@ -387,32 +495,61 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
     logger.info(f"Calculating bus factor for URL: {url} (type: {url_type})")
 
     try:
+        # Check URL Type
         repo_info = _to_hf_repo_id(url)
-        if not repo_info:
-            logger.warning(f"Could not resolve '{url}' to a Hugging Face repo.")
+        
+        # 1. HUGGING FACE PATH (Approximation)
+        if repo_info:
+            repo_type, repo_id = repo_info
+            
+            dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
+                repo_id, repo_type, since_days
+            )
+            logger.info(f"HF Approx Inputs Collected")
+
+            if not total_by_file:
+                logger.info(f"No commit history found for {repo_id}.")
+                return 0.0, int((time.time() - start) * 1000)
+
+            # Use Approx Math
+            bf, total_authors = _compute_bus_factor_approximation(total_by_file, dl)
+            score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
+            score = max(0.0, min(1.0, score))
+            
+            logger.info(f"Bus factor score for {repo_id}: {score}")
+            return score, int((time.time() - start) * 1000)
+
+        # 2. GITHUB PATH (Detailed File Analysis)
+        elif "github.com" in url:
+            # Parse Owner/Repo
+            parsed = urlparse(url)
+            # clean .git extension and leading slash
+            path_parts = parsed.path.strip("/").replace(".git", "").split("/")
+            if len(path_parts) >= 2:
+                repo_id = f"{path_parts[0]}/{path_parts[1]}"
+            else:
+                logger.warning(f"Invalid GitHub URL: {url}")
+                return 0.0, int((time.time() - start) * 1000)
+
+            # Use Detailed GitHub Collector
+            dl, total_by_file, contributors, creators = _collect_doa_inputs_from_github(
+                repo_id, since_days
+            )
+            
+            if not total_by_file:
+                return 0.0, int((time.time() - start) * 1000)
+
+            # Use Original Math
+            authors_of_file = _authors_by_file(dl, total_by_file, contributors, creators)
+            bf, _ = _compute_bus_factor(authors_of_file)
+            score = _normalize_score(bf, authors_of_file)
+            
+            logger.info(f"Bus factor score for {repo_id}: {score}")
+            return score, int((time.time() - start) * 1000)
+            
+        else:
+            logger.warning(f"Could not resolve '{url}' to a supported repo.")
             return 0.0, int((time.time() - start) * 1000)
-
-        repo_type, repo_id = repo_info
-
-        dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
-            repo_id, repo_type, since_days
-        )
-        logger.info(f"doa inputs: {dl}, {total_by_file}, {contributors}, {creators}")
-
-        if not total_by_file:
-            logger.info(f"No files with commit history found for {repo_id}.")
-            return 0.0, int((time.time() - start) * 1000)
-
-        # bf, _ = _compute_bus_factor(authors_of_file)
-        bf, total_authors = _compute_bus_factor_approximation(total_by_file, dl)
-        # score = _normalize_score(bf, authors_of_file)
-        score = 1.0 - (bf / total_authors) if total_authors > 0 else 0.0
-        score = max(0.0, min(1.0, score))
-        logger.info(
-            f"Bus factor score for {repo_id}: {score} \
-                (bus factor: {bf}) (total authors: {total_authors})"
-        )
-        return score, int((time.time() - start) * 1000)
 
     except Exception as e:
         logger.exception(
