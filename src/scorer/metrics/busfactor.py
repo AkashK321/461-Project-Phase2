@@ -495,11 +495,9 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
     logger.info(f"Calculating bus factor for URL: {url} (type: {url_type})")
 
     try:
-        # Check URL Type
-        repo_info = _to_hf_repo_id(url)
-        
         # 1. HUGGING FACE PATH (Approximation)
-        if repo_info:
+        if url_type == "model":
+            repo_info = _to_hf_repo_id(url)
             repo_type, repo_id = repo_info
             
             dl, total_by_file, contributors, creators = _collect_doa_inputs_from_hf(
@@ -520,7 +518,7 @@ def get_bus_factor(url: str, url_type: str, since_days: int = SINCE_DAYS_DEFAULT
             return score, int((time.time() - start) * 1000)
 
         # 2. GITHUB PATH (Detailed File Analysis)
-        elif "github.com" in url:
+        elif url_type == "code":
             # Parse Owner/Repo
             parsed = urlparse(url)
             # clean .git extension and leading slash
