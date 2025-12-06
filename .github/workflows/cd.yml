@@ -23,6 +23,7 @@ on:
       - refactor-metrics-to-use-hp-api-instead-of-github
       - create-and-delete-users
       - url-tests
+      - busfactor-for-code
 
 # Define the permissions the job will need
 permissions:
