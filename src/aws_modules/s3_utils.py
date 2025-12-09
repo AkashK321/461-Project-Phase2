@@ -74,6 +74,8 @@ def get_object_size(s3_object_key):
     """
     Gets the size of an object in S3 in bytes.
     """
+    logger.info(f"Entering get_object_size with s3_object_key='{s3_object_key}'")
+
     if not S3_BUCKET_NAME:
         logger.error("S3_BUCKET_NAME environment variable not set.")
         return None
@@ -81,8 +83,8 @@ def get_object_size(s3_object_key):
     try:
         response = s3_client.head_object(Bucket=S3_BUCKET_NAME, Key=s3_object_key)
         size = response.get('ContentLength')
-        logger.info(f"Size of {s3_object_key}: {size} bytes")
+        logger.info(f"get_object_size success: Retrieved size={size} bytes for key='{s3_object_key}'")
         return size
     except ClientError as e:
-        logger.error(f"Failed to get object attributes for {s3_object_key}: {e}")
+        logger.error(f"get_object_size failed for key='{s3_object_key}': {e}")
         return None
