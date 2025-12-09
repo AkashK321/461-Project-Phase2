@@ -4,6 +4,7 @@ Dataset and code metrics.
 - Look for example code/scripts (training, evaluation, requirements).
 """
 
+import logging
 import os
 import time
 import re
@@ -15,6 +16,7 @@ load_dotenv()
 # HF_TOKEN = os.getenv("HF_Token")
 HF_API = HfApi()
 # login(token=HF_TOKEN)
+logger = logging.getLogger(__name__)
 
 
 def _maybe_login() -> None:
@@ -46,10 +48,11 @@ def get_dataset_and_code_score(url: str, url_type: str):
     _maybe_login()
     start_time = time.time()
 
+    logger.info(f"Calculating dataset_and_code score for {url} of type {url_type}")
     try:
         repo_id = get_repo_id(url, url_type)
     except Exception as e:
-        print(f"Error getting repo id {e}")
+        logger.warning(f"Error getting repo id {e}")
         latency = int((time.time() - start_time) * 1000)
         return 0.0, latency
 
@@ -61,16 +64,17 @@ def get_dataset_and_code_score(url: str, url_type: str):
             repo_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=True)
         else:
             latency = int((time.time() - start_time) * 1000)
-            print("dataset_and_code_score only applicable to model/dataset")
+            logger.info("dataset_and_code_score only applicable to model/dataset")
             return 0.0, latency
     except Exception as e:
-        print(f"Error fetching repo info {e}")
+        logger.warning(f"Error fetching repo info {e}")
         latency = int((time.time() - start_time) * 1000)
         return 0.0, latency
 
     # Extract README content (if available)
     readme = getattr(repo_info, "cardData", None) or {}
     readme_text = ""
+    logger.info(f"Repo card data length: {len(readme)}")
     if readme and "README.md" in repo_info.siblings:
         if "datasets" in readme:
             readme_text += " ".join(readme.get("datasets", []))
@@ -88,6 +92,7 @@ def get_dataset_and_code_score(url: str, url_type: str):
         if re.search(pattern, readme_text, re.IGNORECASE):
             dataset_documented = True
             break
+    logger.info(f"Dataset documented: {dataset_documented}")
 
     # Check for code scripts or requirements
     files = [f.rfilename for f in repo_info.siblings]
