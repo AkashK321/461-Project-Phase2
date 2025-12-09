@@ -38,19 +38,21 @@ SYSTEM_PROMPT = (
     "You are an expert data scientist evaluating the quality "
     "of datasets used in machine learning models.\n"
     "Given the README of a model, assess the quality of the dataset(s) it uses.\n"
-    "Analyze the provided model documentation (README) and assigne harsh 0.0-1.0 scores that "
+    "Analyze the provided model documentation (README) "
+    "and assigne harsh 0.0-1.0 scores that "
     "penalize missing, vague, or incomplete information. Do not ever reward absence.\n"
-    "If a valid dataset is found, proceed with evaluation, otherwise return a score of 0.0.\n"
-    "The dataset quality should be judged based on size, completeness, labels, license, "
+    "If a valid dataset is found, proceed with evaluation, "
+    "otherwise return a score of 0.0.\n"
+    "The dataset quality should be judged based on size, "
+    "completeness, labels, license, "
     "cleanliness, relevance, and proper formatting.\n"
-    "Normalize the score [0,1] based on quality indicators such as the critera mentioned above.\n"
+    "Normalize the score [0,1] based on quality indicators "
+    "such as the critera mentioned above.\n"
     "Return STRICT JSON with two fields:\n"
     '{"score": <float between 0 and 1>, "rationale": "<<=200 chars explanation>"}\n\n'
     "Do NOT include anything else."
 )
-USER_PROMPT_TEMPLATE = (
-    "README (truncated if very long)\n----------------\n{readme}\n"
-)
+USER_PROMPT_TEMPLATE = "README (truncated if very long)\n----------------\n{readme}\n"
 
 
 def _maybe_login() -> None:
@@ -291,10 +293,14 @@ def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float],
         if not readme_content:
             logger.warning(f"No README found for model {repo_id}, cannot use LLM.")
             return 0.0, int((time.time() - start_time) * 1000)
-        logger.info(f"Dataset quality Fetched README content for model {repo_id}, length {len(readme_content)}")
+        logger.info(
+            f"Dataset quality Fetched README content for model {repo_id}, length {len(readme_content)}"
+        )
         llm_score = _ask_llm(readme_content)
         if llm_score is not None:
-            logger.info(f"LLM-based dataset quality score for model {repo_id}: {llm_score}")
+            logger.info(
+                f"LLM-based dataset quality score for model {repo_id}: {llm_score}"
+            )
             return llm_score, int((time.time() - start_time) * 1000)
         else:
             logger.warning(f"LLM query failed for model {repo_id}, returning 0.")
@@ -322,5 +328,7 @@ def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float],
         return round(score, 2), int((time.time() - start_time) * 1000)
 
     else:
-        logger.warning(f"Dataset quality score is not applicable to url_type '{url_type}'")
+        logger.warning(
+            f"Dataset quality score is not applicable to url_type '{url_type}'"
+        )
         return None, int((time.time() - start_time) * 1000)
