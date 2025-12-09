@@ -1,20 +1,31 @@
 """
-Implementing dataset quality metric scoring by looking at
-the number of downloads, likes
+Implementing dataset quality metric scoring.
+- For datasets: looks at the number of downloads and likes.
+- For models: queries an LLM to evaluate dataset quality claims in the model card.
 """
 
 import os
 import time
 import logging
+import json
+import re
+from typing import Tuple, Optional
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login
+from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
+from huggingface_hub import hf_hub_download
+
 from .base import get_repo_id
 import math
-from typing import Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
 # HF_TOKEN = os.getenv("HF_Token")
 HF_API = HfApi()
 # login(token=HF_TOKEN)
@@ -22,6 +33,24 @@ HF_API = HfApi()
 # Downloads and likes targets for top tier quality
 max_downloads = 1000000  # 1 million downloads
 max_likes = 2000
+
+SYSTEM_PROMPT = (
+    "You are an expert data scientist evaluating the quality "
+    "of datasets used in machine learning models.\n"
+    "Given the README of a model, assess the quality of the dataset(s) it uses.\n"
+    "Analyze the provided model documentation (README) and assigne harsh 0.0-1.0 scores that "
+    "penalize missing, vague, or incomplete information. Do not ever reward absence.\n"
+    "If a valid dataset is found, proceed with evaluation, otherwise return a score of 0.0.\n"
+    "The dataset quality should be judged based on size, completeness, labels, license, "
+    "cleanliness, relevance, and proper formatting.\n"
+    "Normalize the score [0,1] based on quality indicators such as the critera mentioned above.\n"
+    "If nothing is found or the README is empty, return 0.0.\n"
+    "Return STRICT JSON with two fields:\n"
+    '{"score": <float between 0 and 1>, "rationale": "<<=200 chars explanation>"}\n\n'
+)
+USER_PROMPT_TEMPLATE = (
+    "README (truncated if very long)\n----------------\n{readme}\n"
+)
 
 
 def _maybe_login() -> None:
@@ -55,15 +84,153 @@ def normalize(value: int, target: int) -> float:
     return min(1.0, math.log10(value + 1) / math.log10(target + 1))
 
 
+def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
+    """Downloads a specific file from HF Hub into memory."""
+    try:
+        local_path = hf_hub_download(
+            repo_id=repo_id, filename=filename, repo_type=repo_type, local_dir=None
+        )
+        with open(local_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    except (EntryNotFoundError, RepositoryNotFoundError, Exception):
+        return ""
+
+
+def _session_with_retry() -> requests.Session:
+    logger.info("Creating session with retries")
+    s = requests.Session()
+    r = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["POST"]),
+    )
+    s.mount("https://", HTTPAdapter(max_retries=r))
+    s.mount("http://", HTTPAdapter(max_retries=r))
+    return s
+
+
+def _extract_json_first(s: str) -> dict | None:
+    if not s:
+        return None
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    quote = ""
+    for i, ch in enumerate(s):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == quote:
+                in_str = False
+            continue
+        if ch == '"' or ch == "'":
+            in_str = True
+            quote = ch
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    snippet = s[start : i + 1]
+                    try:
+                        return json.loads(snippet)
+                    except Exception:
+                        start = -1
+                        continue
+    return None
+
+
+SYSTEM_PROMPT = ""
+USER_PROMPT_TEMPLATE = "{readme}"
+
+
+def _ask_llm(readme: str) -> Optional[float]:
+    api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    base = os.getenv("GENAI_BASE_URL", "https://genai.rcac.purdue.edu").rstrip("/")
+    path = os.getenv("GENAI_PATH", "/api/chat/completions")
+    url = f"{base}{path}"
+    model = os.getenv("GENAI_MODEL", "").strip() or "deepseek-r1:7b"
+
+    def _build_payload(user_prompt: str):
+        return {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": 220,
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "response_format": {"type": "json_object"},
+        }
+
+    def _clean_text(txt: str) -> str:
+        if not txt:
+            return ""
+        txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.DOTALL)
+        txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", txt.strip(), flags=re.IGNORECASE)
+        return txt.strip()
+
+    def _parse_or_salvage(txt: str) -> Optional[float]:
+        txt = _clean_text(txt)
+        parsed = _extract_json_first(txt)
+        if parsed and isinstance(parsed, dict) and "score" in parsed:
+            try:
+                return float(parsed["score"])
+            except Exception:
+                pass
+        m = re.search(r"\b(0(?:\.\d+)?|1(?:\.0+)?)\b", txt)
+        if m:
+            try:
+                return float(m.group(1))
+            except Exception:
+                return None
+        return None
+
+    readme = (readme or "").strip()
+    if len(readme) > 20000:
+        readme = readme[:20000] + "\n\n[TRUNCATED]"
+    user_prompt = USER_PROMPT_TEMPLATE.format(readme=readme)
+
+    payload = _build_payload(user_prompt)
+    session = _session_with_retry()
+    try:
+        resp = session.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            data=json.dumps(payload),
+            timeout=90,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        score = _parse_or_salvage(content)
+        return max(0.0, min(1.0, score)) if isinstance(score, float) else None
+    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        logger.error(f"LLM query failed: {e}")
+        return None
+
+
 def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float], int]:
     _maybe_login()
     start_time = time.time()
     logger.info(f"Starting dataset quality scoring for {url}")
-
-    if url_type != "dataset":
-        logger.warning("Dataset quality score is only applicable to datasets")
-        latency = int((time.time() - start_time) * 1000)
-        return None, latency
 
     # Get repo id
     try:
@@ -74,37 +241,41 @@ def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float],
         latency = int((time.time() - start_time) * 1000)
         return None, latency
 
-    dataset_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=False)
-    try:
-        dataset_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=False)
-    except Exception as e:
-        logger.error(f"Could not fetch dataset info for {repo_id}: {e}")
-        latency = int((time.time() - start_time) * 1000)
-        return 0.0, latency
+    if url_type == "model":
+        readme_content = _fetch_file_content(repo_id, "model", "README.md")
+        if not readme_content:
+            logger.warning(f"No README found for model {repo_id}, cannot use LLM.")
+            return 0.0, int((time.time() - start_time) * 1000)
 
-    # Look at number of downloads and likes
-    downloads = getattr(dataset_info, "downloads", 0) or 0
-    likes = getattr(dataset_info, "likes", 0) or getattr(dataset_info, "stars", 0) or 0
-    logger.info(f"Dataset {repo_id} has {downloads} downloads and {likes} likes.")
+        llm_score = _ask_llm(readme_content)
+        if llm_score is not None:
+            logger.info(f"LLM-based dataset quality score for model {repo_id}: {llm_score}")
+            return llm_score, int((time.time() - start_time) * 1000)
+        else:
+            logger.warning(f"LLM query failed for model {repo_id}, returning 0.")
+            return 0.0, int((time.time() - start_time) * 1000)
 
-    # Normalize these scores
-    downloads_score = normalize(downloads, max_downloads)
-    likes_score = normalize(likes, max_likes)
+    elif url_type == "dataset":
+        try:
+            dataset_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=False)
+        except Exception as e:
+            logger.error(f"Could not fetch dataset info for {repo_id}: {e}")
+            return 0.0, int((time.time() - start_time) * 1000)
 
-    # If likes/stars don't exist, return downloads score
-    if likes == 0:
-        return round(downloads_score, 2)
-    score = 0.0
-    if likes == 0 and downloads > 0:
-        score = downloads_score
-    elif downloads > 0 or likes > 0:
+        downloads = getattr(dataset_info, "downloads", 0) or 0
+        likes = (
+            getattr(dataset_info, "likes", 0) or getattr(dataset_info, "stars", 0) or 0
+        )
+        logger.info(f"Dataset {repo_id} has {downloads} downloads and {likes} likes.")
+
+        downloads_score = normalize(downloads, max_downloads)
+        likes_score = normalize(likes, max_likes)
+
         # Weighted sum of downloads and likes scores
         score = 0.8 * downloads_score + 0.2 * likes_score
+        logger.info(f"Final dataset quality score for {repo_id}: {score:.2f}")
+        return round(score, 2), int((time.time() - start_time) * 1000)
 
-    # Weighted sum of downloads and likes scores
-    score = 0.8 * downloads_score + 0.2 * likes_score
-
-    logger.info(f"Final dataset quality score for {repo_id}: {score:.2f}")
-    latency = int((time.time() - start_time) * 1000)
-
-    return round(score, 2), latency
+    else:
+        logger.warning(f"Dataset quality score is not applicable to url_type '{url_type}'")
+        return None, int((time.time() - start_time) * 1000)
