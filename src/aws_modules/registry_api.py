@@ -237,7 +237,7 @@ def ingest_artifact(artifact_type, payload):
 
         # 1. Classification & Type override
         if "github.com" in url:
-            if artifact_type != "code":
+            if artifact_type != "code" and artifact_type != "dataset":
                 logger.info(
                     f"Detected GitHub URL. Switching type from {artifact_type} to code."
                 )
@@ -255,8 +255,12 @@ def ingest_artifact(artifact_type, payload):
         else:
             repo = get_repo_id(url, artifact_type) or url.split("/")[-1]
 
-        name_part = repo.split("/")[-1] if "/" in repo else repo
-        name = payload.get("name", name_part).strip()
+        # Use the name provided in the payload
+        name = payload.get("name", "").strip()
+        if not name:
+            # Fallback to extraction from repo/url if name is not provided
+            name = repo.split("/")[-1] if "/" in repo else repo
+            
         logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
@@ -319,7 +323,7 @@ def ingest_artifact(artifact_type, payload):
         os.makedirs(tmp_dir, exist_ok=True)
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
-        if artifact_type == "code":
+        if "github.com" in url:
             # 1. Determine Default Branch (simplified)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
@@ -331,7 +335,6 @@ def ingest_artifact(artifact_type, payload):
                 r_zip = requests.get(zip_url, stream=True)
 
             if r_zip.status_code != 200:
-                # LOGGING UPDATED HERE
                 logger.error(
                     f"Failed to download zip from {zip_url}. \
                     Status: {r_zip.status_code}"
@@ -340,7 +343,7 @@ def ingest_artifact(artifact_type, payload):
                     f"Failed to download repo zip: HTTP {r_zip.status_code}"
                 )
 
-            # 2. Extract with Filtering
+            # 2. Extract with Filtering (Filtering only applies to CODE)
             
             # Extensions to exclude
             excluded_extensions = {
@@ -378,8 +381,14 @@ def ingest_artifact(artifact_type, payload):
 
             with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
                 for file_info in z.infolist():
-                    if not file_info.filename.endswith('/') and is_allowed(file_info.filename):
-                        z.extract(file_info, tmp_dir)
+                    if not file_info.filename.endswith('/'):
+                        # Apply filtering ONLY if it is code.
+                        if artifact_type == "code":
+                            if is_allowed(file_info.filename):
+                                z.extract(file_info, tmp_dir)
+                        else:
+                            # For datasets on GitHub, extract everything
+                            z.extract(file_info, tmp_dir)
 
             # 3. Flatten Directory
             items = os.listdir(tmp_dir)
@@ -392,7 +401,6 @@ def ingest_artifact(artifact_type, payload):
         else:
             # --- Use HF Hub ---
             # Optimize ingestion by only downloading necessary file types
-            # Basic metadata and code files are always needed
             allow_patterns = [
                 "*.json",
                 "*.md",
@@ -436,7 +444,7 @@ def ingest_artifact(artifact_type, payload):
             return make_response(500, {"error": "failed to store metadata"})
 
         tbl = dynamodb.Table(TABLE_NAME)
-
+        
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #c = :c, #fn = :fn, \
