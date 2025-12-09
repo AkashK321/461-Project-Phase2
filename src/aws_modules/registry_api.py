@@ -329,9 +329,46 @@ def ingest_artifact(artifact_type, payload):
                     f"Failed to download repo zip: HTTP {r_zip.status_code}"
                 )
 
-            # 2. Extract
+            # 2. Extract with Filtering
+            
+            # Extensions to exclude
+            excluded_extensions = {
+                # Media
+                '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.svg', '.webp',
+                '.mp4', '.mov', '.avi', '.mp3', '.wav',
+                # Archives
+                '.zip', '.tar', '.gz', '.7z', '.rar',
+                # Documents
+                '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
+                # Compiled/Binary
+                '.pyc', '.pyo', '.pyd', '.o', '.obj', '.dll', '.exe', '.so', '.dylib', '.class', '.jar',
+                # Other
+                '.DS_Store'
+            }
+
+            # Directories to exclude
+            excluded_dirs = {
+                '__pycache__', '.git', '.idea', '.vscode', '.venv', 'venv', 'env', 'node_modules'
+            }
+
+            def is_allowed(filename):
+                parts = filename.split('/')
+                # Check for excluded directories
+                for part in parts:
+                    if part in excluded_dirs:
+                        return False
+                
+                # Check extension
+                _, ext = os.path.splitext(filename)
+                if ext.lower() in excluded_extensions:
+                    return False
+                
+                return True
+
             with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
-                z.extractall(tmp_dir)
+                for file_info in z.infolist():
+                    if not file_info.filename.endswith('/') and is_allowed(file_info.filename):
+                        z.extract(file_info, tmp_dir)
 
             # 3. Flatten Directory
             items = os.listdir(tmp_dir)
@@ -344,6 +381,7 @@ def ingest_artifact(artifact_type, payload):
         else:
             # --- Use HF Hub ---
             # Optimize ingestion by only downloading necessary file types
+            # Basic metadata and code files are always needed
             allow_patterns = [
                 "*.json",
                 "*.md",
@@ -353,6 +391,8 @@ def ingest_artifact(artifact_type, payload):
             ]
             
             # Only include large data files if it's explicitly a dataset.
+            # For models, 'parquet' and 'csv' are typically unnecessary training data
+            # which slows down ingestion significantly.
             if artifact_type == "dataset":
                 allow_patterns.extend(["*.csv", "*.parquet"])
 
