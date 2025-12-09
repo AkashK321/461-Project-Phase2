@@ -344,7 +344,6 @@ def ingest_artifact(artifact_type, payload):
         else:
             # --- Use HF Hub ---
             # Optimize ingestion by only downloading necessary file types
-            # Basic metadata and code files are always needed
             allow_patterns = [
                 "*.json",
                 "*.md",
@@ -354,8 +353,6 @@ def ingest_artifact(artifact_type, payload):
             ]
             
             # Only include large data files if it's explicitly a dataset.
-            # For models, 'parquet' and 'csv' are typically unnecessary training data
-            # which slows down ingestion significantly.
             if artifact_type == "dataset":
                 allow_patterns.extend(["*.csv", "*.parquet"])
 
