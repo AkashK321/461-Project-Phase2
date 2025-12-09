@@ -198,6 +198,21 @@ def reset_state(restore_jti=None):
 
     return {"reset": "ok"}
 
+def get_readme_content(directory):
+    """
+    Scans the given directory for a README file and returns its content.
+    Limits content to 10KB to avoid DynamoDB size limits.
+    """
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.lower().startswith("readme"):
+                try:
+                    with open(os.path.join(root, file), 'r', errors='ignore') as f:
+                        return f.read(10000)
+                except Exception as e:
+                    logger.warning(f"Failed to read README file {file}: {e}")
+    return ""
+
 
 def ingest_artifact(artifact_type, payload):
     """
@@ -206,13 +221,11 @@ def ingest_artifact(artifact_type, payload):
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
 
-    # LOGGING ADDED HERE
     logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
 
-        # LOGGING ADDED HERE
         logger.info(f"Received URL: {url}")
 
         if not url or not isinstance(url, str):
@@ -247,7 +260,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"URL parsing error for payload '{payload}': {e}")
         return make_response(400, {"error": "unable to parse url"})
 
@@ -308,7 +320,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
         if artifact_type == "code":
-            # --- Use Requests + Zipfile (Pure Python) ---
             # 1. Determine Default Branch (simplified)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
@@ -390,9 +401,6 @@ def ingest_artifact(artifact_type, payload):
                 "*.yaml",
             ]
             
-            # Only include large data files if it's explicitly a dataset.
-            # For models, 'parquet' and 'csv' are typically unnecessary training data
-            # which slows down ingestion significantly.
             if artifact_type == "dataset":
                 allow_patterns.extend(["*.csv", "*.parquet"])
 
@@ -402,6 +410,9 @@ def ingest_artifact(artifact_type, payload):
                 repo_type=artifact_type,
                 allow_patterns=allow_patterns,
             )
+        
+        # --- Capture README content for searching ---
+        readme_content = get_readme_content(tmp_dir)
 
         # Create Zip
         zip_name = f"{name}"
@@ -425,16 +436,18 @@ def ingest_artifact(artifact_type, payload):
             return make_response(500, {"error": "failed to store metadata"})
 
         tbl = dynamodb.Table(TABLE_NAME)
+
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #c = :c, #fn = :fn, \
-            #url = :url, #rid = :rid, #bm = :bm",
+            #url = :url, #rid = :rid, #bm = :bm, #readme = :readme",
             ExpressionAttributeNames={
                 "#c": "created_at",
                 "#fn": "filename",
                 "#url": "source_url",
                 "#rid": "repo_id",
                 "#bm": "base_model_repo_id",
+                "#readme": "readme"
             },
             ExpressionAttributeValues={
                 ":c": created_at,
@@ -442,6 +455,7 @@ def ingest_artifact(artifact_type, payload):
                 ":url": url,
                 ":rid": repo,
                 ":bm": base_model_repo,
+                ":readme": readme_content
             },
         )
 
@@ -459,7 +473,6 @@ def ingest_artifact(artifact_type, payload):
         )
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"Ingestion failed for URL '{url}': {e}")
         return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
@@ -528,6 +541,65 @@ def search_artifacts(query_array, query_params):
         headers = {"Offset": str(page + 1)}
 
     return make_response(200, results, headers)
+
+def search_by_regex(body):
+    """
+    Searches for artifacts using a regular expression over names and README content.
+    """
+    regex = body.get("regex")
+    if not regex:
+         return make_response(400, {"error": "Missing regex"})
+    
+    try:
+        pattern = re.compile(regex)
+    except re.error:
+        return make_response(400, {"error": "Invalid regex"})
+
+    tbl = dynamodb.Table(TABLE_NAME)
+    
+    scan_kwargs = {
+        "ProjectionExpression": "#n, #i, #t, #r",
+        "ExpressionAttributeNames": {
+            "#n": "model_name", 
+            "#i": "id", 
+            "#t": "type", 
+            "#r": "readme"
+        }
+    }
+    
+    items = []
+    try:
+        done = False
+        start_key = None
+        while not done:
+            if start_key:
+                scan_kwargs['ExclusiveStartKey'] = start_key
+            response = tbl.scan(**scan_kwargs)
+            items.extend(response.get("Items", []))
+            start_key = response.get('LastEvaluatedKey')
+            if not start_key:
+                done = True
+    except Exception as e:
+        logger.error(f"Failed to scan table for regex search: {e}")
+        return make_response(500, {"error": "Internal database error"})
+
+    matches = []
+    for item in items:
+        name = item.get("model_name", "")
+        readme = item.get("readme", "")
+        
+        # Check if pattern matches name or readme
+        if pattern.search(name) or pattern.search(readme):
+             matches.append({
+                 "name": name,
+                 "id": item.get("id"),
+                 "type": item.get("type")
+             })
+
+    if not matches:
+         return make_response(404, {"error": "No artifact found under this regex."})
+
+    return make_response(200, matches)
 
 
 def get_lineage_graph(start_art_id):
@@ -934,6 +1006,10 @@ def handler(event, context):
         if not art_id:
              return make_response(400, {"error": "Missing artifact ID in path"})
         return calculate_artifact_cost(art_id, query_params)
+    
+    # POST /artifact/byRegEx
+    if method == "POST" and path == "/artifact/byRegEx":
+        return search_by_regex(body)
 
     # GET /artifact/model/{id}/rate
     rate_match = re.match(r"/artifact/model/([^/]+)/rate", path)
