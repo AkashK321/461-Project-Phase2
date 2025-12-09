@@ -294,7 +294,8 @@ def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float],
             logger.warning(f"No README found for model {repo_id}, cannot use LLM.")
             return 0.0, int((time.time() - start_time) * 1000)
         logger.info(
-            f"Dataset quality Fetched README content for model {repo_id}, length {len(readme_content)}"
+            f"Dataset quality Fetched README content for model "
+            "{repo_id}, length {len(readme_content)}"
         )
         llm_score = _ask_llm(readme_content)
         if llm_score is not None:
