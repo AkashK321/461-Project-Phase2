@@ -32,7 +32,8 @@ def test_get_dataset_quality_score_with_likes(mock_get_repo_id):
 def test_get_dataset_quality_score_without_likes(mock_get_repo_id):
     fake_info = types.SimpleNamespace(downloads=10_000, likes=0)
     with patch.object(dataset_quality.HF_API, "dataset_info", return_value=fake_info):
-        score, latency = dataset_quality.get_dataset_quality_score("fake_url", "dataset")
+        score, latency = \
+            dataset_quality.get_dataset_quality_score("fake_url", "dataset")
 
     # When likes = 0, function returns downloads_score only
     assert isinstance(score, float)
