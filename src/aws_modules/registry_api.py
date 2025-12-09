@@ -221,11 +221,13 @@ def ingest_artifact(artifact_type, payload):
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
 
+    # LOGGING ADDED HERE
     logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
 
+        # LOGGING ADDED HERE
         logger.info(f"Received URL: {url}")
 
         if not url or not isinstance(url, str):
@@ -237,6 +239,8 @@ def ingest_artifact(artifact_type, payload):
 
         # 1. Classification & Type override
         if "github.com" in url:
+            # If it's github, default to code, UNLESS it's explicitly a dataset.
+            # We assume models are not primarily on GitHub in this context, or default to code logic.
             if artifact_type != "code" and artifact_type != "dataset":
                 logger.info(
                     f"Detected GitHub URL. Switching type from {artifact_type} to code."
@@ -264,6 +268,7 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
+        # LOGGING UPDATED HERE
         logger.error(f"URL parsing error for payload '{payload}': {e}")
         return make_response(400, {"error": "unable to parse url"})
 
@@ -324,26 +329,41 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
         if "github.com" in url:
-            # 1. Determine Default Branch (simplified)
+            # --- Use Requests + Zipfile (Stream to Disk) for any GitHub URL ---
+            
+            # 1. Determine Download URL (Default Branch)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
 
-            r_zip = requests.get(zip_url, stream=True)
-            if r_zip.status_code != 200:
-                zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
-                logger.info(f"Main failed, trying master: {zip_url}")
-                r_zip = requests.get(zip_url, stream=True)
+            # Check connectivity first (headers only) before streaming
+            try:
+                r_head = requests.head(zip_url)
+                if r_head.status_code != 200:
+                    zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
+                    logger.info(f"Main failed, trying master: {zip_url}")
+            except Exception:
+                # Fallback to just trying GET
+                pass
 
-            if r_zip.status_code != 200:
-                logger.error(
-                    f"Failed to download zip from {zip_url}. \
-                    Status: {r_zip.status_code}"
-                )
-                raise Exception(
-                    f"Failed to download repo zip: HTTP {r_zip.status_code}"
-                )
+            # 2. Stream Download to Temporary File (Avoids RAM exhaustion)
+            tmp_download_path = os.path.join(tmp_dir, "downloaded_repo.zip")
+            
+            with requests.get(zip_url, stream=True) as r_zip:
+                if r_zip.status_code != 200:
+                    logger.error(
+                        f"Failed to download zip from {zip_url}. \
+                        Status: {r_zip.status_code}"
+                    )
+                    raise Exception(
+                        f"Failed to download repo zip: HTTP {r_zip.status_code}"
+                    )
+                
+                with open(tmp_download_path, 'wb') as f:
+                    for chunk in r_zip.iter_content(chunk_size=8192):
+                        f.write(chunk)
 
-            # 2. Extract with Filtering (Filtering only applies to CODE)
+            # 3. Extract with Filtering (Filtering only applies to CODE)
+            # Use the local file for ZipFile
             
             # Extensions to exclude
             excluded_extensions = {
@@ -379,18 +399,24 @@ def ingest_artifact(artifact_type, payload):
                 
                 return True
 
-            with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
-                for file_info in z.infolist():
-                    if not file_info.filename.endswith('/'):
-                        # Apply filtering ONLY if it is code.
-                        if artifact_type == "code":
-                            if is_allowed(file_info.filename):
+            try:
+                with zipfile.ZipFile(tmp_download_path, 'r') as z:
+                    for file_info in z.infolist():
+                        if not file_info.filename.endswith('/'):
+                            # Apply filtering ONLY if it is code.
+                            # Datasets (e.g. fashion-mnist) may contain .gz, .png, etc.
+                            if artifact_type == "code":
+                                if is_allowed(file_info.filename):
+                                    z.extract(file_info, tmp_dir)
+                            else:
+                                # For datasets on GitHub, extract everything
                                 z.extract(file_info, tmp_dir)
-                        else:
-                            # For datasets on GitHub, extract everything
-                            z.extract(file_info, tmp_dir)
+            finally:
+                # Clean up the downloaded zip immediately
+                if os.path.exists(tmp_download_path):
+                    os.remove(tmp_download_path)
 
-            # 3. Flatten Directory
+            # 4. Flatten Directory
             items = os.listdir(tmp_dir)
             if len(items) == 1 and os.path.isdir(os.path.join(tmp_dir, items[0])):
                 top_level = os.path.join(tmp_dir, items[0])
@@ -401,6 +427,7 @@ def ingest_artifact(artifact_type, payload):
         else:
             # --- Use HF Hub ---
             # Optimize ingestion by only downloading necessary file types
+            # Basic metadata and code files are always needed
             allow_patterns = [
                 "*.json",
                 "*.md",
@@ -409,6 +436,9 @@ def ingest_artifact(artifact_type, payload):
                 "*.yaml",
             ]
             
+            # Only include large data files if it's explicitly a dataset.
+            # For models, 'parquet' and 'csv' are typically unnecessary training data
+            # which slows down ingestion significantly.
             if artifact_type == "dataset":
                 allow_patterns.extend(["*.csv", "*.parquet"])
 
@@ -445,6 +475,7 @@ def ingest_artifact(artifact_type, payload):
 
         tbl = dynamodb.Table(TABLE_NAME)
         
+        # Updated expression to include README
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #c = :c, #fn = :fn, \
@@ -481,6 +512,7 @@ def ingest_artifact(artifact_type, payload):
         )
 
     except Exception as e:
+        # LOGGING UPDATED HERE
         logger.error(f"Ingestion failed for URL '{url}': {e}")
         return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
