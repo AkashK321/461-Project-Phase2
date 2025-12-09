@@ -24,6 +24,7 @@ on:
       - create-and-delete-users
       - url-tests
       - busfactor-for-code
+      - dataset-quality-llm-integration
 
 # Define the permissions the job will need
 permissions:
