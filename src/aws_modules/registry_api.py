@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 import boto3
 from huggingface_hub import snapshot_download
-from aws_modules.s3_utils import upload_model, generate_presigned_download_url
+from aws_modules.s3_utils import get_object_size, upload_model, generate_presigned_download_url
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
@@ -654,6 +654,25 @@ def get_artifacts_by_name(name):
 
     return make_response(200, metadata_list)
 
+def calculate_artifact_cost(art_id):
+    """
+    Handle GET /artifact/model/{id}/cost
+    Returns the size cost of the artifact in bytes.
+    """
+    item = get_model_by_id(art_id)
+    if not item:
+        return make_response(404, {"error": "Artifact does not exist."})
+    
+    s3_key = item.get("s3_key")
+    if not s3_key:
+         return make_response(404, {"error": "Artifact content not found."})
+
+    size = get_object_size(s3_key)
+    if size is None:
+        return make_response(500, {"error": "Failed to retrieve artifact size."})
+
+    return make_response(200, {"cost": size})
+
 
 def handler(event, context):
     # Initialize the system on first run (ensures default user exists)
@@ -790,6 +809,14 @@ def handler(event, context):
         if not art_id:
             return make_response(400, {"error": "Missing artifact ID in path"})
         return get_lineage_graph(art_id)
+    
+    # GET /artifact/model/{id}/cost
+    cost_match = re.match(r"/artifact/model/([^/]+)/cost", path)
+    if method == "GET" and cost_match:
+        art_id = cost_match.group(1)
+        if not art_id:
+             return make_response(400, {"error": "Missing artifact ID in path"})
+        return calculate_artifact_cost(art_id)
 
     # GET /artifact/model/{id}/rate
     rate_match = re.match(r"/artifact/model/([^/]+)/rate", path)

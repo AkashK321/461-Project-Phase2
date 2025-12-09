@@ -25,6 +25,7 @@ on:
       - url-tests
       - busfactor-for-code
       - dataset-quality-llm-integration
+      - cost
 
 # Define the permissions the job will need
 permissions:

@@ -69,3 +69,20 @@ def delete_model(s3_object_key):
     except ClientError as e:
         logger.error(f"Failed to delete {s3_object_key}: {e}")
         return False
+    
+def get_object_size(s3_object_key):
+    """
+    Gets the size of an object in S3 in bytes.
+    """
+    if not S3_BUCKET_NAME:
+        logger.error("S3_BUCKET_NAME environment variable not set.")
+        return None
+
+    try:
+        response = s3_client.head_object(Bucket=S3_BUCKET_NAME, Key=s3_object_key)
+        size = response.get('ContentLength')
+        logger.info(f"Size of {s3_object_key}: {size} bytes")
+        return size
+    except ClientError as e:
+        logger.error(f"Failed to get object attributes for {s3_object_key}: {e}")
+        return None
