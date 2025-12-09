@@ -9,7 +9,7 @@ import os
 import time
 import re
 from dotenv import load_dotenv
-from huggingface_hub import HfApi, login
+from huggingface_hub import HfApi, login, hf_hub_download
 from .base import get_repo_id
 
 load_dotenv()
@@ -72,18 +72,20 @@ def get_dataset_and_code_score(url: str, url_type: str):
         return 0.0, latency
 
     # Extract README content (if available)
-    readme = getattr(repo_info, "cardData", None) or {}
     readme_text = ""
-    logger.info(f"Repo card data length: {len(readme)}")
-    if readme and "README.md" in repo_info.siblings:
-        if "datasets" in readme:
-            readme_text += " ".join(readme.get("datasets", []))
-        if "model-index" in readme:
-            readme_text += " ".join(
-                [m.get("name", "") for m in readme.get("model-index", [])]
+    try:
+        # Check if README.md exists in the file list first
+        if "README.md" in [f.rfilename for f in repo_info.siblings]:
+            readme_path = hf_hub_download(
+                repo_id=repo_id,
+                filename="README.md",
+                repo_type=url_type # "model" or "dataset"
             )
-    else:
-        readme_text = ""
+            with open(readme_path, "r", encoding="utf-8") as f:
+                readme_text = f.read()
+    except Exception as e:
+        logger.warning(f"Error downloading README: {e}")
+        # Proceed with empty text or handle error
 
     # Check for dataset mentions in README
     dataset_documented = False
