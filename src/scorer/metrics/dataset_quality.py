@@ -44,9 +44,9 @@ SYSTEM_PROMPT = (
     "The dataset quality should be judged based on size, completeness, labels, license, "
     "cleanliness, relevance, and proper formatting.\n"
     "Normalize the score [0,1] based on quality indicators such as the critera mentioned above.\n"
-    "If nothing is found or the README is empty, return 0.0.\n"
     "Return STRICT JSON with two fields:\n"
     '{"score": <float between 0 and 1>, "rationale": "<<=200 chars explanation>"}\n\n'
+    "Do NOT include anything else."
 )
 USER_PROMPT_TEMPLATE = (
     "README (truncated if very long)\n----------------\n{readme}\n"
@@ -221,7 +221,52 @@ def _ask_llm(readme: str) -> Optional[float]:
         data = resp.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         score = _parse_or_salvage(content)
-        return max(0.0, min(1.0, score)) if isinstance(score, float) else None
+        if isinstance(score, float):
+            return max(0.0, min(1.0, score))
+        else:
+            # Second pass: ultra-strict re-ask (short, no repo text again)
+            user_prompt_2 = (
+                "Output EXACTLY this JSON (no analysis, no extra keys, no markdown): "
+                '{"score": <float 0..1>, "rationale": "<=200 chars>"}'
+            )
+            payload2 = _build_payload(user_prompt_2)
+            logger.info(f"Dataset quality Second pass payload: {json.dumps(payload2)}")
+            try:
+                resp2 = session.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    data=json.dumps(payload2),
+                    timeout=60,
+                )
+                logger.info(f"Dataset quality Second pass response: {resp2}")
+            except Exception:
+                return None
+
+            if resp2.status_code != 200:
+                return None
+
+            try:
+                data2 = resp2.json()
+            except Exception:
+                return None
+
+            txt2 = None
+            try:
+                txt2 = data2["choices"][0]["message"]["content"]
+            except Exception:
+                txt2 = data2.get("output_text") or data2.get("text") or ""
+
+            logger.info(f"Second pass content: {txt2}")
+
+            score2 = _parse_or_salvage(txt2)
+            logger.info(f"Second pass extracted score: {score2}")
+            if isinstance(score2, float):
+                return max(0.0, min(1.0, score2))
+
+            return None
     except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
         logger.error(f"LLM query failed: {e}")
         return None
@@ -246,7 +291,7 @@ def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float],
         if not readme_content:
             logger.warning(f"No README found for model {repo_id}, cannot use LLM.")
             return 0.0, int((time.time() - start_time) * 1000)
-
+        logger.info(f"Dataset quality Fetched README content for model {repo_id}, length {len(readme_content)}")
         llm_score = _ask_llm(readme_content)
         if llm_score is not None:
             logger.info(f"LLM-based dataset quality score for model {repo_id}: {llm_score}")
