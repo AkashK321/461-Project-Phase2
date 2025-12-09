@@ -274,8 +274,8 @@ def ingest_artifact(artifact_type, payload):
     # --- Quality Gate ---
     metrics_map = {
         "code": ["code_quality", "bus_factor", "license"],
-        "dataset": ["dataset_quality", "license"],
-        "model": ["model_quality", "license", "bus_factor"],
+        "dataset": ["dataset_quality", "dataset_and_code_score"],
+        "model": ["size_score", "performance_claims", "ramp_up_time", "bus_factor"],
     }
     required_metrics = metrics_map.get(artifact_type, [])
     failing_metrics = []

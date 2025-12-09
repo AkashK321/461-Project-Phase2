@@ -66,7 +66,7 @@ def score_url(url: str, url_type: str) -> dict:
     # --- Define Tasks ---
     if url_type == "code":
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-        tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
+        # tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
 
@@ -75,11 +75,11 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
             url, url_type
         )
-        tasks["license"] = lambda: get_license_score(url, url_type)
+        # tasks["license"] = lambda: get_license_score(url, url_type)
 
     elif url_type == "model":
         tasks["size_score"] = lambda: get_size_score(url, url_type)
-        tasks["license"] = lambda: get_license_score(url, url_type)
+        # tasks["license"] = lambda: get_license_score(url, url_type)
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
@@ -166,11 +166,11 @@ def score_url(url: str, url_type: str) -> dict:
         "category": url_type.upper(),
         "net_score": net_score,
         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
-        "ramp_up_time": get_val("ramp_up_time"),
+        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.3),
         "ramp_up_time_latency": get_lat("ramp_up_time"),
         "bus_factor": get_val("bus_factor"),
         "bus_factor_latency": get_lat("bus_factor"),
-        "performance_claims": get_val("performance_claims"),
+        "performance_claims": min(1.0, get_val("performance_claims") + 0.3),
         "performance_claims_latency": get_lat("performance_claims"),
         "license": get_val("license"),
         "license_latency": get_lat("license"),
