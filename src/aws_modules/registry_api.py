@@ -8,6 +8,7 @@ import logging
 import requests
 import zipfile
 import io
+import signal
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -87,6 +88,9 @@ SEMVER_PATTERN = re.compile(
     r"(?:\.(?P<min>0|[1-9]\d*))?"
     r"(?:\.(?P<patch>0|[1-9]\d*))?$"
 )
+
+def _timeout_handler(signum, frame):
+    raise TimeoutError("Regex execution timed out")
 
 
 def parse_semver(version: str):
@@ -626,6 +630,7 @@ def search_artifacts(query_array, query_params):
 def search_by_regex(body):
     """
     Searches for artifacts using a regular expression over names and README content.
+    Includes ReDoS protection using signal.setitimer.
     """
     regex = body.get("regex")
     logger.info(f"Entering search_by_regex with regex='{regex}'")
@@ -647,17 +652,61 @@ def search_by_regex(body):
 
     logger.info(f"search_by_regex: Scanned {len(items)} items")
 
+    # Set up signal handler for ReDoS protection
+    signal.signal(signal.SIGALRM, _timeout_handler)
+
     matches = []
-    for item in items:
-        name = item.get("model_name", "")
-        readme = item.get("readme", "")
-        
-        if pattern.search(name) or pattern.search(readme):
-             matches.append({
-                 "name": name,
-                 "id": item.get("id"),
-                 "type": item.get("type")
-             })
+    
+    try:
+        for item in items:
+            name = item.get("model_name", "")
+            readme = item.get("readme", "")
+            
+            # Check matches with timeout protection
+            is_match = False
+            
+            # 1. Check Name
+            signal.setitimer(signal.ITIMER_REAL, 0.1) # 100ms
+            try:
+                if pattern.search(name):
+                    is_match = True
+            except TimeoutError:
+                # If name search times out, this regex is dangerous. Stop immediately.
+                raise TimeoutError("Regex execution timed out on name")
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                
+            if is_match:
+                matches.append({
+                    "name": name,
+                    "id": item.get("id"),
+                    "type": item.get("type")
+                })
+                continue # Skip checking readme if name matched
+            
+            # 2. Check Readme
+            signal.setitimer(signal.ITIMER_REAL, 0.1) # 100ms
+            try:
+                if pattern.search(readme):
+                    is_match = True
+            except TimeoutError:
+                raise TimeoutError("Regex execution timed out on readme")
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+            
+            if is_match:
+                matches.append({
+                    "name": name,
+                    "id": item.get("id"),
+                    "type": item.get("type")
+                })
+
+    except TimeoutError:
+        logger.warning(f"ReDoS detected for regex: {regex}")
+        return make_response(400, {"error": "Regex too complex (ReDoS detected)"})
+    except Exception as e:
+        logger.error(f"Error during regex search: {e}")
+        return make_response(500, {"error": f"Internal error during search: {e}"})
 
     logger.info(f"search_by_regex: Found {len(matches)} matches")
 
@@ -668,7 +717,6 @@ def search_by_regex(body):
     response = make_response(200, matches)
     logger.info(f"search_by_regex returning success with {len(matches)} items")
     return response
-
 
 def get_lineage_graph(start_art_id):
     """
