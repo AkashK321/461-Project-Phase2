@@ -628,48 +628,30 @@ def search_by_regex(body):
     Searches for artifacts using a regular expression over names and README content.
     """
     regex = body.get("regex")
+    logger.info(f"Entering search_by_regex with regex='{regex}'")
+
     if not regex:
+         logger.warning("search_by_regex: Missing regex in body")
          return make_response(400, {"error": "Missing regex"})
     
     try:
         pattern = re.compile(regex)
-    except re.error:
+    except re.error as e:
+        logger.warning(f"search_by_regex: Invalid regex '{regex}': {e}")
         return make_response(400, {"error": "Invalid regex"})
 
     tbl = dynamodb.Table(TABLE_NAME)
     
-    scan_kwargs = {
-        "ProjectionExpression": "#n, #i, #t, #r",
-        "ExpressionAttributeNames": {
-            "#n": "model_name", 
-            "#i": "id", 
-            "#t": "type", 
-            "#r": "readme"
-        }
-    }
-    
-    items = []
-    try:
-        done = False
-        start_key = None
-        while not done:
-            if start_key:
-                scan_kwargs['ExclusiveStartKey'] = start_key
-            response = tbl.scan(**scan_kwargs)
-            items.extend(response.get("Items", []))
-            start_key = response.get('LastEvaluatedKey')
-            if not start_key:
-                done = True
-    except Exception as e:
-        logger.error(f"Failed to scan table for regex search: {e}")
-        return make_response(500, {"error": "Internal database error"})
+    # Scan all items using helper to ensure full table coverage
+    items = get_all_items_from_db(tbl)
+
+    logger.info(f"search_by_regex: Scanned {len(items)} items")
 
     matches = []
     for item in items:
         name = item.get("model_name", "")
         readme = item.get("readme", "")
         
-        # Check if pattern matches name or readme
         if pattern.search(name) or pattern.search(readme):
              matches.append({
                  "name": name,
@@ -677,10 +659,15 @@ def search_by_regex(body):
                  "type": item.get("type")
              })
 
+    logger.info(f"search_by_regex: Found {len(matches)} matches")
+
     if not matches:
+         logger.info("search_by_regex: No matches found, returning 404")
          return make_response(404, {"error": "No artifact found under this regex."})
 
-    return make_response(200, matches)
+    response = make_response(200, matches)
+    logger.info(f"search_by_regex returning success with {len(matches)} items")
+    return response
 
 
 def get_lineage_graph(start_art_id):
