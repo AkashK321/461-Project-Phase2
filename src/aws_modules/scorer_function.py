@@ -71,10 +71,10 @@ def score_url(url: str, url_type: str) -> dict:
         # tasks["license"] = lambda: get_license_score(url, url_type)
 
     elif url_type == "dataset":
-        # tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
-            url, url_type
-        )
+        tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+        # tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+        #     url, url_type
+        # )
         # tasks["license"] = lambda: get_license_score(url, url_type)
 
     elif url_type == "model":
