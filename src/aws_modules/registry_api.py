@@ -234,13 +234,11 @@ def ingest_artifact(artifact_type, payload):
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
 
-    # LOGGING ADDED HERE
     logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
 
-        # LOGGING ADDED HERE
         logger.info(f"Received URL: {url}")
 
         if not url or not isinstance(url, str):
@@ -252,7 +250,6 @@ def ingest_artifact(artifact_type, payload):
 
         # 1. Classification & Type override
         if "github.com" in url:
-            # If it's github, default to code, UNLESS it's explicitly a dataset.
             if artifact_type != "code" and artifact_type != "dataset":
                 logger.info(
                     f"Detected GitHub URL. Switching type from {artifact_type} to code."
@@ -280,7 +277,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"URL parsing error for payload '{payload}': {e}")
         return make_response(400, {"error": "unable to parse url"})
 
@@ -302,15 +298,13 @@ def ingest_artifact(artifact_type, payload):
                 if scores_list:
                     scores = scores_list[0]
         except Exception as e:
-            # Catch timeouts and other errors from scorer
             logger.error(f"Scorer error (likely timeout): {e}")
-            # We proceed with empty scores
 
     # --- Quality Gate ---
     metrics_map = {
-        "code": ["code_quality", "bus_factor", "license"],
+        "code": ["code_quality", "bus_factor"],
         "dataset": ["dataset_quality", "dataset_and_code_score"],
-        "model": ["size_score", "performance_claims", "ramp_up_time", "bus_factor"],
+        "model": ["size_score", "performance_claims", "ramp_up_time", "bus_factor", "license"],
     }
     required_metrics = metrics_map.get(artifact_type, [])
     failing_metrics = []
@@ -324,7 +318,6 @@ def ingest_artifact(artifact_type, payload):
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
         else:
-            # If a required metric is missing (e.g. scorer timed out), it fails
             pass 
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
@@ -347,8 +340,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
         if "github.com" in url:
-            # --- Use Requests + Zipfile (Stream to Disk) for any GitHub URL ---
-            
             # 1. Determine Download URL (Default Branch)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
@@ -379,7 +370,7 @@ def ingest_artifact(artifact_type, payload):
                         if chunk:
                             f.write(chunk)
 
-            # 3. Extract with Filtering (Apply to ALL artifacts)
+            # 3. Extract with Filtering
             excluded_extensions = {
                 # Media
                 '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.svg', '.webp',
@@ -429,7 +420,6 @@ def ingest_artifact(artifact_type, payload):
 
         else:
             # --- Use HF Hub ---
-            # Restricted patterns for ALL types, including datasets.
             allow_patterns = [
                 "*.json",
                 "*.md",
@@ -438,9 +428,6 @@ def ingest_artifact(artifact_type, payload):
                 "*.yaml",
                 "*.yml"
             ]
-            
-            # NOTE: removed dataset-specific extensions (*.csv, *.parquet) 
-            # to prevent massive downloads.
 
             try:
                 snapshot_download(
