@@ -309,7 +309,7 @@ def main() -> None:
 
                 tasks = {}
                 if url_type == "code":
-                    tasks["code_quality"] = 0 #lambda: get_code_quality(url, url_type)
+                    tasks["code_quality"] = lambda: get_code_quality(url, url_type)
                 elif url_type == "dataset":
                     tasks["dataset_quality"] = lambda: get_dataset_quality_score(
                         url, url_type
