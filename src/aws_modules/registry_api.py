@@ -675,6 +675,7 @@ def search_by_regex(body):
                 signal.setitimer(signal.ITIMER_REAL, 0)
                 
             if is_match:
+                logger.info(f"Match found for regex '{regex}' on item: {name} (ID: {item.get('id')})")
                 matches.append({
                     "name": name,
                     "id": item.get("id"),
