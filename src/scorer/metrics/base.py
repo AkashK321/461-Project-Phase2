@@ -12,7 +12,7 @@ def get_repo_id(url: str, url_type: str) -> str:
             if "huggingface.co" in parts:
                 index = parts.index("huggingface.co")
                 remaining = len(parts) - (index + 1)
-                
+
                 if remaining >= 2:
                     # Standard: user/repo
                     repo_id = f"{parts[index + 1]}/{parts[index + 2]}"
@@ -50,7 +50,7 @@ def get_repo_id(url: str, url_type: str) -> str:
                     return None
             else:
                 return None
-                
+
     except (ValueError, IndexError):
         print(f"Error parsing repo id for {url}")
         return None

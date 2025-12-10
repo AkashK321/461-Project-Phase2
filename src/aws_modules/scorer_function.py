@@ -152,7 +152,9 @@ def score_url(url: str, url_type: str) -> dict:
             if item_in_db:
                 item_id = item_in_db.get("id")
                 if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
-                    base_model_repo_id = get_attribute_value(item_id, "base_model_repo_id")
+                    base_model_repo_id = get_attribute_value(
+                        item_id, "base_model_repo_id"
+                    )
                     if base_model_repo_id:
                         tree_score = _calculate_treescore(base_model_repo_id)
             else:

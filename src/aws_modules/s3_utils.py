@@ -69,7 +69,8 @@ def delete_model(s3_object_key):
     except ClientError as e:
         logger.error(f"Failed to delete {s3_object_key}: {e}")
         return False
-    
+
+
 def get_object_size(s3_object_key):
     """
     Gets the size of an object in S3 in bytes.
@@ -82,8 +83,10 @@ def get_object_size(s3_object_key):
 
     try:
         response = s3_client.head_object(Bucket=S3_BUCKET_NAME, Key=s3_object_key)
-        size = response.get('ContentLength')
-        logger.info(f"get_object_size success: Retrieved size={size} bytes for key='{s3_object_key}'")
+        size = response.get("ContentLength")
+        logger.info(
+            f"get_object_size success: Retrieved size={size} bytes for key='{s3_object_key}'"
+        )
         return size
     except ClientError as e:
         logger.error(f"get_object_size failed for key='{s3_object_key}': {e}")
