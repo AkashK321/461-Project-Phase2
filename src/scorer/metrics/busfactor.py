@@ -25,7 +25,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-SINCE_DAYS_DEFAULT = 2556  # Approx. 3 years
+SINCE_DAYS_DEFAULT = 3556  # Approx. 7 years
 DOA_THRESHOLD = 3.293
 
 CODE_EXTS = {
