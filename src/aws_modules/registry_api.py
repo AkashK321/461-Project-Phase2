@@ -16,8 +16,14 @@ os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
 from huggingface_hub import snapshot_download
-from aws_modules.s3_utils import get_object_size, upload_model, generate_presigned_download_url
+from huggingface_hub.utils import GatedRepoError, RepositoryNotFoundError
+from aws_modules.s3_utils import (
+    upload_model,
+    generate_presigned_download_url,
+    get_object_size,
+)
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
@@ -49,7 +55,14 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 # shared AWS clients/resources
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
-lambda_client = boto3.client("lambda")
+
+# Configure Lambda client with a timeout
+lambda_config = Config(
+    read_timeout=10, 
+    connect_timeout=5, 
+    retries={'max_attempts': 0}
+)
+lambda_client = boto3.client("lambda", config=lambda_config)
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
@@ -429,12 +442,23 @@ def ingest_artifact(artifact_type, payload):
             if artifact_type == "dataset":
                 allow_patterns.extend(["*.csv", "*.parquet"])
 
-            snapshot_download(
-                repo_id=repo,
-                local_dir=tmp_dir,
-                repo_type=artifact_type,
-                allow_patterns=allow_patterns,
-            )
+            try:
+                snapshot_download(
+                    repo_id=repo,
+                    local_dir=tmp_dir,
+                    repo_type=artifact_type,
+                    allow_patterns=allow_patterns,
+                )
+            except (GatedRepoError, requests.HTTPError) as e:
+                # Catch Gated/Auth errors explicitly
+                logger.warning(f"Auth error downloading {repo}: {e}")
+                return make_response(424, {"error": "Artifact requires authentication"})
+            except Exception as e:
+                # General exception, check for 401/403 strings if not caught by types above
+                msg = str(e)
+                if "401" in msg or "403" in msg:
+                    return make_response(424, {"error": "Artifact requires authentication"})
+                raise e
         
         # --- Capture README content for searching ---
         readme_content = get_readme_content(tmp_dir)
