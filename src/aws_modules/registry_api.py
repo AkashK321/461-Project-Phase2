@@ -1015,6 +1015,10 @@ def handler(event, context):
         if method == "PUT":
             new_roles = body.get("roles")
             return update_user_roles(target_id, new_roles, user_roles)
+        
+    # POST /artifact/byRegEx
+    if method == "POST" and path == "/artifact/byRegEx":
+        return search_by_regex(body)
 
     # POST /artifact/{type}
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:
@@ -1066,10 +1070,6 @@ def handler(event, context):
         if not art_id:
              return make_response(400, {"error": "Missing artifact ID in path"})
         return calculate_artifact_cost(art_id, query_params)
-    
-    # POST /artifact/byRegEx
-    if method == "POST" and path == "/artifact/byRegEx":
-        return search_by_regex(body)
 
     # GET /artifact/model/{id}/rate
     rate_match = re.match(r"/artifact/model/([^/]+)/rate", path)
