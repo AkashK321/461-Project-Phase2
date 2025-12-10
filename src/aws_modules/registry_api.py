@@ -221,13 +221,11 @@ def ingest_artifact(artifact_type, payload):
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
 
-    # LOGGING ADDED HERE
     logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
 
-        # LOGGING ADDED HERE
         logger.info(f"Received URL: {url}")
 
         if not url or not isinstance(url, str):
@@ -239,8 +237,6 @@ def ingest_artifact(artifact_type, payload):
 
         # 1. Classification & Type override
         if "github.com" in url:
-            # If it's github, default to code, UNLESS it's explicitly a dataset.
-            # We assume models are not primarily on GitHub in this context, or default to code logic.
             if artifact_type != "code" and artifact_type != "dataset":
                 logger.info(
                     f"Detected GitHub URL. Switching type from {artifact_type} to code."
@@ -268,7 +264,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"URL parsing error for payload '{payload}': {e}")
         return make_response(400, {"error": "unable to parse url"})
 
@@ -329,7 +324,6 @@ def ingest_artifact(artifact_type, payload):
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
         if "github.com" in url:
-            # --- Use Requests + Zipfile (Stream to Disk) for any GitHub URL ---
             
             # 1. Determine Download URL (Default Branch)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
@@ -345,7 +339,6 @@ def ingest_artifact(artifact_type, payload):
                 # Fallback to just trying GET
                 pass
 
-            # 2. Stream Download to Temporary File (Avoids RAM exhaustion)
             tmp_download_path = os.path.join(tmp_dir, "downloaded_repo.zip")
             
             with requests.get(zip_url, stream=True) as r_zip:
@@ -404,7 +397,6 @@ def ingest_artifact(artifact_type, payload):
                     for file_info in z.infolist():
                         if not file_info.filename.endswith('/'):
                             # Apply filtering ONLY if it is code.
-                            # Datasets (e.g. fashion-mnist) may contain .gz, .png, etc.
                             if artifact_type == "code":
                                 if is_allowed(file_info.filename):
                                     z.extract(file_info, tmp_dir)
@@ -426,8 +418,6 @@ def ingest_artifact(artifact_type, payload):
 
         else:
             # --- Use HF Hub ---
-            # Optimize ingestion by only downloading necessary file types
-            # Basic metadata and code files are always needed
             allow_patterns = [
                 "*.json",
                 "*.md",
@@ -436,9 +426,6 @@ def ingest_artifact(artifact_type, payload):
                 "*.yaml",
             ]
             
-            # Only include large data files if it's explicitly a dataset.
-            # For models, 'parquet' and 'csv' are typically unnecessary training data
-            # which slows down ingestion significantly.
             if artifact_type == "dataset":
                 allow_patterns.extend(["*.csv", "*.parquet"])
 
@@ -512,7 +499,6 @@ def ingest_artifact(artifact_type, payload):
         )
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"Ingestion failed for URL '{url}': {e}")
         return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
@@ -833,7 +819,6 @@ def calculate_artifact_cost(art_id, query_params):
     logger.info(f"Artifact found: {target_item.get('model_name')}")
 
     # Gather all involved artifacts
-    # If dependency=true, fetch ancestors (which act as dependencies in lineage context)
     all_items = {art_id: target_item}
     
     if dependency_param:
@@ -864,13 +849,6 @@ def calculate_artifact_cost(art_id, query_params):
     for i_id, i_data in all_items.items():
         item_sizes_mb[i_id] = get_size_mb(i_id, i_data)
         logger.info(f"Size for {i_id}: {item_sizes_mb[i_id]} MB")
-
-    # Construct Response
-    # Keys in response are Artifact IDs.
-    # If dependency=false, return just the target with total_cost = its size.
-    # If dependency=true, return all items.
-    #   For target: total_cost = sum(all sizes), standalone_cost = its size.
-    #   For dependencies: total_cost = its size, standalone_cost = its size (based on example).
     
     response_data = {}
 

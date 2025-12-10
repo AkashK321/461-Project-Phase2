@@ -183,38 +183,61 @@ def _check_code_repo_quality(code_url: str) -> float:
     Function to analyze the quality of the code.
     Uses 'requests' and 'zipfile' to download code without git binary.
     """
+    
+    # Define filters
+    EXCLUDED_EXTS = {
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.svg', '.webp',
+        '.mp4', '.mov', '.avi', '.mp3', '.wav',
+        '.zip', '.tar', '.gz', '.7z', '.rar',
+        '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
+        '.pyc', '.pyo', '.pyd', '.o', '.obj', '.dll', '.exe', '.so', '.dylib', '.class', '.jar',
+        '.DS_Store', '.bin', '.onnx', '.pb', '.h5', '.hdf5'
+    }
+    EXCLUDED_DIRS = {
+        '__pycache__', '.git', '.idea', '.vscode', '.venv', 'venv', 'env', 'node_modules'
+    }
+
+    def is_allowed(filename):
+        parts = filename.split('/')
+        for part in parts:
+            if part in EXCLUDED_DIRS:
+                return False
+        _, ext = os.path.splitext(filename)
+        return ext.lower() not in EXCLUDED_EXTS
 
     temp_dir = tempfile.mkdtemp()
     try:
         # --- DOWNLOAD LOGIC ---
         try:
-            # 1. Parse Owner/Repo from URL
             if "github.com" in code_url:
                 repo_path = code_url.split("github.com/")[-1].strip("/")
                 if repo_path.endswith(".git"):
                     repo_path = repo_path[:-4]
             else:
-                # Fallback if not a standard github URL, though we assume valid input
                 repo_path = code_url.split("/")[-1]
 
-            # 2. Try 'main' branch first
             zip_url = f"https://github.com/{repo_path}/archive/refs/heads/main.zip"
-            r = requests.get(zip_url, stream=True)
+            # Add timeout to prevent hanging
+            try:
+                r = requests.get(zip_url, stream=True, timeout=10)
+            except requests.RequestException:
+                # Fallback to master
+                 r = requests.Response() # dummy
+                 r.status_code = 404
 
-            # 3. Fallback to 'master' branch if main fails
             if r.status_code != 200:
-                zip_url = (
-                    f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
-                )
-                r = requests.get(zip_url, stream=True)
+                zip_url = f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
+                r = requests.get(zip_url, stream=True, timeout=10)
 
             if r.status_code != 200:
                 print(f"Failed to download zip from {code_url}")
                 return 0.0
 
-            # 4. Extract
+            # 4. Extract with FILTERING
             with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-                z.extractall(temp_dir)
+                for file_info in z.infolist():
+                    if not file_info.filename.endswith('/') and is_allowed(file_info.filename):
+                        z.extract(file_info, temp_dir)
 
             # 5. Flatten Directory structure
             items = os.listdir(temp_dir)
