@@ -7,7 +7,6 @@ import re
 import logging
 import requests
 import zipfile
-import io
 import signal
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
@@ -19,7 +18,7 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 from huggingface_hub import snapshot_download
-from huggingface_hub.utils import GatedRepoError, RepositoryNotFoundError
+from huggingface_hub.utils import GatedRepoError
 from aws_modules.s3_utils import (
     upload_model,
     generate_presigned_download_url,
@@ -721,7 +720,8 @@ def search_by_regex(body):
 
             if is_match:
                 logger.info(
-                    f"Match found for regex '{regex}' on item: {name} (ID: {item.get('id')})"
+                    f"Match found for regex '{regex}' \
+                    on item: {name} (ID: {item.get('id')})"
                 )
                 matches.append(
                     {"name": name, "id": item.get("id"), "type": item.get("type")}
@@ -935,10 +935,12 @@ def calculate_artifact_cost(art_id, query_params):
     """
     Handle GET /artifact/{type}/{id}/cost
     Returns the size cost of the artifact in MB.
-    If 'dependency=true' (query param), it includes dependencies (ancestors) in the cost.
+    If 'dependency=true' (query param), 
+    it includes dependencies (ancestors) in the cost.
     """
     logger.info(
-        f"Entering calculate_artifact_cost with art_id='{art_id}', params={query_params}"
+        f"Entering calculate_artifact_cost \
+        with art_id='{art_id}', params={query_params}"
     )
 
     # Parse query params
@@ -965,7 +967,8 @@ def calculate_artifact_cost(art_id, query_params):
                     all_items[anc["id"]] = anc
 
     logger.info(
-        f"Cost calculation includes {len(all_items)} artifacts (dependency={dependency_param})"
+        f"Cost calculation includes {len(all_items)} \
+        artifacts (dependency={dependency_param})"
     )
 
     # Helper to calculate size in MB

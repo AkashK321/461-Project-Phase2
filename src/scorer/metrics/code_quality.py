@@ -304,7 +304,8 @@ def _check_code_repo_quality(code_url: str) -> float:
         lizard_totals = run_lizard(temp_dir)
         lizard_score = score_from_lizard_totals(lizard_totals) if lizard_totals else 0.5
 
-        # If radon failed or no python, rely on lizard. If lizard failed, assume average.
+        # If radon failed or no python, rely on lizard. 
+        # If lizard failed, assume average.
         if has_python:
             complexity = max(radon_score, lizard_score)
         else:
