@@ -323,7 +323,7 @@ def main() -> None:
                     tasks["performance_claims"] = lambda: get_performance_claims(
                         url, url_type
                     )
-                    tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+                    # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
                     tasks["ramp_up"] = lambda: get_ramp_up(url, url_type)
 
                 with redirect_stdout(io.StringIO()):
