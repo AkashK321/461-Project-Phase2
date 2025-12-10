@@ -65,7 +65,7 @@ def score_url(url: str, url_type: str) -> dict:
 
     # --- Define Tasks ---
     if url_type == "code":
-        #tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         # tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
         # tasks["license"] = lambda: get_license_score(url, url_type)
