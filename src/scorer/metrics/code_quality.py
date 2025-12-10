@@ -1,5 +1,5 @@
 """
-Evaluates the quality of the code.
+Evaluates the quality of the code with balanced weights and language support.
 """
 
 import os
@@ -15,303 +15,370 @@ from typing import Tuple, Dict, Optional
 import ast
 import re
 
+# --- FILTERS ---
+EXCLUDED_EXTS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".tiff",
+    ".svg",
+    ".webp",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".mp3",
+    ".wav",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".7z",
+    ".rar",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".ppt",
+    ".pptx",
+    ".xls",
+    ".xlsx",
+    ".txt",
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".o",
+    ".obj",
+    ".dll",
+    ".exe",
+    ".so",
+    ".dylib",
+    ".class",
+    ".jar",
+    ".bin",
+    ".onnx",
+    ".pb",
+    ".h5",
+    ".hdf5",
+    ".safetensors",
+    ".pack",
+    ".idx",
+    ".sample",
+}
+
+EXCLUDED_DIRS = {
+    "__pycache__",
+    ".git",
+    ".github",
+    ".idea",
+    ".vscode",
+    ".venv",
+    "venv",
+    "env",
+    "node_modules",
+    "bin",
+    "obj",
+    "build",
+    "dist",
+    "target",
+    "t",
+    "test",
+    "tests",
+    "testing",
+    "spec",
+    "specs",
+    "doc",
+    "docs",
+    "documentation",
+    "po",
+    "site",
+    "examples",
+    "samples",
+    "contrib",
+}
+
+
+def is_allowed(filename: str) -> bool:
+    parts = filename.split("/")
+    if any(p.startswith(".") for p in parts):
+        return False
+    for part in parts:
+        if part.lower() in EXCLUDED_DIRS:
+            return False
+    _, ext = os.path.splitext(filename)
+    if ext.lower() in EXCLUDED_EXTS:
+        return False
+    return True
+
 
 def run_radon(path: str) -> float:
-    """
-    Function to run radon, a Python tool that analyzes source code complexity and
-    maintainability.
-    """
+    """Run radon for Python maintainability."""
     cmds = [
-        [sys.executable, "-m", "radon", "mi", "-s", path],  # preferred
-        ["radon", "mi", "-s", path],  # fallback
+        [sys.executable, "-m", "radon", "mi", "-s", path],
+        ["radon", "mi", "-s", path],
     ]
-
     result = None
     for cmd in cmds:
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=True, timeout=20
+            )
             break
-        except FileNotFoundError:
+        except Exception:
             continue
-        except subprocess.CalledProcessError:
-            return 0.0
-
-    if result is None:
+    if not result:
         return 0.0
 
     score_map = {"A": 1.0, "B": 0.8, "C": 0.6, "D": 0.4, "E": 0.2, "F": 0.0}
     vals = []
     for line in result.stdout.splitlines():
         if " - " in line:
-            grade = line.split(" -")[-1].strip()[:1]
-            vals.append(score_map.get(grade, 0.0))
+            parts = line.split(" -")
+            if len(parts) >= 2:
+                grade = parts[-1].strip()[:1]
+                vals.append(score_map.get(grade, 0.0))
     return sum(vals) / len(vals) if vals else 0.0
 
 
 def run_lizard(path: str) -> Optional[Dict]:
-    """
-    Function to run lizard, a multi-language code analysis tool that analyzes function
-    complexity.
-    """
-
+    """Run lizard for complexity analysis."""
     for cmd in ([sys.executable, "-m", "lizard", path], ["lizard", path]):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=True, timeout=20
+            )
             break
-        except FileNotFoundError:
+        except Exception:
             result = None
             continue
-        except subprocess.CalledProcessError:
-            return None
-    if result is None:
+    if not result or result.returncode != 0:
         return None
 
-    if result.returncode != 0:
-        return None
-
-    # find the last summary row using regex
     total_row = None
     for line in result.stdout.splitlines():
-        # match a line that starts with spaces then numbers/floats
-        if re.match(r"^\s*\d+", line.strip()):
+        if re.match(r"^\s*\d+\s+\d+", line.strip()):
             total_row = line.strip()
-
     if not total_row:
-        # print("Could not find totals in Lizard output")
         return None
 
-    # extract numeric values from the totals row
     parts = total_row.split()
-    if len(parts) < 8:
-        # print("Unexpected totals format:", total_row)
+    if len(parts) < 6:
         return None
-
-    totals = {
-        "Total NLOC": float(parts[0]),
-        "Avg NLOC": float(parts[1]),
-        "Avg CCN": float(parts[2]),
-        "Avg Tokens": float(parts[3]),
-        "Function Count": int(parts[4]),
-        "Warning Count": int(parts[5]),
-        "Function Rate": float(parts[6]),
-        "NLOC Rate": float(parts[7]),
-    }
-    return totals
+    try:
+        return {
+            "Total NLOC": float(parts[0]),
+            "Avg NLOC": float(parts[1]),
+            "Avg CCN": float(parts[2]),
+            "Avg Tokens": float(parts[3]),
+            "Function Count": int(parts[4]),
+            "Warning Count": int(parts[5]),
+        }
+    except ValueError:
+        return None
 
 
 def score_from_lizard_totals(totals: dict) -> float:
-    """
-    Function to calculate final score from dictionary returned by run_lizard().
-    """
-
     if not totals:
         return 0.0
 
-    # metric 1: Cyclomatic complexity
     avg_ccn = totals.get("Avg CCN", 0)
-    if avg_ccn <= 5:
+    if avg_ccn <= 10:
         ccn_score = 1.0
-    elif avg_ccn <= 10:
+    elif avg_ccn <= 15:
         ccn_score = 0.8
-    elif avg_ccn <= 20:
+    elif avg_ccn <= 25:
         ccn_score = 0.5
     else:
         ccn_score = 0.2
 
-    # metric 2: Average NLOC (function size)
     avg_nloc = totals.get("Avg NLOC", 0)
-    if avg_nloc <= 30:
+    if avg_nloc <= 40:
         nloc_score = 1.0
-    elif avg_nloc <= 40:
+    elif avg_nloc <= 60:
         nloc_score = 0.8
-    elif avg_nloc <= 100:
+    elif avg_nloc <= 120:
         nloc_score = 0.5
     else:
         nloc_score = 0.2
 
-    # metric 3: Warnings
-    warnings = totals.get("Warning Count", 0)
-    if warnings == 0:
-        warning_score = 1.0
-    elif warnings <= 2:
-        warning_score = 0.7
-    elif warnings <= 5:
-        warning_score = 0.4
-    else:
-        warning_score = 0.1
-
-    # define weighted score
-    weights = [0.5, 0.3, 0.2]
-    components = [ccn_score, nloc_score, warning_score]
-    final_score = sum(w * c for w, c in zip(weights, components)) / sum(weights)
-
-    return final_score
+    return (ccn_score + nloc_score) / 2.0
 
 
 def docstring_ratio(path: str) -> float:
-    """
-    Function to count how many Python functions or classes have docstrings.
-    """
     total = 0
     documented = 0
-    score = 0
-
     for root, _, files in os.walk(path):
         for file in files:
             if file.endswith(".py"):
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8", errors="ignore"
-                ) as fh:
-                    try:
+                try:
+                    with open(
+                        os.path.join(root, file), "r", encoding="utf-8", errors="ignore"
+                    ) as fh:
                         tree = ast.parse(fh.read())
                         for node in ast.walk(tree):
                             if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
                                 total += 1
                                 if ast.get_docstring(node):
                                     documented += 1
-                    except Exception:
-                        continue
-
-    if total == 0:
-        return 0.0
-    score = documented / total
-    return score
+                except Exception:
+                    continue
+    return documented / total if total > 0 else 0.0
 
 
 def _check_code_repo_quality(code_url: str) -> float:
-    """
-    Function to analyze the quality of the code.
-    Uses 'requests' and 'zipfile' to download code without git binary.
-    """
-
     temp_dir = tempfile.mkdtemp()
+    MAX_FILES = 150
+    MAX_TIME = 10.0
+
     try:
-        # --- DOWNLOAD LOGIC ---
+        if "github.com" in code_url:
+            repo_path = code_url.split("github.com/")[-1].strip("/")
+            if repo_path.endswith(".git"):
+                repo_path = repo_path[:-4]
+        else:
+            repo_path = code_url.split("/")[-1]
+
+        zip_url = f"https://github.com/{repo_path}/archive/refs/heads/main.zip"
         try:
-            # 1. Parse Owner/Repo from URL
-            if "github.com" in code_url:
-                repo_path = code_url.split("github.com/")[-1].strip("/")
-                if repo_path.endswith(".git"):
-                    repo_path = repo_path[:-4]
-            else:
-                # Fallback if not a standard github URL, though we assume valid input
-                repo_path = code_url.split("/")[-1]
-
-            # 2. Try 'main' branch first
-            zip_url = f"https://github.com/{repo_path}/archive/refs/heads/main.zip"
-            r = requests.get(zip_url, stream=True)
-
-            # 3. Fallback to 'master' branch if main fails
+            r = requests.get(zip_url, stream=True, timeout=15)
             if r.status_code != 200:
                 zip_url = (
                     f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
                 )
-                r = requests.get(zip_url, stream=True)
-
-            if r.status_code != 200:
-                print(f"Failed to download zip from {code_url}")
-                return 0.0
-
-            # 4. Extract
-            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-                z.extractall(temp_dir)
-
-            # 5. Flatten Directory structure
-            items = os.listdir(temp_dir)
-            if len(items) == 1 and os.path.isdir(os.path.join(temp_dir, items[0])):
-                top_level = os.path.join(temp_dir, items[0])
-                for item in os.listdir(top_level):
-                    shutil.move(os.path.join(top_level, item), temp_dir)
-                os.rmdir(top_level)
-
-        except Exception as e:
-            print(f"Cannot download/extract repo for code quality check: {e}")
+                r = requests.get(zip_url, stream=True, timeout=15)
+        except Exception:
             return 0.0
 
-        # --- END DOWNLOAD LOGIC ---
+        if not r or r.status_code != 200:
+            return 0.0
 
-        # first reliability check - check for the word test in the files
-        reliability = 0.0
-        for _, _, files in os.walk(temp_dir):
-            for file in files:
-                if "test" in file.lower():
-                    reliability = 0.7
+        start_extract = time.time()
+        file_count = 0
+        has_python = False
+
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            for file_info in z.infolist():
+                if (time.time() - start_extract) > MAX_TIME:
                     break
-        # second reliability check - check for testing frameworks
-        file_names = os.listdir(temp_dir)
-        file_names_str = " ".join(file_names).lower()
+                if file_count >= MAX_FILES:
+                    break
 
-        frameworks = ["pytest", "unittest", "mocha", "jest"]
-        found_framework = False
+                if not file_info.filename.endswith("/") and is_allowed(
+                    file_info.filename
+                ):
+                    z.extract(file_info, temp_dir)
+                    file_count += 1
+                    if file_info.filename.endswith(".py"):
+                        has_python = True
 
-        for fw in frameworks:
-            if fw in file_names_str:
-                found_framework = True
-                break
+        if file_count == 0:
+            return 0.0
 
-        if found_framework:
-            reliability = 1.0
+        # Flatten
+        items = os.listdir(temp_dir)
+        if len(items) == 1 and os.path.isdir(os.path.join(temp_dir, items[0])):
+            top_level = os.path.join(temp_dir, items[0])
+            for item in os.listdir(top_level):
+                shutil.move(os.path.join(top_level, item), temp_dir)
+            os.rmdir(top_level)
 
-        # check complexity (number of files and classes, complexity, etc)
+        # 1. Reliability
+        reliability = 0.0
+        for root, _, files in os.walk(temp_dir):
+            if "test" in root.lower():
+                reliability = 0.7
+            for f in files:
+                if "test" in f.lower():
+                    reliability = 0.7
+                if f.lower() in [
+                    "makefile",
+                    "cmakelists.txt",
+                    "pom.xml",
+                    "build.gradle",
+                ]:
+                    reliability = max(reliability, 0.7)
+        if reliability == 0.0:
+            reliability = 0.3  # Base reliability for existing code
+
+        # 2. Complexity
         radon_score = run_radon(temp_dir)
         lizard_totals = run_lizard(temp_dir)
-        lizard_score = 0.0
-        if lizard_totals:
-            lizard_score = score_from_lizard_totals(lizard_totals)
-        complexity = max(radon_score, lizard_score)
+        lizard_score = score_from_lizard_totals(lizard_totals) if lizard_totals else 0.5
 
-        # check testabilty (CI/CD configs)
+        # If radon failed or no python, rely on lizard.
+        # If lizard failed, assume average.
+        if has_python:
+            complexity = max(radon_score, lizard_score)
+        else:
+            complexity = lizard_score
+
+        # 3. Testability
         testability = 0.0
-        for ci in [".github", ".gitlab-ci.yml", "azure-pipelines.yml"]:
+        ci_files = [
+            ".github",
+            ".gitlab-ci.yml",
+            "azure-pipelines.yml",
+            ".travis.yml",
+            "circle.yml",
+        ]
+        for ci in ci_files:
             if os.path.exists(os.path.join(temp_dir, ci)):
                 testability = 1.0
                 break
 
-        # check portability (check enviornment files)
+        # 4. Portability (Language Agnostic)
         portability = 0.0
-        if os.path.exists(os.path.join(temp_dir, "Dockerfile")):
-            portability += 0.5
-        if os.path.exists(os.path.join(temp_dir, "requirements.txt")) or os.path.exists(
-            os.path.join(temp_dir, "environment.yml")
-        ):
-            portability += 0.5
+        build_files = [
+            "Dockerfile",
+            "docker-compose.yml",
+            "requirements.txt",
+            "setup.py",
+            "package.json",
+            "Makefile",
+            "CMakeLists.txt",
+            "pom.xml",
+            "build.gradle",
+            "Cargo.toml",
+            "go.mod",
+        ]
+        for bf in build_files:
+            if os.path.exists(os.path.join(temp_dir, bf)):
+                portability = 1.0
+                break
 
-        # reusability (check for README and docstrings)
-        readme_path = os.path.join(temp_dir, "README.md")
-        if os.path.exists(readme_path):
-            readme_bonus = 0.5
+        # 5. Reusability
+        reusability = 0.0
+        readme_score = 0.0
+        for name in ["README.md", "README", "readme.txt"]:
+            if os.path.exists(os.path.join(temp_dir, name)):
+                readme_score = 0.8
+                break
+
+        if has_python:
+            doc_score = docstring_ratio(temp_dir)
+            reusability = max(readme_score, doc_score)
         else:
-            readme_bonus = 0
+            reusability = readme_score
 
-        reusability = max(docstring_ratio(temp_dir), readme_bonus)
-
-        # compute weighted score
+        # --- BALANCED WEIGHTS ---
         final_score = (
-            complexity * 0.70
-            + reliability * 0.05
-            + testability * 0.05
-            + portability * 0.1
-            + reusability * 0.1
+            complexity * 0.40
+            + reliability * 0.20
+            + testability * 0.10
+            + portability * 0.10
+            + reusability * 0.20
         )
 
-        return min(1.0, final_score)
+        return min(1.0, max(0.0, final_score))
 
-    # remove the local copy of the repo
+    except Exception:
+        return 0.0
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def get_code_quality(url: str, url_type: str) -> Tuple[float, int]:
-    """
-    Function to get code quality if URL is a GitHub link.
-    """
-
-    start_time = time.time()
+    start = time.time()
     score = 0.0
-
     if url_type == "code":
-        # check code quality by downloading repo
         score = _check_code_repo_quality(url)
-
-    latency = int((time.time() - start_time) * 1000)
-    return score, latency
+    return score, int((time.time() - start) * 1000)

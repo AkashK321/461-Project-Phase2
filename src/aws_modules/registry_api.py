@@ -7,7 +7,7 @@ import re
 import logging
 import requests
 import zipfile
-import io
+import signal
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -16,8 +16,14 @@ os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
 from huggingface_hub import snapshot_download
-from aws_modules.s3_utils import upload_model, generate_presigned_download_url
+from huggingface_hub.utils import GatedRepoError
+from aws_modules.s3_utils import (
+    upload_model,
+    generate_presigned_download_url,
+    get_object_size,
+)
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
@@ -49,7 +55,10 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 # shared AWS clients/resources
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
-lambda_client = boto3.client("lambda")
+
+# Configure Lambda client with a timeout
+lambda_config = Config(read_timeout=10, connect_timeout=5, retries={"max_attempts": 0})
+lambda_client = boto3.client("lambda", config=lambda_config)
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
@@ -74,6 +83,10 @@ SEMVER_PATTERN = re.compile(
     r"(?:\.(?P<min>0|[1-9]\d*))?"
     r"(?:\.(?P<patch>0|[1-9]\d*))?$"
 )
+
+
+def _timeout_handler(signum, frame):
+    raise TimeoutError("Regex execution timed out")
 
 
 def parse_semver(version: str):
@@ -199,6 +212,22 @@ def reset_state(restore_jti=None):
     return {"reset": "ok"}
 
 
+def get_readme_content(directory):
+    """
+    Scans the given directory for a README file and returns its content.
+    Limits content to 10KB to avoid DynamoDB size limits.
+    """
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.lower().startswith("readme"):
+                try:
+                    with open(os.path.join(root, file), "r", errors="ignore") as f:
+                        return f.read(10000)
+                except Exception as e:
+                    logger.warning(f"Failed to read README file {file}: {e}")
+    return ""
+
+
 def ingest_artifact(artifact_type, payload):
     """
     Ingests an artifact. Supports 'model', 'dataset', 'code'.
@@ -206,13 +235,11 @@ def ingest_artifact(artifact_type, payload):
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
 
-    # LOGGING ADDED HERE
     logger.info(f"Raw Payload: {json.dumps(payload)}")
 
     try:
         url = payload.get("url")
 
-        # LOGGING ADDED HERE
         logger.info(f"Received URL: {url}")
 
         if not url or not isinstance(url, str):
@@ -224,7 +251,7 @@ def ingest_artifact(artifact_type, payload):
 
         # 1. Classification & Type override
         if "github.com" in url:
-            if artifact_type != "code":
+            if artifact_type != "code" and artifact_type != "dataset":
                 logger.info(
                     f"Detected GitHub URL. Switching type from {artifact_type} to code."
                 )
@@ -242,12 +269,15 @@ def ingest_artifact(artifact_type, payload):
         else:
             repo = get_repo_id(url, artifact_type) or url.split("/")[-1]
 
-        name_part = repo.split("/")[-1] if "/" in repo else repo
-        name = payload.get("name", name_part).strip()
+        # Use the name provided in the payload
+        name = payload.get("name", "").strip()
+        if not name:
+            # Fallback to extraction from repo/url if name is not provided
+            name = repo.split("/")[-1] if "/" in repo else repo
+
         logger.info(f"Resolved Name: {name}, Repo: {repo}")
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"URL parsing error for payload '{payload}': {e}")
         return make_response(400, {"error": "unable to parse url"})
 
@@ -269,13 +299,18 @@ def ingest_artifact(artifact_type, payload):
                 if scores_list:
                     scores = scores_list[0]
         except Exception as e:
-            logger.error(f"Scorer error: {e}")
+            logger.error(f"Scorer error (likely timeout): {e}")
 
     # --- Quality Gate ---
     metrics_map = {
-        "code": ["code_quality", "bus_factor", "license"],
+        "code": ["code_quality", "bus_factor"],
         "dataset": ["dataset_quality", "dataset_and_code_score"],
-        "model": ["size_score", "performance_claims", "ramp_up_time", "bus_factor"],
+        "model": [
+            "size_score",
+            "performance_claims",
+            "ramp_up_time",
+            "license",
+        ],
     }
     required_metrics = metrics_map.get(artifact_type, [])
     failing_metrics = []
@@ -288,6 +323,8 @@ def ingest_artifact(artifact_type, payload):
 
             if val < 0.5:
                 failing_metrics.append(f"{metric}: {val}")
+        else:
+            pass
 
     if failing_metrics and not FEATURE_FLAG_FORCE_INGESTION:
         logger.warning(f"Rejecting {url} due to metrics: {failing_metrics}")
@@ -298,6 +335,7 @@ def ingest_artifact(artifact_type, payload):
     # --- Download & Package ---
     tmp_dir = f"/tmp/{str(uuid.uuid4())}"
     tmp_zip_file = ""
+    tmp_download_path = ""
 
     base_model_repo = None
     if artifact_type == "model":
@@ -307,34 +345,124 @@ def ingest_artifact(artifact_type, payload):
         os.makedirs(tmp_dir, exist_ok=True)
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
-        if artifact_type == "code":
-            # --- Use Requests + Zipfile (Pure Python) ---
-            # 1. Determine Default Branch (simplified)
+        if "github.com" in url:
+            # 1. Determine Download URL (Default Branch)
             zip_url = f"https://github.com/{repo}/archive/refs/heads/main.zip"
             logger.info(f"Attempting download from: {zip_url}")
 
-            r_zip = requests.get(zip_url, stream=True)
-            if r_zip.status_code != 200:
-                zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
-                logger.info(f"Main failed, trying master: {zip_url}")
-                r_zip = requests.get(zip_url, stream=True)
+            try:
+                r_head = requests.head(zip_url, timeout=5)
+                if r_head.status_code != 200:
+                    zip_url = f"https://github.com/{repo}/archive/refs/heads/master.zip"
+                    logger.info(f"Main failed, trying master: {zip_url}")
+            except Exception:
+                pass
 
-            if r_zip.status_code != 200:
-                # LOGGING UPDATED HERE
-                logger.error(
-                    f"Failed to download zip from {zip_url}. \
-                    Status: {r_zip.status_code}"
-                )
-                raise Exception(
-                    f"Failed to download repo zip: HTTP {r_zip.status_code}"
-                )
+            # 2. Stream Download
+            tmp_download_path = os.path.join(tmp_dir, "downloaded_repo.zip")
 
-            # 2. Extract
-            with zipfile.ZipFile(io.BytesIO(r_zip.content)) as z:
-                z.extractall(tmp_dir)
+            with requests.get(zip_url, stream=True) as r_zip:
+                if r_zip.status_code != 200:
+                    logger.error(
+                        f"Failed to download zip from {zip_url}. \
+                        Status: {r_zip.status_code}"
+                    )
+                    raise Exception(
+                        f"Failed to download repo zip: HTTP {r_zip.status_code}"
+                    )
 
-            # 3. Flatten Directory
+                with open(tmp_download_path, "wb") as f:
+                    for chunk in r_zip.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            # 3. Extract with Filtering
+            excluded_extensions = {
+                # Media
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".bmp",
+                ".tiff",
+                ".svg",
+                ".webp",
+                ".mp4",
+                ".mov",
+                ".avi",
+                ".mp3",
+                ".wav",
+                # Archives
+                ".zip",
+                ".tar",
+                ".gz",
+                ".7z",
+                ".rar",
+                # Documents
+                ".pdf",
+                ".doc",
+                ".docx",
+                ".ppt",
+                ".pptx",
+                ".xls",
+                ".xlsx",
+                # Compiled/Binary
+                ".pyc",
+                ".pyo",
+                ".pyd",
+                ".o",
+                ".obj",
+                ".dll",
+                ".exe",
+                ".so",
+                ".dylib",
+                ".class",
+                ".jar",
+                # Large Data
+                ".parquet",
+                ".arrow",
+                ".csv",
+                ".tsv",
+                ".jsonl",
+                ".h5",
+                ".bin",
+                ".safetensors",
+                # Other
+                ".DS_Store",
+            }
+            excluded_dirs = {
+                "__pycache__",
+                ".git",
+                ".idea",
+                ".vscode",
+                ".venv",
+                "venv",
+                "env",
+                "node_modules",
+            }
+
+            def is_allowed(filename):
+                parts = filename.split("/")
+                for part in parts:
+                    if part in excluded_dirs:
+                        return False
+                _, ext = os.path.splitext(filename)
+                if ext.lower() in excluded_extensions:
+                    return False
+                return True
+
+            try:
+                with zipfile.ZipFile(tmp_download_path, "r") as z:
+                    for file_info in z.infolist():
+                        if not file_info.filename.endswith("/"):
+                            if is_allowed(file_info.filename):
+                                z.extract(file_info, tmp_dir)
+            except zipfile.BadZipFile:
+                raise Exception("Downloaded file is not a valid zip file")
+
             items = os.listdir(tmp_dir)
+            items = [i for i in items if i != "downloaded_repo.zip"]
+
             if len(items) == 1 and os.path.isdir(os.path.join(tmp_dir, items[0])):
                 top_level = os.path.join(tmp_dir, items[0])
                 for item in os.listdir(top_level):
@@ -343,20 +471,28 @@ def ingest_artifact(artifact_type, payload):
 
         else:
             # --- Use HF Hub ---
-            snapshot_download(
-                repo_id=repo,
-                local_dir=tmp_dir,
-                repo_type=artifact_type,
-                allow_patterns=[
-                    "*.json",
-                    "*.md",
-                    "*.txt",
-                    "*.py",
-                    "*.yaml",
-                    "*.csv",
-                    "*.parquet",
-                ],
-            )
+            allow_patterns = ["*.json", "*.md", "*.txt", "*.py", "*.yaml", "*.yml"]
+
+            try:
+                snapshot_download(
+                    repo_id=repo,
+                    local_dir=tmp_dir,
+                    repo_type=artifact_type,
+                    allow_patterns=allow_patterns,
+                )
+            except (GatedRepoError, requests.HTTPError) as e:
+                logger.warning(f"Auth error downloading {repo}: {e}")
+                return make_response(424, {"error": "Artifact requires authentication"})
+            except Exception as e:
+                msg = str(e)
+                if "401" in msg or "403" in msg:
+                    return make_response(
+                        424, {"error": "Artifact requires authentication"}
+                    )
+                raise e
+
+        # --- Capture README content for searching ---
+        readme_content = get_readme_content(tmp_dir)
 
         # Create Zip
         zip_name = f"{name}"
@@ -380,16 +516,18 @@ def ingest_artifact(artifact_type, payload):
             return make_response(500, {"error": "failed to store metadata"})
 
         tbl = dynamodb.Table(TABLE_NAME)
+
         tbl.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET #c = :c, #fn = :fn, \
-            #url = :url, #rid = :rid, #bm = :bm",
+            #url = :url, #rid = :rid, #bm = :bm, #readme = :readme",
             ExpressionAttributeNames={
                 "#c": "created_at",
                 "#fn": "filename",
                 "#url": "source_url",
                 "#rid": "repo_id",
                 "#bm": "base_model_repo_id",
+                "#readme": "readme",
             },
             ExpressionAttributeValues={
                 ":c": created_at,
@@ -397,6 +535,7 @@ def ingest_artifact(artifact_type, payload):
                 ":url": url,
                 ":rid": repo,
                 ":bm": base_model_repo,
+                ":readme": readme_content,
             },
         )
 
@@ -414,64 +553,109 @@ def ingest_artifact(artifact_type, payload):
         )
 
     except Exception as e:
-        # LOGGING UPDATED HERE
         logger.error(f"Ingestion failed for URL '{url}': {e}")
         return make_response(500, {"error": f"Internal error: {str(e)}"})
     finally:
+        if tmp_download_path and os.path.exists(tmp_download_path):
+            try:
+                os.remove(tmp_download_path)
+            except Exception:
+                pass
         if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
+            try:
+                shutil.rmtree(tmp_dir)
+            except Exception:
+                pass
         if tmp_zip_file and os.path.exists(tmp_zip_file):
-            os.remove(tmp_zip_file)
+            try:
+                os.remove(tmp_zip_file)
+            except Exception:
+                pass
+
+
+def get_all_items_from_db(table):
+    """
+    Robustly scans the entire table handling pagination via LastEvaluatedKey.
+    """
+    items = []
+    done = False
+    start_key = None
+    while not done:
+        scan_kwargs = {}
+        if start_key:
+            scan_kwargs["ExclusiveStartKey"] = start_key
+
+        response = table.scan(**scan_kwargs)
+        items.extend(response.get("Items", []))
+        start_key = response.get("LastEvaluatedKey")
+        if not start_key:
+            done = True
+    return items
 
 
 def search_artifacts(query_array, query_params):
+    """
+    Search artifacts with pagination based on OFFSET (record index), not page number.
+    """
+    # Parse offset as an integer record index (default 0)
     try:
-        page = int(query_params.get("offset", "1"))
+        offset_val = int(query_params.get("offset", "0"))
     except Exception:
-        page = 1
-    if page < 1:
-        page = 1
+        offset_val = 0
+
+    if offset_val < 0:
+        offset_val = 0
+
     page_size = DEFAULT_PAGE_SIZE
 
-    if not query_array or not isinstance(query_array, list):
-        query = {}
+    # Fetch ALL items to handle filtering/sorting correctly in memory
+    tbl = dynamodb.Table(TABLE_NAME)
+    all_items = get_all_items_from_db(tbl)
+
+    # Filter
+    if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
+        matched_items = all_items
     else:
-        query = query_array[0]
+        matched_items = []
+        seen_ids = set()
 
-    name_query = (query.get("name") or "").strip()
-    types = query.get("types", [])
-    version_query = query.get("version") or query.get("version_range")
-    if name_query == "*":
-        name_query = ""
+        for query in query_array:
+            q_name = (query.get("name") or "").strip()
+            q_types = set(str(t).lower() for t in query.get("types", []))
+            q_version = query.get("version") or query.get("version_range")
 
-    items = []
-    if name_query:
-        items = (
-            get_model_by_model_name(
-                name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
-            )
-            or []
-        )
-    else:
-        tbl = dynamodb.Table(TABLE_NAME)
-        items = tbl.scan().get("Items", [])
+            if q_name == "*":
+                q_name = ""
 
-    if types:
-        type_set = {str(t).lower() for t in types}
-        items = [it for it in items if str(it.get("type", "")).lower() in type_set]
+            for item in all_items:
+                if item["id"] in seen_ids:
+                    continue
 
-    if version_query:
-        items = [
-            it for it in items if version_satisfies(it.get("version"), version_query)
-        ]
+                # 1. Name
+                if q_name and item.get("model_name") != q_name:
+                    continue
 
+                # 2. Type
+                if q_types and str(item.get("type", "")).lower() not in q_types:
+                    continue
+
+                # 3. Version
+                if q_version and not version_satisfies(item.get("version"), q_version):
+                    continue
+
+                matched_items.append(item)
+                seen_ids.add(item["id"])
+
+    # Sort
     def _sort_key(it):
         return (str(it.get("model_name", "")), str(it.get("version", "")))
 
-    items.sort(key=_sort_key)
+    matched_items.sort(key=_sort_key)
 
-    start = (page - 1) * page_size
-    page_items = items[start : start + page_size]
+    # Paginate based on offset index
+    start = offset_val
+    end = start + page_size
+    page_items = matched_items[start:end]
 
     results = [
         {"name": it.get("model_name"), "id": it.get("id"), "type": it.get("type")}
@@ -479,10 +663,101 @@ def search_artifacts(query_array, query_params):
     ]
 
     headers = {}
-    if start + page_size < len(items):
-        headers = {"Offset": str(page + 1)}
+    # If there are more items after this batch, return the next offset
+    if end < len(matched_items):
+        headers = {"Offset": str(end)}
 
     return make_response(200, results, headers)
+
+
+def search_by_regex(body):
+    """
+    Searches for artifacts using a regular expression over names and README content.
+    Includes ReDoS protection using signal.setitimer.
+    """
+    regex = body.get("regex")
+    logger.info(f"Entering search_by_regex with regex='{regex}'")
+
+    if not regex:
+        logger.warning("search_by_regex: Missing regex in body")
+        return make_response(400, {"error": "Missing regex"})
+
+    try:
+        pattern = re.compile(regex)
+    except re.error as e:
+        logger.warning(f"search_by_regex: Invalid regex '{regex}': {e}")
+        return make_response(400, {"error": "Invalid regex"})
+
+    tbl = dynamodb.Table(TABLE_NAME)
+
+    # Scan all items using helper to ensure full table coverage
+    items = get_all_items_from_db(tbl)
+
+    logger.info(f"search_by_regex: Scanned {len(items)} items")
+
+    # Set up signal handler for ReDoS protection
+    signal.signal(signal.SIGALRM, _timeout_handler)
+
+    matches = []
+
+    try:
+        for item in items:
+            name = item.get("model_name", "")
+            readme = item.get("readme", "")
+
+            is_match = False
+
+            # 1. Check Name
+            signal.setitimer(signal.ITIMER_REAL, 0.1)  # 100ms
+            try:
+                if pattern.search(name):
+                    is_match = True
+            except TimeoutError:
+                raise TimeoutError("Regex execution timed out on name")
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+
+            if is_match:
+                logger.info(
+                    f"Match found for regex '{regex}' \
+                    on item: {name} (ID: {item.get('id')})"
+                )
+                matches.append(
+                    {"name": name, "id": item.get("id"), "type": item.get("type")}
+                )
+                continue  # Skip checking readme if name matched
+
+            # 2. Check Readme
+            signal.setitimer(signal.ITIMER_REAL, 0.1)  # 100ms
+            try:
+                if pattern.search(readme):
+                    is_match = True
+            except TimeoutError:
+                raise TimeoutError("Regex execution timed out on readme")
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+
+            if is_match:
+                matches.append(
+                    {"name": name, "id": item.get("id"), "type": item.get("type")}
+                )
+
+    except TimeoutError:
+        logger.warning(f"ReDoS detected for regex: {regex}")
+        return make_response(400, {"error": "Regex too complex (ReDoS detected)"})
+    except Exception as e:
+        logger.error(f"Error during regex search: {e}")
+        return make_response(500, {"error": f"Internal error during search: {e}"})
+
+    logger.info(f"search_by_regex: Found {len(matches)} matches")
+
+    if not matches:
+        logger.info("search_by_regex: No matches found, returning 404")
+        return make_response(404, {"error": "No artifact found under this regex."})
+
+    response = make_response(200, matches)
+    logger.info(f"search_by_regex returning success with {len(matches)} items")
+    return response
 
 
 def get_lineage_graph(start_art_id):
@@ -655,6 +930,93 @@ def get_artifacts_by_name(name):
     return make_response(200, metadata_list)
 
 
+def calculate_artifact_cost(art_id, query_params):
+    """
+    Handle GET /artifact/{type}/{id}/cost
+    Returns the size cost of the artifact in MB.
+    If 'dependency=true' (query param),
+    it includes dependencies (ancestors) in the cost.
+    """
+    logger.info(
+        f"Entering calculate_artifact_cost \
+        with art_id='{art_id}', params={query_params}"
+    )
+
+    # Parse query params
+    dependency_param = query_params.get("dependency", "false").lower() == "true"
+
+    # Get the target artifact
+    target_item = get_model_by_id(art_id)
+    if not target_item:
+        logger.warning(f"Artifact {art_id} not found in database.")
+        response = make_response(404, {"error": "Artifact does not exist."})
+        logger.info(f"calculate_artifact_cost response for {art_id}: {response}")
+        return response
+
+    logger.info(f"Artifact found: {target_item.get('model_name')}")
+
+    # Gather all involved artifacts
+    all_items = {art_id: target_item}
+
+    if dependency_param:
+        ancestors = get_lineage_items_from_id(art_id)
+        if ancestors:
+            for anc in ancestors:
+                if anc.get("id"):
+                    all_items[anc["id"]] = anc
+
+    logger.info(
+        f"Cost calculation includes {len(all_items)} \
+        artifacts (dependency={dependency_param})"
+    )
+
+    # Helper to calculate size in MB
+    def get_size_mb(item_id, item_data):
+        s3_key = item_data.get("s3_key")
+        if not s3_key:
+            logger.warning(f"S3 key missing for artifact {item_id}")
+            return 0.0
+
+        size_bytes = get_object_size(s3_key)
+        if size_bytes is None:
+            logger.warning(f"Failed to retrieve size for S3 key: {s3_key}")
+            return 0.0
+
+        return float(size_bytes) / (1024 * 1024)
+
+    # Calculate sizes for all items
+    item_sizes_mb = {}
+    for i_id, i_data in all_items.items():
+        item_sizes_mb[i_id] = get_size_mb(i_id, i_data)
+        logger.info(f"Size for {i_id}: {item_sizes_mb[i_id]} MB")
+
+    response_data = {}
+
+    if not dependency_param:
+        # Case 1: No dependencies requested
+        size = item_sizes_mb[art_id]
+        response_data[art_id] = {"total_cost": size}
+    else:
+        # Case 2: Dependencies requested
+        total_sum = sum(item_sizes_mb.values())
+
+        # 1. The root/target artifact
+        response_data[art_id] = {
+            "standalone_cost": item_sizes_mb[art_id],
+            "total_cost": total_sum,
+        }
+
+        # 2. The dependencies
+        for i_id, size in item_sizes_mb.items():
+            if i_id == art_id:
+                continue
+            response_data[i_id] = {"standalone_cost": size, "total_cost": size}
+
+    response = make_response(200, response_data)
+    logger.info(f"calculate_artifact_cost final response: {json.dumps(response_data)}")
+    return response
+
+
 def handler(event, context):
     # Initialize the system on first run (ensures default user exists)
     initialize_system()
@@ -748,6 +1110,10 @@ def handler(event, context):
             new_roles = body.get("roles")
             return update_user_roles(target_id, new_roles, user_roles)
 
+    # POST /artifact/byRegEx
+    if method == "POST" and path == "/artifact/byRegEx":
+        return search_by_regex(body)
+
     # POST /artifact/{type}
     if method == "POST" and path.startswith("/artifact/") and path.count("/") == 2:
         atype = path.split("/")[-1]
@@ -790,6 +1156,14 @@ def handler(event, context):
         if not art_id:
             return make_response(400, {"error": "Missing artifact ID in path"})
         return get_lineage_graph(art_id)
+
+    # GET /artifact/{type}/{id}/cost
+    cost_match = re.match(r"/artifact/([^/]+)/([^/]+)/cost", path)
+    if method == "GET" and cost_match:
+        art_id = cost_match.group(2)
+        if not art_id:
+            return make_response(400, {"error": "Missing artifact ID in path"})
+        return calculate_artifact_cost(art_id, query_params)
 
     # GET /artifact/model/{id}/rate
     rate_match = re.match(r"/artifact/model/([^/]+)/rate", path)

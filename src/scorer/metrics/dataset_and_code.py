@@ -7,30 +7,25 @@ Dataset and code metrics.
 import os
 import time
 import re
+import logging
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login
+from huggingface_hub.utils import GatedRepoError, RepositoryNotFoundError
 from .base import get_repo_id
 
+logger = logging.getLogger(__name__)
+
 load_dotenv()
-# HF_TOKEN = os.getenv("HF_Token")
 HF_API = HfApi()
-# login(token=HF_TOKEN)
 
 
 def _maybe_login() -> None:
-    """
-    Log in non-interactively only if a token is present.
-    Never prompt, never run at import time.
-    """
     token = (
-        os.getenv("HF_TOKEN")  # preferred
-        or os.getenv("HF_Token")  # be forgiving if someone used this
-        or os.getenv("HUGGINGFACE_TOKEN")  # extra alias, optional
+        os.getenv("HF_TOKEN") or os.getenv("HF_Token") or os.getenv("HUGGINGFACE_TOKEN")
     )
     if not token:
         return
     try:
-        # No interactive questions, no new session popups
         login(
             token=token,
             add_to_git_credential=False,
@@ -38,7 +33,6 @@ def _maybe_login() -> None:
             new_session=False,
         )
     except Exception:
-        # Swallow login issues; callers should still work anonymously where possible
         pass
 
 
@@ -53,16 +47,18 @@ def get_dataset_and_code_score(url: str, url_type: str):
         latency = int((time.time() - start_time) * 1000)
         return 0.0, latency
 
-    # Fetch README
+    # Fetch Info
     try:
         if url_type == "model":
             repo_info = HF_API.model_info(repo_id=repo_id, files_metadata=True)
         elif url_type == "dataset":
-            repo_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=True)
+            repo_info = HF_API.dataset_info(repo_id=repo_id, files_metadata=False)
         else:
             latency = int((time.time() - start_time) * 1000)
-            print("dataset_and_code_score only applicable to model/dataset")
             return 0.0, latency
+    except (GatedRepoError, RepositoryNotFoundError):
+        latency = int((time.time() - start_time) * 1000)
+        return 0.0, latency
     except Exception as e:
         print(f"Error fetching repo info {e}")
         latency = int((time.time() - start_time) * 1000)
@@ -71,15 +67,18 @@ def get_dataset_and_code_score(url: str, url_type: str):
     # Extract README content (if available)
     readme = getattr(repo_info, "cardData", None) or {}
     readme_text = ""
-    if readme and "README.md" in repo_info.siblings:
+
+    # Try to construct text from metadata tags
+    if readme:
         if "datasets" in readme:
-            readme_text += " ".join(readme.get("datasets", []))
+            val = readme.get("datasets", [])
+            if isinstance(val, list):
+                readme_text += " ".join(str(v) for v in val)
+            else:
+                readme_text += str(val)
         if "model-index" in readme:
-            readme_text += " ".join(
-                [m.get("name", "") for m in readme.get("model-index", [])]
-            )
-    else:
-        readme_text = ""
+            # parsing model-index if needed
+            pass
 
     # Check for dataset mentions in README
     dataset_documented = False
@@ -89,14 +88,41 @@ def get_dataset_and_code_score(url: str, url_type: str):
             dataset_documented = True
             break
 
+    # If explicit tags exist, it's documented
+    if readme and ("datasets" in readme or "dataset_info" in readme):
+        dataset_documented = True
+
     # Check for code scripts or requirements
-    files = [f.rfilename for f in repo_info.siblings]
-    has_code = any(
-        f.endswith((".py", ".ipynb"))
-        or "requirements" in f.lower()
-        or "train" in f.lower()
-        for f in files
-    )
+    has_code = False
+
+    if url_type == "model":
+        # We have siblings from the API call
+        files = [f.rfilename for f in repo_info.siblings]
+        has_code = any(
+            f.endswith((".py", ".ipynb"))
+            or "requirements" in f.lower()
+            or "train" in f.lower()
+            for f in files
+        )
+    elif url_type == "dataset":
+        common_code_files = [
+            "requirements.txt",
+            "setup.py",
+            "train.py",
+            "scripts/train.py",
+            "eval.py",
+        ]
+
+        for filename in common_code_files:
+            try:
+                # file_exists is efficient (HEAD request)
+                if HF_API.file_exists(
+                    repo_id=repo_id, filename=filename, repo_type="dataset"
+                ):
+                    has_code = True
+                    break
+            except Exception:
+                continue
 
     score = 0.0
     if dataset_documented:

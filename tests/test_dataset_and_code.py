@@ -33,7 +33,7 @@ def test_dataset_and_code_score_model():
         score, latency = get_dataset_and_code_score(
             "https://huggingface.co/mock/repo", "model"
         )
-        assert score == 0.5
+        assert score == 1.0
 
 
 def test_dataset_type_repo():
@@ -55,7 +55,7 @@ def test_dataset_type_repo():
         score, latency = get_dataset_and_code_score(
             "https://huggingface.co/mock/dataset", "dataset"
         )
-        assert score == 0.0
+        assert score == 1.0
         assert isinstance(latency, int)
 
 
