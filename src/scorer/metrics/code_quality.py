@@ -166,8 +166,8 @@ def _check_code_repo_quality(code_url: str) -> float:
     temp_dir = tempfile.mkdtemp()
     
     # --- LIMITS ---
-    MAX_FILES = 100      # Only extract first 100 valid source files
-    MAX_TIME = 5.0       # Only spend 5 seconds extracting
+    MAX_FILES = 500      # Only extract first 500 valid source files
+    MAX_TIME = 10.0       # Only spend 10 seconds extracting
     # --------------
 
     try:
