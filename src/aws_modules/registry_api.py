@@ -662,7 +662,6 @@ def search_by_regex(body):
             name = item.get("model_name", "")
             readme = item.get("readme", "")
             
-            # Check matches with timeout protection
             is_match = False
             
             # 1. Check Name
@@ -671,7 +670,6 @@ def search_by_regex(body):
                 if pattern.search(name):
                     is_match = True
             except TimeoutError:
-                # If name search times out, this regex is dangerous. Stop immediately.
                 raise TimeoutError("Regex execution timed out on name")
             finally:
                 signal.setitimer(signal.ITIMER_REAL, 0)
