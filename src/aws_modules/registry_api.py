@@ -309,7 +309,6 @@ def ingest_artifact(artifact_type, payload):
             "size_score",
             "performance_claims",
             "ramp_up_time",
-            "bus_factor",
             "license",
         ],
     }
