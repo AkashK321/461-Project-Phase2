@@ -68,7 +68,7 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         # tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
-        tasks["license"] = lambda: get_license_score(url, url_type)
+        # tasks["license"] = lambda: get_license_score(url, url_type)
 
     elif url_type == "dataset":
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
@@ -79,9 +79,9 @@ def score_url(url: str, url_type: str) -> dict:
 
     elif url_type == "model":
         tasks["size_score"] = lambda: get_size_score(url, url_type)
-        # tasks["license"] = lambda: get_license_score(url, url_type)
+        tasks["license"] = lambda: get_license_score(url, url_type)
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
@@ -149,20 +149,23 @@ def score_url(url: str, url_type: str) -> dict:
 
     # --- Calculate Tree Score ---
     tree_score = 0.0
-    try:
-        item_in_db = get_model_by_repo_id(repo)
-        if item_in_db:
-            item_id = item_in_db.get("id")
-            if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
-                base_model_repo_id = get_attribute_value(item_id, "base_model_repo_id")
+    if url_type == "model":
+        try:
+            item_in_db = get_model_by_repo_id(repo)
+            if item_in_db:
+                item_id = item_in_db.get("id")
+                if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
+                    base_model_repo_id = get_attribute_value(
+                        item_id, "base_model_repo_id"
+                    )
+                    if base_model_repo_id:
+                        tree_score = _calculate_treescore(base_model_repo_id)
+            else:
+                base_model_repo_id, _, _ = get_base_model_from_card(repo)
                 if base_model_repo_id:
                     tree_score = _calculate_treescore(base_model_repo_id)
-        else:
-            base_model_repo_id, _, _ = get_base_model_from_card(repo)
-            if base_model_repo_id:
-                tree_score = _calculate_treescore(base_model_repo_id)
-    except Exception as e:
-        log.error(f"Failed to calculate tree_score for {repo}: {e}")
+        except Exception as e:
+            log.error(f"Failed to calculate tree_score for {repo}: {e}")
 
     # --- Construct Final Ordered Dictionary ---
     final_output = {

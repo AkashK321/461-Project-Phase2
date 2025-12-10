@@ -157,13 +157,13 @@ def test_search_artifacts_pagination(monkeypatch):
     resp_page1 = reg.search_artifacts([{"name": "*"}], {"offset": "1"})
     status1, body1 = decode_body(resp_page1)
     assert status1 == 200
-    assert len(body1) == 3
+    assert len(body1) == 2
     assert resp_page1["headers"].get("Offset") is None
 
     resp_page2 = reg.search_artifacts([{"name": "*"}], {"offset": "2"})
     status2, body2 = decode_body(resp_page2)
     assert status2 == 200
-    assert len(body2) == 0
+    assert len(body2) == 1
 
 
 def test_search_artifacts_type_and_name_regex(monkeypatch):

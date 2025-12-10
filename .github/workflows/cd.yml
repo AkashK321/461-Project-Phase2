@@ -26,6 +26,7 @@ on:
       - busfactor-for-code
       - dataset-quality-llm-integration
       - datasetcode-metrics-inconsistent
+      - cost
 
 # Define the permissions the job will need
 permissions:
