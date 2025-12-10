@@ -527,54 +527,89 @@ def ingest_artifact(artifact_type, payload):
                 pass
 
 
+def get_all_items_from_db(table):
+    """
+    Robustly scans the entire table handling pagination via LastEvaluatedKey.
+    """
+    items = []
+    done = False
+    start_key = None
+    while not done:
+        scan_kwargs = {}
+        if start_key:
+            scan_kwargs['ExclusiveStartKey'] = start_key
+        
+        response = table.scan(**scan_kwargs)
+        items.extend(response.get("Items", []))
+        start_key = response.get('LastEvaluatedKey')
+        if not start_key:
+            done = True
+    return items
+
+
 def search_artifacts(query_array, query_params):
+    """
+    Search artifacts with pagination based on OFFSET (record index), not page number.
+    """
+    # Parse offset as an integer record index (default 0)
     try:
-        page = int(query_params.get("offset", "1"))
+        offset_val = int(query_params.get("offset", "0"))
     except Exception:
-        page = 1
-    if page < 1:
-        page = 1
+        offset_val = 0
+    
+    if offset_val < 0:
+        offset_val = 0
+        
     page_size = DEFAULT_PAGE_SIZE
 
-    if not query_array or not isinstance(query_array, list):
-        query = {}
+    # Fetch ALL items to handle filtering/sorting correctly in memory
+    tbl = dynamodb.Table(TABLE_NAME)
+    all_items = get_all_items_from_db(tbl)
+
+    # Filter
+    if not query_array or not isinstance(query_array, list) or len(query_array) == 0:
+        matched_items = all_items
     else:
-        query = query_array[0]
+        matched_items = []
+        seen_ids = set()
 
-    name_query = (query.get("name") or "").strip()
-    types = query.get("types", [])
-    version_query = query.get("version") or query.get("version_range")
-    if name_query == "*":
-        name_query = ""
+        for query in query_array:
+            q_name = (query.get("name") or "").strip()
+            q_types = set(str(t).lower() for t in query.get("types", []))
+            q_version = query.get("version") or query.get("version_range")
 
-    items = []
-    if name_query:
-        items = (
-            get_model_by_model_name(
-                name_query, dynamodb_resource=dynamodb, table_name=TABLE_NAME
-            )
-            or []
-        )
-    else:
-        tbl = dynamodb.Table(TABLE_NAME)
-        items = tbl.scan().get("Items", [])
+            if q_name == "*":
+                q_name = ""
 
-    if types:
-        type_set = {str(t).lower() for t in types}
-        items = [it for it in items if str(it.get("type", "")).lower() in type_set]
+            for item in all_items:
+                if item["id"] in seen_ids:
+                    continue
+                
+                # 1. Name
+                if q_name and item.get("model_name") != q_name:
+                    continue
+                
+                # 2. Type
+                if q_types and str(item.get("type", "")).lower() not in q_types:
+                    continue
+                
+                # 3. Version
+                if q_version and not version_satisfies(item.get("version"), q_version):
+                    continue
+                
+                matched_items.append(item)
+                seen_ids.add(item["id"])
 
-    if version_query:
-        items = [
-            it for it in items if version_satisfies(it.get("version"), version_query)
-        ]
-
+    # Sort
     def _sort_key(it):
         return (str(it.get("model_name", "")), str(it.get("version", "")))
 
-    items.sort(key=_sort_key)
+    matched_items.sort(key=_sort_key)
 
-    start = (page - 1) * page_size
-    page_items = items[start : start + page_size]
+    # Paginate based on offset index
+    start = offset_val
+    end = start + page_size
+    page_items = matched_items[start : end]
 
     results = [
         {"name": it.get("model_name"), "id": it.get("id"), "type": it.get("type")}
@@ -582,8 +617,9 @@ def search_artifacts(query_array, query_params):
     ]
 
     headers = {}
-    if start + page_size < len(items):
-        headers = {"Offset": str(page + 1)}
+    # If there are more items after this batch, return the next offset
+    if end < len(matched_items):
+        headers = {"Offset": str(end)}
 
     return make_response(200, results, headers)
 
