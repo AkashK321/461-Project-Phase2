@@ -91,12 +91,18 @@ def get_dataset_and_code_score(url: str, url_type: str):
     logger.info(f"Dataset documented: {dataset_documented}")
 
     # Check for code scripts or requirements
-    has_code = False
+    local_code_found = False
+    # This regex looks for standard github.com/user/repo patterns
+    github_link_found = False
+    github_pattern = r"https?://(?:www\.)?github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+"
+    if re.search(github_pattern, readme_text):
+        github_link_found = True
+        logger.info("GitHub link found in README")
 
     if url_type == "model":
         # We have siblings from the API call
         files = [f.rfilename for f in repo_info.siblings]
-        has_code = any(
+        local_code_found = any(
             f.endswith((".py", ".ipynb"))
             or "requirements" in f.lower()
             or "train" in f.lower()
@@ -117,10 +123,12 @@ def get_dataset_and_code_score(url: str, url_type: str):
                 if HF_API.file_exists(
                     repo_id=repo_id, filename=filename, repo_type="dataset"
                 ):
-                    has_code = True
+                    local_code_found = True
                     break
             except Exception:
                 continue
+
+    has_code = local_code_found or github_link_found
 
     score = 0.0
     if dataset_documented:
