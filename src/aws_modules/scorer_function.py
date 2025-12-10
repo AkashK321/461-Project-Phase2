@@ -236,6 +236,11 @@ def handler(event, context):
     all_scores = []
     for url in urls:
         url_type = classify_url(url)
+
+        # Fallback: If classification failed but it looks like a GitHub URL, treat as code.
+        if (not url_type or url_type == "unknown") and "github.com" in url:
+            url_type = "code"
+
         if url_type not in ["model", "dataset", "code"]:
             log.warning(f"Skipping unknown or unsupported URL type for: {url}")
             continue
