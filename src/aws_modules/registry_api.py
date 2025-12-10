@@ -935,7 +935,7 @@ def calculate_artifact_cost(art_id, query_params):
     """
     Handle GET /artifact/{type}/{id}/cost
     Returns the size cost of the artifact in MB.
-    If 'dependency=true' (query param), 
+    If 'dependency=true' (query param),
     it includes dependencies (ancestors) in the cost.
     """
     logger.info(
