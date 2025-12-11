@@ -137,6 +137,33 @@ def get_model_by_model_name(name, dynamodb_resource=None, table_name=None):
     except Exception as e:
         logger.error(f"Error scanning for model_name '{name}': {e}")
         return None
+    
+def get_all_artifacts_by_type(artifact_type):
+    """
+    Scans the DB for all items of a specific type (e.g. 'code', 'dataset').
+    Returns a list of items containing 'id', 'model_name', and 'url' (if stored) or 'repo_id'.
+    """
+    if not table:
+        logger.error("DynamoDB table is not initialized. Check env var.")
+        return []
+    
+    try:
+        # Note: type is a reserved word in some contexts, but 'type' is the attribute name used in save_model_metadata
+        response = table.scan(FilterExpression=Attr("type").eq(artifact_type))
+        items = response.get("Items", [])
+        
+        # Handle pagination if the table is large
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(
+                FilterExpression=Attr("type").eq(artifact_type),
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            items.extend(response.get("Items", []))
+            
+        return items
+    except Exception as e:
+        logger.error(f"Error scanning for type '{artifact_type}': {e}")
+        return []
 
 
 def get_model_by_repo_id(repo_id):

@@ -27,6 +27,7 @@ on:
       - dataset-quality-llm-integration
       - datasetcode-metrics-inconsistent
       - cost
+      - code-and-dataset-matching
 
 # Define the permissions the job will need
 permissions:
