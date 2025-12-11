@@ -845,14 +845,26 @@ def rate_model(art_id):
     # 1. Try DB scores first
     scores = item.get("scores", {})
 
-    # Check if we need to run the matching logic.
+    # Define metrics that come from matching/external artifacts
+    MATCHED_METRICS = [
+        "code_quality", 
+        "bus_factor", 
+        "dataset_quality", 
+        "dataset_and_code_score"
+    ]
+
+    # Check if we need to run the matching logic
     needs_matching = False
-    if scores and item.get("type") == "model":
-        # If code_quality is 0 (or missing), we treat it as unmatched or needing update.
-        # This addresses the issue where default 0 scores in DB prevent the matcher from running.
-        if scores.get("code_quality", 0) == 0: 
+    if item.get("type") == "model":
+        # Even if scores exists, check if any matched metric is missing/zero
+        if not scores:
             needs_matching = True
-            logger.info(f"Model {art_id} has code_quality=0. Triggering matcher to find linked code.")
+        else:
+            for m in MATCHED_METRICS:
+                if scores.get(m, 0) == 0:
+                    needs_matching = True
+                    logger.info(f"Model {art_id} has {m}=0. Triggering matcher.")
+                    break
 
     # 2. Invoke scorer if scores missing OR matching needed
     if not scores or needs_matching:
@@ -882,11 +894,27 @@ def rate_model(art_id):
                 Payload=scorer_payload,
             )
             response_payload = json.loads(response["Payload"].read().decode())
+            
             if response_payload.get("statusCode") == 200:
                 scores_list = json.loads(response_payload["body"])
                 if scores_list:
-                    scores = scores_list[0]
-                    # Update DB with new scores (including matched ones)
+                    new_scores = scores_list[0]
+                    
+                    # --- Merge Logic ---
+                    if scores:
+                        # Hybrid approach: Keep old scores, overwrite ONLY matched metrics
+                        for m in MATCHED_METRICS:
+                            if m in new_scores:
+                                scores[m] = new_scores[m]
+                        
+                        # # Recalculate Net Score with the hybrid data
+                        # scores["net_score"] = calculate_net_score(scores)
+                        # logger.info(f"Merged scores for {art_id}. New Net Score: {scores['net_score']}")
+                    else:
+                        # No old scores, take everything
+                        scores = new_scores
+
+                    # Update DB
                     update_model_scores(art_id, scores)
             else:
                 logger.error(f"Scorer function returned error: {response_payload}")
@@ -918,7 +946,6 @@ def rate_model(art_id):
                 )
 
     return make_response(200, scores)
-
 
 def get_artifacts_by_name(name):
     """
