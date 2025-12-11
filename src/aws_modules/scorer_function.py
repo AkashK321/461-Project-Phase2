@@ -24,12 +24,9 @@ from aws_modules.db_utils import (
     attribute_is_not_none,
     get_attribute_value,
     get_model_by_repo_id,
-    get_all_artifacts_by_type
+    # get_all_artifacts_by_type (Removed from top-level to prevent cold-start overhead)
 )
 from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
-
-# Import Matcher
-from scorer.matcher import match_artifacts
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -76,7 +73,12 @@ def score_url(url: str, url_type: str, check_linked_artifacts: bool = False) -> 
         # Only run if explicitly requested (during Rate endpoint call)
         if check_linked_artifacts:
             log.info(f"--- [Scorer] check_linked_artifacts=True for {name}. Initiating Matcher. ---")
+            
+            # --- LAZY IMPORT TO PREVENT COLD START OVERHEAD ---
             try:
+                from scorer.matcher import match_artifacts
+                from aws_modules.db_utils import get_all_artifacts_by_type
+                
                 # 1. Fetch Candidates from DB
                 code_candidates = get_all_artifacts_by_type("code")
                 dataset_candidates = get_all_artifacts_by_type("dataset")

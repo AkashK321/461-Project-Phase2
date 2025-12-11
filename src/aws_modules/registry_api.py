@@ -28,7 +28,7 @@ from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
     get_model_by_model_name,
-    update_model_scores,
+    update_model_scores
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -57,8 +57,8 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 
-# Configure Lambda client with a timeout
-lambda_config = Config(read_timeout=420, connect_timeout=60, retries={"max_attempts": 10})
+# --- CHANGED: Increased timeout from 30 to 90 seconds ---
+lambda_config = Config(read_timeout=90, connect_timeout=30, retries={"max_attempts": 0})
 lambda_client = boto3.client("lambda", config=lambda_config)
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
@@ -227,6 +227,36 @@ def get_readme_content(directory):
                 except Exception as e:
                     logger.warning(f"Failed to read README file {file}: {e}")
     return ""
+
+
+def calculate_net_score(scores):
+    """
+    Recalculates the Net Score based on the current values in the scores dictionary.
+    Formula matches the scorer function.
+    """
+    def get_val(key):
+        val = scores.get(key, 0.0)
+        return float(val) if isinstance(val, (int, float)) else 0.0
+
+    # Handle size score dictionary
+    size_data = scores.get("size_score", {})
+    if isinstance(size_data, dict):
+        vals = [float(v) for v in size_data.values() if isinstance(v, (int, float))]
+        size_scalar = sum(vals) / len(vals) if vals else 0.0
+    else:
+        size_scalar = 0.0
+
+    net = (
+        0.15 * size_scalar
+        + 0.15 * get_val("license")
+        + 0.10 * get_val("ramp_up_time")
+        + 0.10 * get_val("bus_factor")
+        + 0.15 * get_val("dataset_quality")
+        + 0.10 * get_val("code_quality")
+        + 0.15 * get_val("performance_claims")
+        + 0.10 * get_val("dataset_and_code_score")
+    )
+    return round(net, 2)
 
 
 def ingest_artifact(artifact_type, payload):
@@ -907,9 +937,9 @@ def rate_model(art_id):
                             if m in new_scores:
                                 scores[m] = new_scores[m]
                         
-                        # # Recalculate Net Score with the hybrid data
-                        # scores["net_score"] = calculate_net_score(scores)
-                        # logger.info(f"Merged scores for {art_id}. New Net Score: {scores['net_score']}")
+                        # Recalculate Net Score with the hybrid data
+                        scores["net_score"] = calculate_net_score(scores)
+                        logger.info(f"Merged scores for {art_id}. New Net Score: {scores['net_score']}")
                     else:
                         # No old scores, take everything
                         scores = new_scores
@@ -946,6 +976,7 @@ def rate_model(art_id):
                 )
 
     return make_response(200, scores)
+
 
 def get_artifacts_by_name(name):
     """
