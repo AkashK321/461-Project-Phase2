@@ -57,7 +57,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 
-# --- CHANGED: Increased timeout from 30 to 90 seconds ---
+# Configure Lambda client with a timeout (Keep at 90s)
 lambda_config = Config(read_timeout=90, connect_timeout=30, retries={"max_attempts": 0})
 lambda_client = boto3.client("lambda", config=lambda_config)
 
@@ -227,36 +227,6 @@ def get_readme_content(directory):
                 except Exception as e:
                     logger.warning(f"Failed to read README file {file}: {e}")
     return ""
-
-
-def calculate_net_score(scores):
-    """
-    Recalculates the Net Score based on the current values in the scores dictionary.
-    Formula matches the scorer function.
-    """
-    def get_val(key):
-        val = scores.get(key, 0.0)
-        return float(val) if isinstance(val, (int, float)) else 0.0
-
-    # Handle size score dictionary
-    size_data = scores.get("size_score", {})
-    if isinstance(size_data, dict):
-        vals = [float(v) for v in size_data.values() if isinstance(v, (int, float))]
-        size_scalar = sum(vals) / len(vals) if vals else 0.0
-    else:
-        size_scalar = 0.0
-
-    net = (
-        0.15 * size_scalar
-        + 0.15 * get_val("license")
-        + 0.10 * get_val("ramp_up_time")
-        + 0.10 * get_val("bus_factor")
-        + 0.15 * get_val("dataset_quality")
-        + 0.10 * get_val("code_quality")
-        + 0.15 * get_val("performance_claims")
-        + 0.10 * get_val("dataset_and_code_score")
-    )
-    return round(net, 2)
 
 
 def ingest_artifact(artifact_type, payload):
@@ -937,9 +907,7 @@ def rate_model(art_id):
                             if m in new_scores:
                                 scores[m] = new_scores[m]
                         
-                        # Recalculate Net Score with the hybrid data
-                        scores["net_score"] = calculate_net_score(scores)
-                        logger.info(f"Merged scores for {art_id}. New Net Score: {scores['net_score']}")
+                        # (NET SCORE RECALCULATION REMOVED PER INSTRUCTION)
                     else:
                         # No old scores, take everything
                         scores = new_scores
