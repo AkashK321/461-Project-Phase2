@@ -28,6 +28,7 @@ from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
     get_model_by_model_name,
+    update_model_scores,
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -835,7 +836,7 @@ def rate_model(art_id):
     """
     Handle GET /artifact/model/{id}/rate
     Retrieves and returns the stored scores for a given model artifact.
-    Falls back to invoking scorer if DB scores are missing.
+    Falls back to invoking scorer if DB scores are missing OR if matched metrics are needed.
     """
     item = get_model_by_id(art_id)
     if not item:
@@ -844,8 +845,17 @@ def rate_model(art_id):
     # 1. Try DB scores first
     scores = item.get("scores", {})
 
-    # 2. Fallback: Invoke scorer if scores missing
-    if not scores:
+    # Check if we need to run the matching logic.
+    # If we have scores, but are missing a metric that comes from matching (like 'code_quality' on a model),
+    # we should re-run the scorer with matching enabled.
+    needs_matching = False
+    if scores and item.get("type") == "model":
+        if "code_quality" not in scores: # code_quality is usually added via matching for models
+            needs_matching = True
+            logger.info(f"Model {art_id} scores found, but missing matched metrics. Triggering matcher.")
+
+    # 2. Invoke scorer if scores missing OR matching needed
+    if not scores or needs_matching:
         scorer_function_name = SCORER_FUNCTION_NAME
         if not scorer_function_name:
             logger.error("Scorer function not configured, cannot validate metrics")
@@ -856,11 +866,15 @@ def rate_model(art_id):
             url = item.get("source_url")
             if not url:
                 logger.error(f"No source URL for artifact {art_id}")
-                # Cannot rate without URL
                 return make_response(500, {"error": "Failed to calculate metrics"})
 
             logger.info(f"Calculating scores for artifact {art_id} at URL {url}")
-            scorer_payload = json.dumps({"urls": [url]})
+            
+            # --- Pass the flag to enable matching ---
+            scorer_payload = json.dumps({
+                "urls": [url],
+                "check_linked_artifacts": True 
+            })
 
             response = lambda_client.invoke(
                 FunctionName=scorer_function_name,
@@ -872,6 +886,8 @@ def rate_model(art_id):
                 scores_list = json.loads(response_payload["body"])
                 if scores_list:
                     scores = scores_list[0]
+                    # Update DB with new scores (including matched ones)
+                    update_model_scores(art_id, scores)
             else:
                 logger.error(f"Scorer function returned error: {response_payload}")
                 return make_response(500, {"error": "Failed to calculate metrics"})
@@ -888,18 +904,6 @@ def rate_model(art_id):
                 "an error while computing at least one metric."
             },
         )
-    else:
-        for metric, score in scores.items():
-            logger.info(f"Metric: {metric}, Score: {score}")
-            if score is None:
-                logger.warning(f"Score for metric '{metric}' is None.")
-                return make_response(
-                    500,
-                    {
-                        "error": "The artifact rating system encountered an error "
-                        "while computing at least one metric."
-                    },
-                )
 
     return make_response(200, scores)
 

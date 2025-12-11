@@ -3,13 +3,13 @@ import os
 import re
 import json
 import requests
-import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 SYSTEM_PROMPT = (
     "You are a precise software dependency linker.\n"
@@ -39,6 +39,8 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
     :param candidates: List of dicts, each having {'url': str, 'type': 'code'|'dataset', 'name': str}
     :return: {'matched_code_url': str|None, 'matched_dataset_url': str|None}
     """
+    logger.info(f"--- [Matcher] Running for Model: {model_name} ---")
+    logger.info(f"--- [Matcher] Candidate count: {len(candidates)} ---")
     
     # 1. Heuristic: Strict URL/Name matching
     # If the model README explicitly links to a candidate URL, it's a very strong signal.
@@ -48,13 +50,15 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
     candidates_str = ""
     for idx, cand in enumerate(candidates):
         url = cand.get('url', '')
-        c_name = cand.get('name', '') or cand.get('model_name', '') # handle DB field naming
+        # Handle cases where DB might use different keys or the dictionary structure varies
+        c_name = cand.get('model_name') or cand.get('name') or "Unknown"
         c_type = cand.get('type', 'unknown')
         
         candidates_str += f"{idx}. [{c_type}] {c_name} ({url})\n"
         
         # Simple check: is the URL in the readme?
-        if url and url in model_readme:
+        if url and model_readme and url in model_readme:
+            logger.info(f"--- [Matcher] Found direct link in README to {url} ({c_type})")
             if c_type == 'code':
                 matched_code = url
             elif c_type == 'dataset':
@@ -62,13 +66,14 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
 
     # If we found both via direct links, return immediately
     if matched_code and matched_dataset:
+        logger.info(f"--- [Matcher] Result for {model_name}: Code={matched_code}, Dataset={matched_dataset}")
         return {"matched_code_url": matched_code, "matched_dataset_url": matched_dataset}
 
     # 2. LLM Matching
     # If we are missing matches, ask the LLM to infer based on context
     api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
     if not api_key:
-        logger.warning("No GEN_AI_STUDIO_API_KEY, skipping LLM matching.")
+        logger.warning("--- [Matcher] No GEN_AI_STUDIO_API_KEY, skipping LLM matching.")
         return {"matched_code_url": matched_code, "matched_dataset_url": matched_dataset}
 
     base = os.getenv("GENAI_BASE_URL", "https://genai.rcac.purdue.edu").rstrip("/")
@@ -77,7 +82,7 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
     model = os.getenv("GENAI_MODEL", "").strip() or "deepseek-r1:7b"
     
     # Truncate readme
-    readme_snippet = model_readme[:5000] 
+    readme_snippet = (model_readme or "")[:5000] 
     
     user_prompt = (
         f"MODEL NAME: {model_name}\n"
@@ -106,20 +111,31 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
         )
         if resp.status_code == 200:
             data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            # Clean content
+            content = ""
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0]["message"]["content"]
+            
+            # Clean content (strip markdown code blocks if present)
             content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
             content = re.sub(r"```json", "", content).replace("```", "").strip()
             
-            parsed = json.loads(content)
-            
-            # Prefer LLM match if we didn't have a direct link match
-            if not matched_code and parsed.get("matched_code_url"):
-                matched_code = parsed.get("matched_code_url")
-            if not matched_dataset and parsed.get("matched_dataset_url"):
-                matched_dataset = parsed.get("matched_dataset_url")
+            try:
+                parsed = json.loads(content)
                 
-    except Exception as e:
-        logger.error(f"Error in LLM matching: {e}")
+                # Prefer LLM match if we didn't have a direct link match
+                if not matched_code and parsed.get("matched_code_url"):
+                    matched_code = parsed.get("matched_code_url")
+                    logger.info(f"--- [Matcher] LLM matched Code: {matched_code}")
+                    
+                if not matched_dataset and parsed.get("matched_dataset_url"):
+                    matched_dataset = parsed.get("matched_dataset_url")
+                    logger.info(f"--- [Matcher] LLM matched Dataset: {matched_dataset}")
 
+            except json.JSONDecodeError:
+                logger.warning(f"--- [Matcher] Failed to parse LLM JSON: {content[:100]}...")
+
+    except Exception as e:
+        logger.error(f"--- [Matcher] Error in LLM matching: {e}")
+
+    logger.info(f"--- [Matcher] Final Result for {model_name}: Code={matched_code}, Dataset={matched_dataset}")
     return {"matched_code_url": matched_code, "matched_dataset_url": matched_dataset}
