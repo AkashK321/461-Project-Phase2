@@ -33,24 +33,17 @@ def _session_with_retry() -> requests.Session:
 def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dict:
     """
     Matches a model to a code repo and dataset repo from a list of candidates.
-    
-    :param model_name: Name of the model (e.g. 'bert-base-uncased')
-    :param model_readme: Content of the model's README
-    :param candidates: List of dicts, each having {'url': str, 'type': 'code'|'dataset', 'name': str}
-    :return: {'matched_code_url': str|None, 'matched_dataset_url': str|None}
     """
     logger.info(f"--- [Matcher] Running for Model: {model_name} ---")
     logger.info(f"--- [Matcher] Candidate count: {len(candidates)} ---")
     
     # 1. Heuristic: Strict URL/Name matching
-    # If the model README explicitly links to a candidate URL, it's a very strong signal.
     matched_code = None
     matched_dataset = None
     
     candidates_str = ""
     for idx, cand in enumerate(candidates):
         url = cand.get('url', '')
-        # Handle cases where DB might use different keys or the dictionary structure varies
         c_name = cand.get('model_name') or cand.get('name') or "Unknown"
         c_type = cand.get('type', 'unknown')
         
@@ -70,7 +63,6 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
         return {"matched_code_url": matched_code, "matched_dataset_url": matched_dataset}
 
     # 2. LLM Matching
-    # If we are missing matches, ask the LLM to infer based on context
     api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
     if not api_key:
         logger.warning("--- [Matcher] No GEN_AI_STUDIO_API_KEY, skipping LLM matching.")
@@ -115,7 +107,7 @@ def match_artifacts(model_name: str, model_readme: str, candidates: list) -> dic
             if "choices" in data and len(data["choices"]) > 0:
                 content = data["choices"][0]["message"]["content"]
             
-            # Clean content (strip markdown code blocks if present)
+            # Clean content 
             content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
             content = re.sub(r"```json", "", content).replace("```", "").strip()
             

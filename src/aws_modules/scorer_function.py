@@ -231,24 +231,30 @@ def handler(event, context):
     """
     AWS Lambda entry point.
     """
-    body_str = event.get("body", "{}")
-    body_dict = json.loads(body_str)
-
-    urls = body_dict.get("urls")
-    # Parse the flag from the event body (defaults to False)
-    check_linked_artifacts = body_dict.get("check_linked_artifacts", False)
-
     run_id = set_run_id(context.aws_request_id)
     log.info("Handler started", extra={"run_id": run_id, "event": event})
 
-    urls = event.get("urls", [])
+    # Robust parsing of body/event for both API Gateway and direct invocation
+    body_dict = {}
+    if "body" in event:
+        try:
+            body_dict = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
+        except Exception:
+            body_dict = {}
+
+    # 1. URLs
+    urls = body_dict.get("urls") or event.get("urls")
     if not isinstance(urls, list) or not urls:
         return {
             "statusCode": 400,
-            "body": json.dumps(
-                "Input must be a JSON object with a non-empty 'urls' list."
-            ),
+            "body": json.dumps("Input must be a JSON object with a non-empty 'urls' list."),
         }
+
+    # 2. Check Linked Artifacts Flag
+    # Priority: Body (if present) -> Event (root level) -> Default False
+    check_linked_artifacts = body_dict.get("check_linked_artifacts")
+    if check_linked_artifacts is None:
+        check_linked_artifacts = event.get("check_linked_artifacts", False)
 
     all_scores = []
     for url in urls:
@@ -260,7 +266,6 @@ def handler(event, context):
             log.warning(f"Skipping unknown or unsupported URL type for: {url}")
             continue
             
-        # Pass the flag to score_url
         all_scores.append(score_url(url, url_type, check_linked_artifacts))
 
     log.info(

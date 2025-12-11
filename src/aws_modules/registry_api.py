@@ -846,13 +846,13 @@ def rate_model(art_id):
     scores = item.get("scores", {})
 
     # Check if we need to run the matching logic.
-    # If we have scores, but are missing a metric that comes from matching (like 'code_quality' on a model),
-    # we should re-run the scorer with matching enabled.
     needs_matching = False
     if scores and item.get("type") == "model":
-        if "code_quality" not in scores: # code_quality is usually added via matching for models
+        # If code_quality is 0 (or missing), we treat it as unmatched or needing update.
+        # This addresses the issue where default 0 scores in DB prevent the matcher from running.
+        if scores.get("code_quality", 0) == 0: 
             needs_matching = True
-            logger.info(f"Model {art_id} scores found, but missing matched metrics. Triggering matcher.")
+            logger.info(f"Model {art_id} has code_quality=0. Triggering matcher to find linked code.")
 
     # 2. Invoke scorer if scores missing OR matching needed
     if not scores or needs_matching:
@@ -904,6 +904,18 @@ def rate_model(art_id):
                 "an error while computing at least one metric."
             },
         )
+    else:
+        for metric, score in scores.items():
+            logger.info(f"Metric: {metric}, Score: {score}")
+            if score is None:
+                logger.warning(f"Score for metric '{metric}' is None.")
+                return make_response(
+                    500,
+                    {
+                        "error": "The artifact rating system encountered an error "
+                        "while computing at least one metric."
+                    },
+                )
 
     return make_response(200, scores)
 
