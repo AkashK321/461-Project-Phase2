@@ -250,7 +250,7 @@ def score_url(url: str, url_type: str) -> dict:
             try:
                 # 3. Enforce timeout here. 
                 # You can set different timeouts for different metrics if needed.
-                timeout_seconds = 5
+                timeout_seconds = 7
                 
                 val, lat = future.result(timeout=timeout_seconds)
                 
