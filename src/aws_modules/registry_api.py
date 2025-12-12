@@ -847,10 +847,7 @@ def rate_model(art_id):
 
     # Define metrics that come from matching/external artifacts
     MATCHED_METRICS = [
-        "code_quality", 
-        "bus_factor", 
-        "dataset_quality", 
-        "dataset_and_code_score"
+        "code_quality",
     ]
 
     # Check if we need to run the matching logic

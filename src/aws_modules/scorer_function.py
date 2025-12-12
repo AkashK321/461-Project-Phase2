@@ -8,10 +8,6 @@ import boto3
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-os.environ["HF_HOME"] = "/tmp/huggingface"
-os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
-os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
-
 from scorer.metrics.code_quality import get_code_quality
 from scorer.metrics.size import get_size_score
 from scorer.metrics.license import get_license_score
@@ -32,7 +28,9 @@ from aws_modules.db_utils import (
 )
 from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
 
-
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
