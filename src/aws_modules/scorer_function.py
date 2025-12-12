@@ -250,7 +250,7 @@ def score_url(url: str, url_type: str) -> dict:
             try:
                 # 3. Enforce timeout here. 
                 # You can set different timeouts for different metrics if needed.
-                timeout_seconds = 5 if metric_name == "code_quality" else 15
+                timeout_seconds = 5
                 
                 val, lat = future.result(timeout=timeout_seconds)
                 
@@ -260,17 +260,13 @@ def score_url(url: str, url_type: str) -> dict:
             except concurrent.futures.TimeoutError:
                 log.warning(f"Timeout: Metric '{metric_name}' took >{timeout_seconds}s for '{url}'")
                 
-                # 4. Handle default values for timeouts
-                if metric_name == "code_quality":
-                    calc_results[metric_name] = 0.5
-                else:
-                    calc_results[metric_name] = 0.0 # Default for others
+                calc_results[metric_name] = 0.5
                 
                 latencies[f"{metric_name}_latency"] = float(timeout_seconds * 1000)
 
             except Exception as e:
                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
-                calc_results[metric_name] = None
+                calc_results[metric_name] = 0.0
                 latencies[f"{metric_name}_latency"] = 0.0
 
     # --- Prepare Values with Defaults ---

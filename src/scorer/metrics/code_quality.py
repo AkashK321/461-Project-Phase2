@@ -488,6 +488,9 @@ def get_code_quality(url: str, url_type: str) -> Tuple[float, int]:
     score = 0.0
     if url_type == "code":
         score = _check_code_repo_quality(url)
+    else:
+        logger.warning(f"Unsupported URL type for code quality: {url_type}")
+        score = 0.5
     latency = int((time.time() - start) * 1000)
     logger.info(f"Code quality check finished. Score: {score}, Latency: {latency}ms")
     return score, latency

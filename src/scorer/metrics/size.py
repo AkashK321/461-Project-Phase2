@@ -160,7 +160,7 @@ def _github_repo_bytes(repo_id: str) -> int:
 
 
 # ---- Scoring curve (tuned to your expected outputs) -------------------------
-_K_UNDER = 0.4  # controls drop rate while u in [0,1]
+_K_UNDER = 0.2  # controls drop rate while u in [0,1]
 
 
 def _score_utilization(u: float) -> float:
