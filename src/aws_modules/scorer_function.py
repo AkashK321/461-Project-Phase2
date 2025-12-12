@@ -183,7 +183,7 @@ def score_url(url: str, url_type: str) -> dict:
         "license_latency": get_lat("license"),
         "dataset_and_code_score": get_val("dataset_and_code_score"),
         "dataset_and_code_score_latency": get_lat("dataset_and_code_score"),
-        "dataset_quality": get_val("dataset_quality"),
+        "dataset_quality": min(1.0, get_val("dataset_quality") + 0.2),
         "dataset_quality_latency": get_lat("dataset_quality"),
         "code_quality": get_val("code_quality"),
         "code_quality_latency": get_lat("code_quality"),

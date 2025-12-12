@@ -41,7 +41,7 @@ SYSTEM_PROMPT = (
     "Analyze the provided model documentation (README) "
     "and assign harsh scores from 0.0-1.0 that "
     "penalize missing, vague, or incomplete information. Do not ever reward absence "
-    "of information.\n"
+    "of information. Be very strict with scoring.\n"
     "If a valid dataset is found, proceed with evaluation, "
     "otherwise return a score of 0.0.\n"
     "The dataset quality should be judged based on size, "
