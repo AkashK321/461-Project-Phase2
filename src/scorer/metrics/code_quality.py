@@ -17,6 +17,15 @@ import re
 import logging
 
 logger = logging.getLogger(__name__)
+# Setup Auth
+gh_token = os.getenv("GITHUB_TOKEN")
+headers = {
+    "Accept": "application/vnd.github.v3+json",
+}
+if gh_token:
+    headers["Authorization"] = f"token {gh_token}"
+else:
+    logger.warning("No GITHUB_TOKEN set. Rate limits will be strict (60/hr).")
 
 # --- FILTERS ---
 EXCLUDED_EXTS = {
@@ -294,13 +303,13 @@ def _check_code_repo_quality(code_url: str) -> float:
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
         logger.info(f"Attempting download from {zip_url}")
         try:
-            r = requests.get(zip_url, stream=True, timeout=15)
+            r = requests.get(zip_url, headers=headers, stream=True, timeout=15)
             if r.status_code != 200:
                 zip_url = (
-                    f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
+                    f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip"
                 )
                 logger.info(f"Main failed, trying master: {zip_url}")
-                r = requests.get(zip_url, stream=True, timeout=15)
+                r = requests.get(zip_url, headers=headers, stream=True, timeout=15)
         except Exception as e:
             logger.warning(f"Error downloading code repository zip from {zip_url}: {e}")
             return 0.0
