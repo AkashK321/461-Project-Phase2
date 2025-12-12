@@ -848,6 +848,8 @@ def rate_model(art_id):
     # Define metrics that come from matching/external artifacts
     MATCHED_METRICS = [
         "code_quality",
+        "dataset_and_code_score",
+        "dataset_quality",
     ]
 
     # Check if we need to run the matching logic
@@ -903,8 +905,6 @@ def rate_model(art_id):
                         for m in MATCHED_METRICS:
                             if m in new_scores:
                                 scores[m] = new_scores[m]
-                        
-                        # (NET SCORE RECALCULATION REMOVED PER INSTRUCTION)
                     else:
                         # No old scores, take everything
                         scores = new_scores
