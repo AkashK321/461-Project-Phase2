@@ -58,7 +58,7 @@ dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 
 # Configure Lambda client with a timeout (Keep at 90s)
-lambda_config = Config(read_timeout=90, connect_timeout=30, retries={"max_attempts": 0})
+lambda_config = Config(read_timeout=420, connect_timeout=30, retries={"max_attempts": 0})
 lambda_client = boto3.client("lambda", config=lambda_config)
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
