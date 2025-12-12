@@ -3,6 +3,12 @@ AWS Lambda handler for the scorer.
 """
 
 import os
+
+
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
+
 import json
 import boto3
 import logging
@@ -28,9 +34,6 @@ from aws_modules.db_utils import (
 )
 from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
 
-os.environ["HF_HOME"] = "/tmp/huggingface"
-os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
-os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 
 MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
