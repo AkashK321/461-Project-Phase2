@@ -289,8 +289,8 @@ def parse_github_url(url: str) -> Tuple[str, str, str, str]:
 def _check_code_repo_quality(code_url: str) -> float:
     logger.info(f"Checking code repo quality for: {code_url}")
     temp_dir = tempfile.mkdtemp()
-    MAX_FILES = 150
-    MAX_TIME = 10.0
+    MAX_FILES = 50
+    MAX_TIME = 5
 
     try:
         owner, repo, branch, subpath = parse_github_url(code_url)
@@ -303,13 +303,13 @@ def _check_code_repo_quality(code_url: str) -> float:
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
         logger.info(f"Attempting download from {zip_url}")
         try:
-            r = requests.get(zip_url, headers=headers, stream=True, timeout=15)
+            r = requests.get(zip_url, headers=headers, stream=True, timeout=5)
             if r.status_code != 200:
                 zip_url = (
                     f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip"
                 )
                 logger.info(f"Main failed, trying master: {zip_url}")
-                r = requests.get(zip_url, headers=headers, stream=True, timeout=15)
+                r = requests.get(zip_url, headers=headers, stream=True, timeout=5)
         except Exception as e:
             logger.warning(f"Error downloading code repository zip from {zip_url}: {e}")
             return 0.0
