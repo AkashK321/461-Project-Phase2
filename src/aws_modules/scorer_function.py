@@ -235,6 +235,7 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
             url, url_type
         )
+        tasks["get_code_quality"] = lambda: get_code_quality(url, url_type)
 
     # Temporary storage for calculation
     calc_results = {}
