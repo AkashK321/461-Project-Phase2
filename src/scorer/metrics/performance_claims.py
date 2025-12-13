@@ -109,7 +109,7 @@ def _check_code_repo_performance(code_url: str) -> float:
         score = _keyword_score(readme_text, keywords)
 
         if found_test_script:
-            score = max(score, 0.7)
+            score = max(score, 0.9)
 
     # remove the repo
     finally:
@@ -228,7 +228,7 @@ def _check_model_card_performance(model_url: str) -> float:
                         counted_keywords.add(kw)
                         # print(kw)
 
-        score = min(keyword_count / 10, 1.0)
+        score = min(keyword_count / 5, 1.0)
 
         # print(f"Number of performance keywords = {keyword_count}")
 
@@ -250,5 +250,5 @@ def _keyword_score(text: str, keywords: list[str]) -> float:
     for keyword in keywords:
         if keyword in text:
             matches += 1
-    score = min(1.0, matches / len(keywords))
+    score = min(1.0, matches / (len(keywords) / 2))
     return score

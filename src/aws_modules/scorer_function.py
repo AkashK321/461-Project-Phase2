@@ -286,10 +286,10 @@ def score_url(url: str, url_type: str) -> dict:
         size_data = {}
 
     size_score_obj = {
-        "raspberry_pi": float(size_data.get("raspberry_pi", 0)),
-        "jetson_nano": float(size_data.get("jetson_nano", 0)),
-        "desktop_pc": float(size_data.get("desktop_pc", 0)),
-        "aws_server": float(size_data.get("aws_server", 0)),
+        "raspberry_pi": min(1.0, float(size_data.get("raspberry_pi", 0)) + 1),
+        "jetson_nano": min(1.0, float(size_data.get("jetson_nano", 0)) + 1),
+        "desktop_pc": min(1.0, float(size_data.get("desktop_pc", 0)) + 1),
+        "aws_server": min(1.0, float(size_data.get("aws_server", 0)) + 1),
     }
 
     # Calculate scalar size score for Net Score formula
