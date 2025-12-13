@@ -1023,6 +1023,8 @@ def handler(event, context):
 
     method, path, body, query_params = parse_event(event)
 
+    logger.info(f"event: {event}")
+
     if method == "OPTIONS":
         return make_response(200, {"message": "CORS preflight successful"})
 

@@ -16,6 +16,7 @@ os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 import json
 import boto3
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scorer.utils.logging import set_run_id
 from aws_modules.db_utils import (
@@ -242,6 +243,9 @@ def score_url(url: str, url_type: str) -> dict:
     calc_results = {}
     latencies = {}
 
+    start_time = time.time()
+    GLOBAL_TIMEOUT = 200
+
     # --- Execute Metrics ---
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         # 1. Submit all tasks immediately
@@ -249,22 +253,31 @@ def score_url(url: str, url_type: str) -> dict:
         
         # 2. Iterate through the specific futures we submitted
         for future, metric_name in future_to_metric.items():
+            elapsed = time.time() - start_time
+            remaining = GLOBAL_TIMEOUT - elapsed
+            if remaining <= 0:
+                log.warning(f"Global timeout reached. Skipping {metric_name}")
+                calc_results[metric_name] = 0.5
+                latencies[f"{metric_name}_latency"] = 0.0
+                continue
+
             try:
                 # 3. Enforce timeout here. 
                 # You can set different timeouts for different metrics if needed.
-                timeout_seconds = 5 if metric_name == "code_quality" else 15
+                metric_timeout = 5 if metric_name == "code_quality" else 30
+                wait_time = min(metric_timeout, remaining)
                 
-                val, lat = future.result(timeout=timeout_seconds)
+                val, lat = future.result(timeout=wait_time)
                 
                 calc_results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
 
             except concurrent.futures.TimeoutError:
-                log.warning(f"Timeout: Metric '{metric_name}' took >{timeout_seconds}s for '{url}'")
+                log.warning(f"Timeout: Metric '{metric_name}' took >{wait_time}s for '{url}'")
                 
                 calc_results[metric_name] = 0.5
                 
-                latencies[f"{metric_name}_latency"] = float(timeout_seconds * 1000)
+                latencies[f"{metric_name}_latency"] = float(wait_time * 1000)
 
             except Exception as e:
                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
@@ -376,9 +389,12 @@ def handler(event, context):
     :return: A dictionary with a status code and a body containing the scoring results.
     """
     body_str = event.get("body", "{}")
-    body_dict = json.loads(body_str)
+    try:
+        body_dict = json.loads(body_str)
+    except (TypeError, json.JSONDecodeError):
+        body_dict = {}
 
-    urls = body_dict.get("urls")
+    urls = event.get("urls") or body_dict.get("urls")
 
     run_id = set_run_id(context.aws_request_id)
     log.info("Handler started", extra={"run_id": run_id, "event": event})
@@ -389,7 +405,6 @@ def handler(event, context):
     #     test_result = test_s3_operations()
     #     return {"statusCode": 200, "body": json.dumps(test_result, indent=2)}
 
-    urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:
         return {
             "statusCode": 400,
