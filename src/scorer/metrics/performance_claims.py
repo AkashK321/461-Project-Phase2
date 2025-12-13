@@ -2,11 +2,12 @@
 Evaluate model performance claims.
 """
 
+import json
 import os
 import shutil
 import tempfile
 import time
-from typing import Tuple
+from typing import Optional, Tuple
 import requests
 import zipfile
 import io
@@ -15,8 +16,199 @@ from dotenv import load_dotenv
 from pathlib import Path
 import re
 import logging
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = (
+    "You are an expert software engineer evaluating the performance claims "
+    "of a machine learning model.\n"
+    "Given the README of a model, assess the documentation for performance claims.\n"
+    "Analyze the provided model documentation (README) "
+    "and assign harsh scores from 0.0-1.0 that "
+    "penalize missing, vague, or incomplete information. Do not ever reward absence "
+    "of information. Be very strict with scoring.\n"
+    "The performance claims should be judged on aspects such as "
+    "detailed metrics, benchmarking results, evaluation procedures, "
+    "cleanliness, relevance, and proper formatting.\n"
+    "Normalize the score [0,1] based on quality indicators "
+    "such as the critera mentioned above.\n"
+    "Return STRICT JSON with two fields:\n"
+    '{"score": <float between 0 and 1>, "rationale": "<<=200 chars explanation>"}\n\n'
+    "Do NOT include anything else."
+)
+USER_PROMPT_TEMPLATE = "README (truncated if very long)\n----------------\n{readme}\n"
+
+
+def _extract_json_first(s: str) -> dict | None:
+    if not s:
+        return None
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    quote = ""
+    for i, ch in enumerate(s):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == quote:
+                in_str = False
+            continue
+        if ch == '"' or ch == "'":
+            in_str = True
+            quote = ch
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    snippet = s[start : i + 1]
+                    try:
+                        return json.loads(snippet)
+                    except Exception:
+                        start = -1
+                        continue
+    return None
+
+def _session_with_retry() -> requests.Session:
+    logger.info("Creating session with retries")
+    s = requests.Session()
+    r = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["POST"]),
+    )
+    s.mount("https://", HTTPAdapter(max_retries=r))
+    s.mount("http://", HTTPAdapter(max_retries=r))
+    return s
+
+def _ask_llm(readme: str) -> Optional[float]:
+    api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    base = os.getenv("GENAI_BASE_URL", "https://genai.rcac.purdue.edu").rstrip("/")
+    path = os.getenv("GENAI_PATH", "/api/chat/completions")
+    url = f"{base}{path}"
+    model = os.getenv("GENAI_MODEL", "").strip() or "deepseek-r1:7b"
+
+    def _build_payload(user_prompt: str):
+        return {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": 220,
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "response_format": {"type": "json_object"},
+        }
+
+    def _clean_text(txt: str) -> str:
+        if not txt:
+            return ""
+        txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.DOTALL)
+        txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", txt.strip(), flags=re.IGNORECASE)
+        return txt.strip()
+
+    def _parse_or_salvage(txt: str) -> Optional[float]:
+        txt = _clean_text(txt)
+        parsed = _extract_json_first(txt)
+        if parsed and isinstance(parsed, dict) and "score" in parsed:
+            try:
+                return float(parsed["score"])
+            except Exception:
+                pass
+        m = re.search(r"\b(0(?:\.\d+)?|1(?:\.0+)?)\b", txt)
+        if m:
+            try:
+                return float(m.group(1))
+            except Exception:
+                return None
+        return None
+
+    readme = (readme or "").strip()
+    if len(readme) > 20000:
+        readme = readme[:20000] + "\n\n[TRUNCATED]"
+    user_prompt = USER_PROMPT_TEMPLATE.format(readme=readme)
+
+    payload = _build_payload(user_prompt)
+    session = _session_with_retry()
+    try:
+        resp = session.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            data=json.dumps(payload),
+            timeout=90,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        score = _parse_or_salvage(content)
+        if isinstance(score, float):
+            return max(0.0, min(1.0, score))
+        else:
+            # Second pass: ultra-strict re-ask (short, no repo text again)
+            user_prompt_2 = (
+                "Output EXACTLY this JSON (no analysis, no extra keys, no markdown): "
+                '{"score": <float 0..1>, "rationale": "<=200 chars>"}'
+            )
+            payload2 = _build_payload(user_prompt_2)
+            logger.info(f"Dataset quality Second pass payload: {json.dumps(payload2)}")
+            try:
+                resp2 = session.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    data=json.dumps(payload2),
+                    timeout=60,
+                )
+                logger.info(f"Dataset quality Second pass response: {resp2}")
+            except Exception:
+                return None
+
+            if resp2.status_code != 200:
+                return None
+
+            try:
+                data2 = resp2.json()
+            except Exception:
+                return None
+
+            txt2 = None
+            try:
+                txt2 = data2["choices"][0]["message"]["content"]
+            except Exception:
+                txt2 = data2.get("output_text") or data2.get("text") or ""
+
+            logger.info(f"Second pass content: {txt2}")
+
+            score2 = _parse_or_salvage(txt2)
+            logger.info(f"Second pass extracted score: {score2}")
+            if isinstance(score2, float):
+                return max(0.0, min(1.0, score2))
+
+            return None
+    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        logger.error(f"LLM query failed: {e}")
+        return None
 
 
 def get_performance_claims(url: str, url_type: str) -> Tuple[float, int]:
@@ -26,14 +218,21 @@ def get_performance_claims(url: str, url_type: str) -> Tuple[float, int]:
 
     start_time = time.time()
     score = 0.0
+    readme_text = ""
     logger.info(f"Evaluating performance claims for {url_type} URL: {url}")
 
     if url_type == "code":
         # clone GitHub repo and check readme for performance claims
-        score = _check_code_repo_performance(url)
+        score, readme_text = _check_code_repo_performance(url)
     elif url_type == "model":
         # check Hugging face model card for performance claims
-        score = _check_model_card_performance(url)
+        score, readme_text = _check_model_card_performance(url)
+
+    if score < 0.3:
+        logger.info(f"Heuristic score {score} < 0.3. Querying LLM.")
+        llm_score = _ask_llm(readme_text)
+        if llm_score is not None:
+            score = llm_score
 
     logger.info(f"Model performance claims score: {score}")
 
@@ -42,13 +241,14 @@ def get_performance_claims(url: str, url_type: str) -> Tuple[float, int]:
     return score, latency
 
 
-def _check_code_repo_performance(code_url: str) -> float:
+def _check_code_repo_performance(code_url: str) -> Tuple[float, str]:
     """
     Function to check the code repo for performance claims without using GitPython.
     Downloads the repo as a zip archive.
     """
 
     score = 0.0
+    readme_text = ""
     temp_dir = tempfile.mkdtemp()
 
     try:
@@ -76,11 +276,10 @@ def _check_code_repo_performance(code_url: str) -> float:
 
         if not download_success:
             logger.warning(f"Cannot download repo archive from: {code_url}")
-            return 0.0
+            return 0.0, ""
 
         # 3. Locate files (GitHub zips create a nested root folder)
         # We traverse the temp_dir to find content regardless of the root folder name
-        readme_text = ""
         found_test_script = False
 
         for root, dirs, files in os.walk(temp_dir):
@@ -95,7 +294,7 @@ def _check_code_repo_performance(code_url: str) -> float:
                             encoding="utf-8",
                             errors="ignore",
                         ) as f:
-                            readme_text = f.read().lower()
+                            readme_text = f.read()
                     except Exception:
                         logger.warning("Cannot open readme")
 
@@ -115,10 +314,10 @@ def _check_code_repo_performance(code_url: str) -> float:
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    return score
+    return score, readme_text
 
 
-def _check_model_card_performance(model_url: str) -> float:
+def _check_model_card_performance(model_url: str) -> Tuple[float, str]:
     """
     Function to check the model card/README on Hugging Face for performance claims.
     """
@@ -127,6 +326,7 @@ def _check_model_card_performance(model_url: str) -> float:
     hf_token = os.getenv("HF_TOKEN")
 
     score = 0.0
+    text = ""
 
     try:
         # # extract repo_id from url
@@ -153,7 +353,7 @@ def _check_model_card_performance(model_url: str) -> float:
 
         # read full text
         with open(readme_path, "r", encoding="utf-8") as f:
-            text = f.read().lower()
+            text = f.read()
 
         logger.info(f"Downloaded README.md for model ID: {model_id}")
 
@@ -235,7 +435,7 @@ def _check_model_card_performance(model_url: str) -> float:
     except Exception as e:
         print(f"Error checking model card: {e}")
 
-    return round(score, 2)
+    return round(score, 2), text
 
 
 def _keyword_score(text: str, keywords: list[str]) -> float:
