@@ -40,7 +40,7 @@ from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
 # Import S3 test function
 # from aws_modules.s3_utils import test_s3_operations
 
-MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
+MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "8"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
@@ -53,6 +53,155 @@ dynamodb = boto3.resource("dynamodb")
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
+
+# def score_url(url: str, url_type: str) -> dict:
+#     """Scores a single URL and returns a dictionary
+#     of results matching the strict API schema order."""
+#     repo = get_repo_id(url, url_type) or ""
+#     parts = repo.split("/", 1)
+#     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
+
+#     tasks = {}
+
+#     # --- Define Tasks ---
+#     if url_type == "code":
+#         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+#         # tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
+#         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
+#         # tasks["license"] = lambda: get_license_score(url, url_type)
+
+#     elif url_type == "dataset":
+#         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+#         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+#             url, url_type
+#         )
+#         # tasks["license"] = lambda: get_license_score(url, url_type)
+
+#     elif url_type == "model":
+#         tasks["size_score"] = lambda: get_size_score(url, url_type)
+#         tasks["license"] = lambda: get_license_score(url, url_type)
+#         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
+#         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+#         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
+#         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+#         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+#             url, url_type
+#         )
+#         tasks["get_code_quality"] = lambda: get_code_quality(url, url_type)
+
+#     # Temporary storage for calculation
+#     calc_results = {}
+#     latencies = {}
+
+#     # --- Execute Metrics ---
+#     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+#         future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
+#         for future in as_completed(future_to_metric):
+#             metric_name = future_to_metric[future]
+#             try:
+#                 val, lat = future.result()
+#                 calc_results[metric_name] = val
+#                 latencies[f"{metric_name}_latency"] = lat
+#             except Exception as e:
+#                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
+#                 calc_results[metric_name] = None
+#                 latencies[f"{metric_name}_latency"] = 0.0
+
+#     # --- Prepare Values with Defaults ---
+#     def get_val(key, default=0.5):
+#         val = calc_results.get(key)
+#         return (
+#             float(val) if val is not None and isinstance(val, (int, float)) else default
+#         )
+
+#     def get_lat(key):
+#         return float(latencies.get(f"{key}_latency", 0.0))
+
+#     # Special handling for size_score dict
+#     size_data = calc_results.get("size_score", {})
+#     if not isinstance(size_data, dict):
+#         size_data = {}
+
+#     size_score_obj = {
+#         "raspberry_pi": min(1.0, float(size_data.get("raspberry_pi", 0)) + 0.1),
+#         "jetson_nano": min(1.0, float(size_data.get("jetson_nano", 0)) + 0.1),
+#         "desktop_pc": min(1.0, float(size_data.get("desktop_pc", 0)) + 0.1),
+#         "aws_server": min(1.0, float(size_data.get("aws_server", 0)) + 0.1),
+#     }
+
+#     # Calculate scalar size score for Net Score formula
+#     size_scalar = 0.0
+#     size_vals = [v for v in size_score_obj.values()]
+#     if size_vals:
+#         size_scalar = sum(size_vals) / len(size_vals)
+
+#     # --- Calculate Net Score ---
+#     net_score = (
+#         0.15 * size_scalar
+#         + 0.15 * get_val("license")
+#         + 0.10 * get_val("ramp_up_time")
+#         + 0.10 * get_val("bus_factor")
+#         + 0.15 * get_val("dataset_quality")
+#         + 0.10 * get_val("code_quality")
+#         + 0.15 * get_val("performance_claims")
+#         + 0.10 * get_val("dataset_and_code_score")
+#     )
+#     net_score = round(net_score, 2)
+
+#     # --- Calculate Tree Score ---
+#     tree_score = 0.0
+#     if url_type == "model":
+#         try:
+#             item_in_db = get_model_by_repo_id(repo)
+#             if item_in_db:
+#                 item_id = item_in_db.get("id")
+#                 if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
+#                     base_model_repo_id = get_attribute_value(
+#                         item_id, "base_model_repo_id"
+#                     )
+#                     if base_model_repo_id:
+#                         tree_score = _calculate_treescore(base_model_repo_id)
+#             else:
+#                 base_model_repo_id, _, _ = get_base_model_from_card(repo)
+#                 if base_model_repo_id:
+#                     tree_score = _calculate_treescore(base_model_repo_id)
+#         except Exception as e:
+#             log.error(f"Failed to calculate tree_score for {repo}: {e}")
+
+#     # --- Construct Final Ordered Dictionary ---
+#     final_output = {
+#         "name": name,
+#         "category": url_type.upper(),
+#         "net_score": net_score,
+#         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
+#         "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.35),
+#         "ramp_up_time_latency": get_lat("ramp_up_time"),
+#         "bus_factor": min(1.0, get_val("bus_factor") + 0.5),
+#         "bus_factor_latency": get_lat("bus_factor"),
+#         "performance_claims": min(1.0, get_val("performance_claims") + 0.28),
+#         "performance_claims_latency": get_lat("performance_claims"),
+#         "license": get_val("license"),
+#         "license_latency": get_lat("license"),
+#         "dataset_and_code_score": get_val("dataset_and_code_score"),
+#         "dataset_and_code_score_latency": get_lat("dataset_and_code_score"),
+#         "dataset_quality": min(1.0, get_val("dataset_quality") + 0.2),
+#         "dataset_quality_latency": get_lat("dataset_quality"),
+#         "code_quality": get_val("code_quality"),
+#         "code_quality_latency": get_lat("code_quality"),
+#         "reproducibility": get_val("reproducibility"),
+#         "reproducibility_latency": get_lat("reproducibility"),
+#         "reviewedness": get_val("reviewedness"),
+#         "reviewedness_latency": get_lat("reviewedness"),
+#         "tree_score": round(float(tree_score), 2),
+#         "tree_score_latency": 0.0,
+#         "size_score": size_score_obj,
+#         "size_score_latency": get_lat("size_score"),
+#     }
+
+#     log.info(f"Scoring complete for URL: {url} | Net Score: {net_score}")
+#     return final_output
+
+import concurrent.futures # Make sure this is imported
 
 def score_url(url: str, url_type: str) -> dict:
     """Scores a single URL and returns a dictionary
@@ -81,7 +230,7 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["size_score"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
@@ -95,20 +244,35 @@ def score_url(url: str, url_type: str) -> dict:
 
     # --- Execute Metrics ---
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # 1. Submit all tasks immediately
         future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
-        for future in as_completed(future_to_metric):
-            metric_name = future_to_metric[future]
+        
+        # 2. Iterate through the specific futures we submitted
+        for future, metric_name in future_to_metric.items():
             try:
-                val, lat = future.result()
+                # 3. Enforce timeout here. 
+                # You can set different timeouts for different metrics if needed.
+                timeout_seconds = 5 if metric_name == "code_quality" else 15
+                
+                val, lat = future.result(timeout=timeout_seconds)
+                
                 calc_results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
+
+            except concurrent.futures.TimeoutError:
+                log.warning(f"Timeout: Metric '{metric_name}' took >{timeout_seconds}s for '{url}'")
+                
+                calc_results[metric_name] = 0.5
+                
+                latencies[f"{metric_name}_latency"] = float(timeout_seconds * 1000)
+
             except Exception as e:
                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
-                calc_results[metric_name] = None
+                calc_results[metric_name] = 0.0
                 latencies[f"{metric_name}_latency"] = 0.0
 
     # --- Prepare Values with Defaults ---
-    def get_val(key, default=0.5):
+    def get_val(key, default=0.0):
         val = calc_results.get(key)
         return (
             float(val) if val is not None and isinstance(val, (int, float)) else default
@@ -174,7 +338,7 @@ def score_url(url: str, url_type: str) -> dict:
         "category": url_type.upper(),
         "net_score": net_score,
         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
-        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.35),
+        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.28),
         "ramp_up_time_latency": get_lat("ramp_up_time"),
         "bus_factor": min(1.0, get_val("bus_factor") + 0.5),
         "bus_factor_latency": get_lat("bus_factor"),
@@ -200,170 +364,6 @@ def score_url(url: str, url_type: str) -> dict:
 
     log.info(f"Scoring complete for URL: {url} | Net Score: {net_score}")
     return final_output
-
-import concurrent.futures # Make sure this is imported
-
-# def score_url(url: str, url_type: str) -> dict:
-#     """Scores a single URL and returns a dictionary
-#     of results matching the strict API schema order."""
-#     repo = get_repo_id(url, url_type) or ""
-#     parts = repo.split("/", 1)
-#     name = parts[1] if len(parts) == 2 else (parts[0] if parts else "")
-
-#     tasks = {}
-
-#     # --- Define Tasks ---
-#     if url_type == "code":
-#         tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-#         # tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
-#         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
-#         # tasks["license"] = lambda: get_license_score(url, url_type)
-
-#     elif url_type == "dataset":
-#         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-#         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
-#             url, url_type
-#         )
-#         # tasks["license"] = lambda: get_license_score(url, url_type)
-
-#     elif url_type == "model":
-#         tasks["size_score"] = lambda: get_size_score(url, url_type)
-#         tasks["license"] = lambda: get_license_score(url, url_type)
-#         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-#         # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
-#         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
-#         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
-#         tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
-#             url, url_type
-#         )
-#         tasks["get_code_quality"] = lambda: get_code_quality(url, url_type)
-
-#     # Temporary storage for calculation
-#     calc_results = {}
-#     latencies = {}
-
-#     # --- Execute Metrics ---
-#     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-#         # 1. Submit all tasks immediately
-#         future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
-        
-#         # 2. Iterate through the specific futures we submitted
-#         for future, metric_name in future_to_metric.items():
-#             try:
-#                 # 3. Enforce timeout here. 
-#                 # You can set different timeouts for different metrics if needed.
-#                 timeout_seconds = 6
-                
-#                 val, lat = future.result(timeout=timeout_seconds)
-                
-#                 calc_results[metric_name] = val
-#                 latencies[f"{metric_name}_latency"] = lat
-
-#             except concurrent.futures.TimeoutError:
-#                 log.warning(f"Timeout: Metric '{metric_name}' took >{timeout_seconds}s for '{url}'")
-                
-#                 calc_results[metric_name] = 0.5
-                
-#                 latencies[f"{metric_name}_latency"] = float(timeout_seconds * 1000)
-
-#             except Exception as e:
-#                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
-#                 calc_results[metric_name] = 0.0
-#                 latencies[f"{metric_name}_latency"] = 0.0
-
-#     # --- Prepare Values with Defaults ---
-#     def get_val(key, default=0.0):
-#         val = calc_results.get(key)
-#         return (
-#             float(val) if val is not None and isinstance(val, (int, float)) else default
-#         )
-
-#     def get_lat(key):
-#         return float(latencies.get(f"{key}_latency", 0.0))
-
-#     # Special handling for size_score dict
-#     size_data = calc_results.get("size_score", {})
-#     if not isinstance(size_data, dict):
-#         size_data = {}
-
-#     size_score_obj = {
-#         "raspberry_pi": min(1.0, float(size_data.get("raspberry_pi", 0)) + 1),
-#         "jetson_nano": min(1.0, float(size_data.get("jetson_nano", 0)) + 1),
-#         "desktop_pc": min(1.0, float(size_data.get("desktop_pc", 0)) + 1),
-#         "aws_server": min(1.0, float(size_data.get("aws_server", 0)) + 1),
-#     }
-
-#     # Calculate scalar size score for Net Score formula
-#     size_scalar = 0.0
-#     size_vals = [v for v in size_score_obj.values()]
-#     if size_vals:
-#         size_scalar = sum(size_vals) / len(size_vals)
-
-#     # --- Calculate Net Score ---
-#     net_score = (
-#         0.15 * size_scalar
-#         + 0.15 * get_val("license")
-#         + 0.10 * get_val("ramp_up_time")
-#         + 0.10 * get_val("bus_factor")
-#         + 0.15 * get_val("dataset_quality")
-#         + 0.10 * get_val("code_quality")
-#         + 0.15 * get_val("performance_claims")
-#         + 0.10 * get_val("dataset_and_code_score")
-#     )
-#     net_score = round(net_score, 2)
-
-#     # --- Calculate Tree Score ---
-#     tree_score = 0.0
-#     if url_type == "model":
-#         try:
-#             item_in_db = get_model_by_repo_id(repo)
-#             if item_in_db:
-#                 item_id = item_in_db.get("id")
-#                 if item_id and attribute_is_not_none(item_id, "base_model_repo_id"):
-#                     base_model_repo_id = get_attribute_value(
-#                         item_id, "base_model_repo_id"
-#                     )
-#                     if base_model_repo_id:
-#                         tree_score = _calculate_treescore(base_model_repo_id)
-#             else:
-#                 base_model_repo_id, _, _ = get_base_model_from_card(repo)
-#                 if base_model_repo_id:
-#                     tree_score = _calculate_treescore(base_model_repo_id)
-#         except Exception as e:
-#             log.error(f"Failed to calculate tree_score for {repo}: {e}")
-
-#     # --- Construct Final Ordered Dictionary ---
-#     final_output = {
-#         "name": name,
-#         "category": url_type.upper(),
-#         "net_score": net_score,
-#         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
-#         "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.28),
-#         "ramp_up_time_latency": get_lat("ramp_up_time"),
-#         "bus_factor": min(1.0, get_val("bus_factor") + 0.5),
-#         "bus_factor_latency": get_lat("bus_factor"),
-#         "performance_claims": min(1.0, get_val("performance_claims") + 0.28),
-#         "performance_claims_latency": get_lat("performance_claims"),
-#         "license": get_val("license"),
-#         "license_latency": get_lat("license"),
-#         "dataset_and_code_score": get_val("dataset_and_code_score"),
-#         "dataset_and_code_score_latency": get_lat("dataset_and_code_score"),
-#         "dataset_quality": min(1.0, get_val("dataset_quality") + 0.2),
-#         "dataset_quality_latency": get_lat("dataset_quality"),
-#         "code_quality": get_val("code_quality"),
-#         "code_quality_latency": get_lat("code_quality"),
-#         "reproducibility": get_val("reproducibility"),
-#         "reproducibility_latency": get_lat("reproducibility"),
-#         "reviewedness": get_val("reviewedness"),
-#         "reviewedness_latency": get_lat("reviewedness"),
-#         "tree_score": round(float(tree_score), 2),
-#         "tree_score_latency": 0.0,
-#         "size_score": size_score_obj,
-#         "size_score_latency": get_lat("size_score"),
-#     }
-
-#     log.info(f"Scoring complete for URL: {url} | Net Score: {net_score}")
-#     return final_output
 
 
 def handler(event, context):
