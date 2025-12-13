@@ -134,8 +134,10 @@ def version_satisfies(ver: str, constraint: str) -> bool:
 
 
 def parse_event(event):
-    path = event.get("rawPath", "") or "/"
-    method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
+    path = event.get("rawPath", "") or event.get("path") or "/"
+    method = event.get("requestContext", {}).get("http", {}).get("method", "GET") or event.get(
+        "httpMethod", "GET"
+    )
     query_params = event.get("queryStringParameters") or {}
     is_b64 = event.get("isBase64Encoded", False)
     raw_body = event.get("body") or ""
