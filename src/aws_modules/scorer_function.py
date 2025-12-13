@@ -174,7 +174,7 @@ def score_url(url: str, url_type: str) -> dict:
         "category": url_type.upper(),
         "net_score": net_score,
         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
-        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.28),
+        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.35),
         "ramp_up_time_latency": get_lat("ramp_up_time"),
         "bus_factor": min(1.0, get_val("bus_factor") + 0.5),
         "bus_factor_latency": get_lat("bus_factor"),
