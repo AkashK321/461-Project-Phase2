@@ -244,7 +244,7 @@ def score_url(url: str, url_type: str) -> dict:
     latencies = {}
 
     start_time = time.time()
-    GLOBAL_TIMEOUT = 200
+    GLOBAL_TIMEOUT = 29
 
     # --- Execute Metrics ---
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -264,7 +264,7 @@ def score_url(url: str, url_type: str) -> dict:
             try:
                 # 3. Enforce timeout here. 
                 # You can set different timeouts for different metrics if needed.
-                metric_timeout = 5 if metric_name == "code_quality" else 30
+                metric_timeout = 2 if metric_name == "code_quality" else 15
                 wait_time = min(metric_timeout, remaining)
                 
                 val, lat = future.result(timeout=wait_time)
