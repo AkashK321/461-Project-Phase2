@@ -8,12 +8,10 @@ import logging
 import os
 import time
 import re
-import logging
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login, hf_hub_download
 from .base import get_repo_id
 
-logger = logging.getLogger(__name__)
 
 load_dotenv()
 HF_API = HfApi()

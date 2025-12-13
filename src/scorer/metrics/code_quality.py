@@ -417,7 +417,8 @@ def _check_code_repo_quality(code_url: str) -> float:
         else:
             complexity = lizard_score
         logger.info(
-            f"Complexity score: {complexity} (Radon: {radon_score}, Lizard: {lizard_score})"
+            f"Complexity score: {complexity} \
+                (Radon: {radon_score}, Lizard: {lizard_score})"
         )
 
         # 3. Testability

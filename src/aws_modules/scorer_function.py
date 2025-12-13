@@ -17,7 +17,7 @@ import json
 import boto3
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from scorer.utils.logging import set_run_id
 from aws_modules.db_utils import (
     attribute_is_not_none,
@@ -271,7 +271,8 @@ def handler(event, context):
     for url in urls:
         url_type = classify_url(url)
 
-        # Fallback: If classification failed but it looks like a GitHub URL, treat as code.
+        # Fallback: If classification failed but it looks
+        # like a GitHub URL, treat as code.
         if (not url_type or url_type == "unknown") and "github.com" in url:
             url_type = "code"
 
