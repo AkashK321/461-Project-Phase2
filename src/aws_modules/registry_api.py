@@ -305,7 +305,7 @@ def ingest_artifact(artifact_type, payload):
 
     # --- Quality Gate ---
     metrics_map = {
-        "code": ["code_quality", "bus_factor"],
+        "code": ["code_quality"],
         "dataset": ["dataset_quality", "dataset_and_code_score"],
         "model": [
             "size_score",
