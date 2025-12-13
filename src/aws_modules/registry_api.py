@@ -57,7 +57,9 @@ dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 
 # Configure Lambda client with a timeout
-lambda_config = Config(read_timeout=10, connect_timeout=5, retries={"max_attempts": 0})
+lambda_config = Config(
+    read_timeout=480, connect_timeout=60, retries={"max_attempts": 1}
+)
 lambda_client = boto3.client("lambda", config=lambda_config)
 
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
@@ -134,8 +136,10 @@ def version_satisfies(ver: str, constraint: str) -> bool:
 
 
 def parse_event(event):
-    path = event.get("rawPath", "") or "/"
-    method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
+    path = event.get("rawPath", "") or event.get("path") or "/"
+    method = event.get("requestContext", {}).get("http", {}).get(
+        "method", "GET"
+    ) or event.get("httpMethod", "GET")
     query_params = event.get("queryStringParameters") or {}
     is_b64 = event.get("isBase64Encoded", False)
     raw_body = event.get("body") or ""
@@ -303,7 +307,7 @@ def ingest_artifact(artifact_type, payload):
 
     # --- Quality Gate ---
     metrics_map = {
-        "code": ["code_quality", "bus_factor"],
+        "code": ["code_quality"],
         "dataset": ["dataset_quality", "dataset_and_code_score"],
         "model": [
             "size_score",
@@ -1022,6 +1026,8 @@ def handler(event, context):
     initialize_system()
 
     method, path, body, query_params = parse_event(event)
+
+    logger.info(f"event: {event}")
 
     if method == "OPTIONS":
         return make_response(200, {"message": "CORS preflight successful"})

@@ -85,7 +85,7 @@ def test_check_code_repo_quality_all_branches(
     mock_docstring.return_value = 0.6
 
     # Execute
-    score = _check_code_repo_quality("https://fake.repo")
+    score = _check_code_repo_quality("https://github.com/fake/repo")
 
     # Assert
     assert isinstance(score, float)

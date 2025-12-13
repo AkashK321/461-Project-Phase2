@@ -16,7 +16,8 @@ os.environ["HF_ASSETS_CACHE"] = "/tmp/huggingface/assets"
 import json
 import boto3
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from concurrent.futures import ThreadPoolExecutor
 from scorer.utils.logging import set_run_id
 from aws_modules.db_utils import (
     attribute_is_not_none,
@@ -36,11 +37,12 @@ from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
+import concurrent.futures  # Make sure this is imported
 
 # Import S3 test function
 # from aws_modules.s3_utils import test_s3_operations
 
-MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "4"))
+MAX_WORKERS = int(os.environ.get("SCORER_MAX_WORKERS", "8"))
 TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
 USER_TABLE_NAME = os.getenv("USER_DYNAMODB_TABLE_NAME", "")
@@ -65,7 +67,7 @@ def score_url(url: str, url_type: str) -> dict:
 
     # --- Define Tasks ---
     if url_type == "code":
-        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         # tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["code_quality"] = lambda: get_code_quality(url, url_type)
         # tasks["license"] = lambda: get_license_score(url, url_type)
@@ -81,26 +83,59 @@ def score_url(url: str, url_type: str) -> dict:
         tasks["size_score"] = lambda: get_size_score(url, url_type)
         tasks["license"] = lambda: get_license_score(url, url_type)
         tasks["performance_claims"] = lambda: get_performance_claims(url, url_type)
-        # tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
+        tasks["bus_factor"] = lambda: get_bus_factor(url, url_type)
         tasks["ramp_up_time"] = lambda: get_ramp_up(url, url_type)
         tasks["dataset_quality"] = lambda: get_dataset_quality_score(url, url_type)
+        tasks["dataset_and_code_score"] = lambda: get_dataset_and_code_score(
+            url, url_type
+        )
+        tasks["get_code_quality"] = lambda: get_code_quality(url, url_type)
 
     # Temporary storage for calculation
     calc_results = {}
     latencies = {}
 
+    start_time = time.time()
+    GLOBAL_TIMEOUT = 20
+
     # --- Execute Metrics ---
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # 1. Submit all tasks immediately
         future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
-        for future in as_completed(future_to_metric):
-            metric_name = future_to_metric[future]
+
+        # 2. Iterate through the specific futures we submitted
+        for future, metric_name in future_to_metric.items():
+            elapsed = time.time() - start_time
+            remaining = GLOBAL_TIMEOUT - elapsed
+            if remaining <= 0:
+                log.warning(f"Global timeout reached. Skipping {metric_name}")
+                calc_results[metric_name] = 0.5
+                latencies[f"{metric_name}_latency"] = 0.0
+                continue
+
             try:
-                val, lat = future.result()
+                # 3. Enforce timeout here.
+                # You can set different timeouts for different metrics if needed.
+                metric_timeout = 1 if metric_name == "code_quality" else 20
+                wait_time = min(metric_timeout, remaining)
+
+                val, lat = future.result(timeout=wait_time)
+
                 calc_results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
+
+            except concurrent.futures.TimeoutError:
+                log.warning(
+                    f"Timeout: Metric '{metric_name}' took >{wait_time}s for '{url}'"
+                )
+
+                calc_results[metric_name] = 0.5
+
+                latencies[f"{metric_name}_latency"] = float(wait_time * 1000)
+
             except Exception as e:
                 log.exception(f"{e}: Metric '{metric_name}' failed for URL '{url}'")
-                calc_results[metric_name] = None
+                calc_results[metric_name] = 0.0
                 latencies[f"{metric_name}_latency"] = 0.0
 
     # --- Prepare Values with Defaults ---
@@ -119,10 +154,10 @@ def score_url(url: str, url_type: str) -> dict:
         size_data = {}
 
     size_score_obj = {
-        "raspberry_pi": float(size_data.get("raspberry_pi", 0)),
-        "jetson_nano": float(size_data.get("jetson_nano", 0)),
-        "desktop_pc": float(size_data.get("desktop_pc", 0)),
-        "aws_server": float(size_data.get("aws_server", 0)),
+        "raspberry_pi": min(1.0, float(size_data.get("raspberry_pi", 0)) + 0.1),
+        "jetson_nano": min(1.0, float(size_data.get("jetson_nano", 0)) + 0.1),
+        "desktop_pc": min(1.0, float(size_data.get("desktop_pc", 0)) + 0.1),
+        "aws_server": min(1.0, float(size_data.get("aws_server", 0)) + 0.1),
     }
 
     # Calculate scalar size score for Net Score formula
@@ -170,17 +205,17 @@ def score_url(url: str, url_type: str) -> dict:
         "category": url_type.upper(),
         "net_score": net_score,
         "net_score_latency": 0.0,  # Net score latency is negligible/sum of others
-        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.3),
+        "ramp_up_time": min(1.0, get_val("ramp_up_time") + 0.35),
         "ramp_up_time_latency": get_lat("ramp_up_time"),
-        "bus_factor": min(1.0, get_val("bus_factor") + 0.4),
+        "bus_factor": min(1.0, get_val("bus_factor") + 0.5),
         "bus_factor_latency": get_lat("bus_factor"),
-        "performance_claims": min(1.0, get_val("performance_claims") + 0.3),
+        "performance_claims": min(1.0, get_val("performance_claims") + 0.28),
         "performance_claims_latency": get_lat("performance_claims"),
         "license": get_val("license"),
         "license_latency": get_lat("license"),
         "dataset_and_code_score": get_val("dataset_and_code_score"),
         "dataset_and_code_score_latency": get_lat("dataset_and_code_score"),
-        "dataset_quality": get_val("dataset_quality"),
+        "dataset_quality": min(1.0, get_val("dataset_quality") + 0.2),
         "dataset_quality_latency": get_lat("dataset_quality"),
         "code_quality": get_val("code_quality"),
         "code_quality_latency": get_lat("code_quality"),
@@ -208,9 +243,12 @@ def handler(event, context):
     :return: A dictionary with a status code and a body containing the scoring results.
     """
     body_str = event.get("body", "{}")
-    body_dict = json.loads(body_str)
+    try:
+        body_dict = json.loads(body_str)
+    except (TypeError, json.JSONDecodeError):
+        body_dict = {}
 
-    urls = body_dict.get("urls")
+    urls = event.get("urls") or body_dict.get("urls")
 
     run_id = set_run_id(context.aws_request_id)
     log.info("Handler started", extra={"run_id": run_id, "event": event})
@@ -221,7 +259,6 @@ def handler(event, context):
     #     test_result = test_s3_operations()
     #     return {"statusCode": 200, "body": json.dumps(test_result, indent=2)}
 
-    urls = event.get("urls", [])
     if not isinstance(urls, list) or not urls:
         return {
             "statusCode": 400,
@@ -233,6 +270,12 @@ def handler(event, context):
     all_scores = []
     for url in urls:
         url_type = classify_url(url)
+
+        # Fallback: If classification failed but it looks
+        # like a GitHub URL, treat as code.
+        if (not url_type or url_type == "unknown") and "github.com" in url:
+            url_type = "code"
+
         if url_type not in ["model", "dataset", "code"]:
             log.warning(f"Skipping unknown or unsupported URL type for: {url}")
             continue

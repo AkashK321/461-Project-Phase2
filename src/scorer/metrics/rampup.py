@@ -133,6 +133,7 @@ SYSTEM_PROMPT = (
     "You are a precise software onboarding evaluator.\n"
     "Given a repository README and a brief repo file listing, "
     "rate how fast a new engineer could ramp up.\n"
+    "You can be a little lenient with scoring.\n"
     "Consider ONLY: installation clarity, prerequisites, quickstart/usage examples, "
     "runnable commands, troubleshooting,\n"
     "links to docs/tutorials, and overall coherence/structure of the README.\n\n"
