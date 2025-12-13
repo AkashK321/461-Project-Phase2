@@ -12,7 +12,7 @@ def test_score_for_hardware_under_limit():
 
 def test_score_for_hardware_over_limit():
     total_bytes = 10_000_000_000  # 10GB
-    score = size._score_on_hardware(total_bytes, "desktop_pc")
+    score = size._score_on_hardware(total_bytes, "raspberry_pi")
     assert 0 <= score < 1
     assert score < 0.5
 
