@@ -73,7 +73,7 @@ def get_dataset_and_code_score(url: str, url_type: str):
             readme_path = hf_hub_download(
                 repo_id=repo_id,
                 filename="README.md",
-                repo_type=url_type # "model" or "dataset"
+                repo_type=url_type,  # "model" or "dataset"
             )
             with open(readme_path, "r", encoding="utf-8") as f:
                 readme_text = f.read()

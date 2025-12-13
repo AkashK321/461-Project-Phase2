@@ -37,7 +37,7 @@ from scorer.metrics.busfactor import get_bus_factor
 from scorer.metrics.base import get_repo_id
 from scorer.url_handler.base import classify_url
 from utils.lineage_utils import _calculate_treescore, get_base_model_from_card
-import concurrent.futures # Make sure this is imported
+import concurrent.futures  # Make sure this is imported
 
 # Import S3 test function
 # from aws_modules.s3_utils import test_s3_operations
@@ -54,6 +54,7 @@ dynamodb = boto3.resource("dynamodb")
 # Set up logging
 log = logging.getLogger()
 log.setLevel(logging.INFO)
+
 
 def score_url(url: str, url_type: str) -> dict:
     """Scores a single URL and returns a dictionary
@@ -101,7 +102,7 @@ def score_url(url: str, url_type: str) -> dict:
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         # 1. Submit all tasks immediately
         future_to_metric = {executor.submit(func): name for name, func in tasks.items()}
-        
+
         # 2. Iterate through the specific futures we submitted
         for future, metric_name in future_to_metric.items():
             elapsed = time.time() - start_time
@@ -113,21 +114,23 @@ def score_url(url: str, url_type: str) -> dict:
                 continue
 
             try:
-                # 3. Enforce timeout here. 
+                # 3. Enforce timeout here.
                 # You can set different timeouts for different metrics if needed.
                 metric_timeout = 1 if metric_name == "code_quality" else 20
                 wait_time = min(metric_timeout, remaining)
-                
+
                 val, lat = future.result(timeout=wait_time)
-                
+
                 calc_results[metric_name] = val
                 latencies[f"{metric_name}_latency"] = lat
 
             except concurrent.futures.TimeoutError:
-                log.warning(f"Timeout: Metric '{metric_name}' took >{wait_time}s for '{url}'")
-                
+                log.warning(
+                    f"Timeout: Metric '{metric_name}' took >{wait_time}s for '{url}'"
+                )
+
                 calc_results[metric_name] = 0.5
-                
+
                 latencies[f"{metric_name}_latency"] = float(wait_time * 1000)
 
             except Exception as e:

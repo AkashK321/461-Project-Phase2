@@ -77,6 +77,7 @@ def _extract_json_first(s: str) -> dict | None:
                         continue
     return None
 
+
 def _session_with_retry() -> requests.Session:
     logger.info("Creating session with retries")
     s = requests.Session()
@@ -91,6 +92,7 @@ def _session_with_retry() -> requests.Session:
     s.mount("https://", HTTPAdapter(max_retries=r))
     s.mount("http://", HTTPAdapter(max_retries=r))
     return s
+
 
 def _ask_llm(readme: str) -> Optional[float]:
     api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()

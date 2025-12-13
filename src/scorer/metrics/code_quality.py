@@ -254,6 +254,7 @@ def docstring_ratio(path: str) -> float:
     logger.info(f"Docstring ratio: {ratio} ({documented}/{total})")
     return ratio
 
+
 def parse_github_url(url: str) -> Tuple[str, str, str, str]:
     """
     Parses a GitHub URL into owner, repo, branch, and sub-path.
@@ -262,11 +263,11 @@ def parse_github_url(url: str) -> Tuple[str, str, str, str]:
     url = url.rstrip("/")
     if "github.com/" not in url:
         return None, None, "main", ""
-    
+
     # Remove protocol and domain
     path_part = url.split("github.com/")[-1]
     parts = path_part.split("/")
-    
+
     if len(parts) < 2:
         return None, None, "main", ""
 
@@ -274,8 +275,8 @@ def parse_github_url(url: str) -> Tuple[str, str, str, str]:
     repo = parts[1]
     if repo.endswith(".git"):
         repo = repo[:-4]
-    
-    branch = "main" # Default
+
+    branch = "main"  # Default
     subpath = ""
 
     # Check if URL contains tree/BRANCH
@@ -283,8 +284,9 @@ def parse_github_url(url: str) -> Tuple[str, str, str, str]:
         branch = parts[3]
         if len(parts) > 4:
             subpath = "/".join(parts[4:])
-            
+
     return owner, repo, branch, subpath
+
 
 def _check_code_repo_quality(code_url: str) -> float:
     logger.info(f"Checking code repo quality for: {code_url}")
@@ -297,7 +299,7 @@ def _check_code_repo_quality(code_url: str) -> float:
         if not owner or not repo:
             logger.warning(f"Could not parse GitHub URL: {code_url}")
             return 0.0
-            
+
         logger.info(f"Repo: {owner}/{repo}, Branch: {branch}, Path: {subpath}")
 
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
@@ -315,7 +317,9 @@ def _check_code_repo_quality(code_url: str) -> float:
             return 0.0
 
         if not r or r.status_code != 200:
-            logger.warning(f"Failed to download zip. Status code: {r.status_code if r else 'None'}")
+            logger.warning(
+                f"Failed to download zip. Status code: {r.status_code if r else 'None'}"
+            )
             return 0.0
 
         start_extract = time.time()
@@ -326,10 +330,10 @@ def _check_code_repo_quality(code_url: str) -> float:
             all_files = z.namelist()
             if not all_files:
                 return 0.0
-            
+
             # Identify root folder in zip (e.g. "repo-main/")
             root_in_zip = all_files[0].split("/")[0]
-            
+
             # Construct the full path we want to extract
             target_prefix = f"{root_in_zip}/"
             if subpath:
@@ -340,16 +344,18 @@ def _check_code_repo_quality(code_url: str) -> float:
             logger.info(f"Extracting files starting with: {target_prefix}")
 
             for file_info in z.infolist():
-                if (time.time() - start_extract) > MAX_TIME: break
-                if file_count >= MAX_FILES: break
+                if (time.time() - start_extract) > MAX_TIME:
+                    break
+                if file_count >= MAX_FILES:
+                    break
 
                 # Only extract if it is inside our target folder
                 if file_info.filename.startswith(target_prefix):
                     # Check exclude list using relative path
-                    rel_path = file_info.filename[len(target_prefix):]
-                    if not rel_path or rel_path.endswith("/"): 
+                    rel_path = file_info.filename[len(target_prefix) :]
+                    if not rel_path or rel_path.endswith("/"):
                         continue
-                        
+
                     if is_allowed(rel_path):
                         z.extract(file_info, temp_dir)
                         file_count += 1
@@ -361,15 +367,15 @@ def _check_code_repo_quality(code_url: str) -> float:
         if file_count == 0:
             logger.warning("No files extracted from repo.")
             return 0.0
-        
+
         current_root = os.path.join(temp_dir, root_in_zip)
         if subpath:
             current_root = os.path.join(current_root, subpath)
 
         scan_dir = current_root
         if not os.path.exists(scan_dir):
-            scan_dir = temp_dir # Fallback
-            
+            scan_dir = temp_dir  # Fallback
+
         logger.info(f"Scanning directory: {scan_dir}")
 
         # Flatten
@@ -410,7 +416,9 @@ def _check_code_repo_quality(code_url: str) -> float:
             complexity = max(radon_score, lizard_score)
         else:
             complexity = lizard_score
-        logger.info(f"Complexity score: {complexity} (Radon: {radon_score}, Lizard: {lizard_score})")
+        logger.info(
+            f"Complexity score: {complexity} (Radon: {radon_score}, Lizard: {lizard_score})"
+        )
 
         # 3. Testability
         testability = 0.0
