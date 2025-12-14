@@ -36,7 +36,7 @@
 
         <div id="dashboard" class="hidden">
             <section class="section" aria-labelledby="upload-title">
-                <h3 id="upload-title">Upload Package</h3>
+                <h2 id="upload-title">Upload Package</h2>
                 <label for="pkg-url">Package URL (GitHub or HuggingFace)</label>
                 <input type="url" id="pkg-url" placeholder="https://github.com/user/repo">
                 <button onclick="uploadPackage()">Upload</button>
@@ -44,9 +44,9 @@
             </section>
             
             <section class="section" aria-labelledby="search-title">
-                <h3 id="search-title">Search Packages</h3>
+                <h2 id="search-title">Search Packages</h2>
                 <label for="search-q">Search Query (Regex allowed)</label>
-                <input type="text" id="search-q" value="*">
+                <input type="text" id="search-q" value=".*">
                 <button onclick="searchPackages()">Search</button>
                 <div id="search-res" class="table-container" aria-live="polite" style="margin-top: 1rem;"></div>
             </section>
@@ -54,7 +54,7 @@
     </main>
 
     <dialog id="create-user-modal" aria-labelledby="create-user-title">
-        <h3 id="create-user-title">Create New User</h3>
+        <h2 id="create-user-title">Create New User</h2>
         
         <label for="new-user-name">New Username</label>
         <input type="text" id="new-user-name" required>
@@ -77,13 +77,13 @@
     </dialog>
 
     <dialog id="view-users-modal" style="width: 800px;" aria-labelledby="view-users-title">
-        <h3 id="view-users-title">All Users</h3>
+        <h2 id="view-users-title">All Users</h2>
         <div id="users-list-container" class="table-container" aria-live="polite">Loading...</div>
         <button onclick="window.location.hash='#/dashboard'" style="margin-top:1rem; background:#6c757d">Close</button>
     </dialog>
 
     <dialog id="modify-roles-modal" aria-labelledby="mod-roles-title">
-        <h3 id="mod-roles-title">Modify Roles</h3>
+        <h2 id="mod-roles-title">Modify Roles</h2>
         <p id="mod-user-display" style="margin-bottom: 1.5rem; font-weight: bold;"></p>
         <input type="hidden" id="mod-user-id">
         
