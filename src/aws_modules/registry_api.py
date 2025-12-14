@@ -11,7 +11,12 @@ from aws_modules.auth import (
 )
 
 # Pull env + AWS wiring / constants (also sets HF cache env vars)
-from aws_modules.registry.context import TABLE_NAME, BUCKET_NAME, USER_TABLE_NAME, JWT_SECRET_KEY
+from aws_modules.registry.context import (
+    TABLE_NAME,
+    BUCKET_NAME,
+    USER_TABLE_NAME,
+    JWT_SECRET_KEY,
+)
 
 # Core helpers
 from aws_modules.registry.parsing import parse_event
