@@ -248,6 +248,7 @@ def log_call(phase: str = "metric") -> Callable:
 
     The returned decorator logs start/end timestamps and attaches latency.
     """
+
     def deco(fn: Callable) -> Callable:
         def wrapper(*args, **kwargs):
             log = get_logger(fn.__module__)
