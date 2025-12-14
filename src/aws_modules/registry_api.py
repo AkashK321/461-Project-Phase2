@@ -23,13 +23,13 @@ from aws_modules.s3_utils import (
     upload_model,
     generate_presigned_download_url,
     get_object_size,
-    delete_model
+    delete_model,
 )
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
     get_model_by_model_name,
-    delete_model_metadata
+    delete_model_metadata,
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -1271,13 +1271,14 @@ def handler(event, context):
         s3_key = item.get("s3_key")
         if s3_key:
             if not delete_model(s3_key):
-                return make_response(500, {"error": "Failed to delete artifact content."})
+                return make_response(
+                    500, {"error": "Failed to delete artifact content."}
+                )
 
         if not delete_model_metadata(art_id):
             return make_response(500, {"error": "Failed to delete artifact metadata."})
 
         return make_response(200, {"message": "Artifact is deleted."})
-
 
     # anything else is a 404
     return make_response(404, {"error": f"Route not found: {method} {path}"})
