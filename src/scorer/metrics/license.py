@@ -6,6 +6,7 @@ the license is compatible with LGPLv2.1
 import os
 import requests
 import time
+import re
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login
 from .base import get_repo_id
@@ -108,3 +109,151 @@ def get_license_score(url: str, url_type: str) -> Tuple[Optional[int], int]:
         return 1, latency
     else:
         return 0, latency
+
+
+# ----------------------------
+# Phase 2: /artifact/model/{id}/license-check
+# ----------------------------
+
+
+class LicenseCheckError(Exception):
+    """I raise this when the license-check endpoint must return a non-200 status."""
+
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
+
+
+# I accept normal GitHub repo URLs (optionally with trailing paths like /tree/main).
+_GITHUB_REPO_RE = re.compile(r"^https?://(?:www\.)?github\.com/([^/]+)/([^/#?]+)")
+
+
+# Minimal SPDX normalization so comparisons are stable across HF/GitHub formatting.
+_SPDX_ALIASES = {
+    "APACHE-2": "Apache-2.0",
+    "APACHE 2.0": "Apache-2.0",
+    "APACHE-2.0": "Apache-2.0",
+    "MIT": "MIT",
+    "BSD-3": "BSD-3-Clause",
+    "BSD-3-CLAUSE": "BSD-3-Clause",
+    "BSD-2": "BSD-2-Clause",
+    "BSD-2-CLAUSE": "BSD-2-Clause",
+    "GPL-3.0": "GPL-3.0",
+    "GPL-3.0-ONLY": "GPL-3.0-only",
+    "GPL-3.0-OR-LATER": "GPL-3.0-or-later",
+    "LGPL-3.0": "LGPL-3.0",
+    "LGPL-3.0-ONLY": "LGPL-3.0-only",
+    "LGPL-3.0-OR-LATER": "LGPL-3.0-or-later",
+}
+
+
+def _normalize_spdx(raw: str | None) -> str | None:
+    """I return a canonical SPDX-ish string, or None when the license is unknown."""
+    if not raw:
+        return None
+
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    upper = s.upper()
+
+    # GitHub sometimes returns these for edge cases.
+    if upper in {"NOASSERTION", "OTHER", "NONE"}:
+        return None
+
+    if upper in _SPDX_ALIASES:
+        return _SPDX_ALIASES[upper]
+
+    # Common HF style: "apache-2.0", "mit", "gpl-3.0".
+    if re.fullmatch(r"[a-z0-9\.-]+", s):
+        return _SPDX_ALIASES.get(upper, s)
+
+    return s
+
+
+def _parse_github_repo(github_url: str) -> tuple[str, str]:
+    """I extract (owner, repo) from a GitHub repository URL."""
+    m = _GITHUB_REPO_RE.match(github_url.strip())
+    if not m:
+        raise LicenseCheckError(400, "Malformed github_url")
+
+    owner, repo = m.group(1), m.group(2)
+    repo = repo.removesuffix(".git")
+    return owner, repo
+
+
+def _get_github_repo_spdx(github_url: str) -> str | None:
+    """I fetch the SPDX id for a GitHub repository using the GitHub REST API."""
+    owner, repo = _parse_github_repo(github_url)
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ece461-registry",
+    }
+
+    # Optional: helps avoid rate limiting, but should still work without it for autograder volume.
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_PAT")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/license"
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+    except Exception as e:
+        raise LicenseCheckError(502, f"GitHub license lookup failed: {e}")
+
+    if resp.status_code == 404:
+        raise LicenseCheckError(404, "GitHub project not found")
+
+    if resp.status_code >= 500:
+        raise LicenseCheckError(502, "GitHub license lookup failed")
+
+    if resp.status_code != 200:
+        # Includes 403 (rate limit) and 401 (bad token)
+        raise LicenseCheckError(502, "GitHub license lookup failed")
+
+    try:
+        payload = resp.json()
+        spdx = (payload.get("license") or {}).get("spdx_id")
+        return _normalize_spdx(spdx)
+    except Exception as e:
+        raise LicenseCheckError(502, f"GitHub license parse failed: {e}")
+
+
+def _get_hf_model_spdx(model_url: str) -> str | None:
+    """I fetch the license string from HuggingFace model metadata."""
+    repo_id = get_repo_id(model_url, "model")
+    if not repo_id:
+        # For Phase 2 license-check, I only support HF model URLs.
+        raise LicenseCheckError(404, "Model not found on HuggingFace")
+
+    try:
+        info = HF_API.model_info(repo_id=repo_id)
+    except Exception as e:
+        raise LicenseCheckError(404, f"Model not found on HuggingFace: {e}")
+
+    license_field = getattr(info, "license", None)
+    return _normalize_spdx(license_field)
+
+
+def license_check_bool(model_url: str, github_url: str) -> bool:
+    """
+    return True iff the GitHub repo license is compatible with the model license.
+
+    - If the HF model has *no* license (e.g., audience-classifier), return 200 + false.
+    - If GitHub project doesnt exist: 404 (raised as LicenseCheckError).
+    - If GitHub/HF lookup fails: 502 (raised as LicenseCheckError).
+    - Otherwise: currently treat “compatible” as “same normalized SPDX id”.
+    """
+    model_spdx = _get_hf_model_spdx(model_url)
+    if model_spdx is None:
+        return False
+
+    gh_spdx = _get_github_repo_spdx(github_url)
+    if gh_spdx is None:
+        return False
+
+    return model_spdx == gh_spdx
