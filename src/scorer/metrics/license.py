@@ -125,7 +125,7 @@ class LicenseCheckError(Exception):
         self.message = message
 
 
-# I accept normal GitHub repo URLs (optionally with trailing paths like /tree/main).
+# accept normal GitHub repo URLs (optionally with trailing paths like /tree/main).
 _GITHUB_REPO_RE = re.compile(r"^https?://(?:www\.)?github\.com/([^/]+)/([^/#?]+)")
 
 
@@ -193,7 +193,6 @@ def _get_github_repo_spdx(github_url: str) -> str | None:
         "User-Agent": "ece461-registry",
     }
 
-    # Optional: helps avoid rate limiting, but should still work without it for autograder volume.
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_PAT")
     if token:
         headers["Authorization"] = f"Bearer {token}"

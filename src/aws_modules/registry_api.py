@@ -1215,14 +1215,14 @@ def handler(event, context):
 
         github_url = body.get("github_url")
 
-        # I confirm the model exists in our registry first.
+        # confirm the model exists in our registry first.
         model_item = get_model_by_id(art_id)
         if not model_item or model_item.get("type") != "model":
             return make_response(404, {"error": "The artifact could not be found."})
 
         model_url = model_item.get("source_url")
         if not model_url:
-            # If ingest ever produced a model without a source_url, I treat it like upstream failure.
+            # If ingest ever produced a model without a source_url, treat it like upstream failure.
             return make_response(
                 502,
                 {"error": "External license information could not be retrieved."},
