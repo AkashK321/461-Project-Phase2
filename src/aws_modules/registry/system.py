@@ -5,12 +5,6 @@ import logging
 import boto3
 
 from aws_modules.auth import (
-    authenticate_user,
-    get_validated_user,
-    register_user,
-    delete_user,
-    get_all_users,
-    update_user_roles,
     ensure_default_user,
 )
 

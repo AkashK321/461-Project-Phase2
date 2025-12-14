@@ -1,7 +1,7 @@
 from aws_modules.api_utils import make_response
-from aws_modules.s3_utils import get_object_size
 from aws_modules.db_utils import get_model_by_id
-import logger
+from utils.lineage_utils import get_lineage_items_from_id
+from aws_modules.registry.system import logger
 
 
 def calculate_artifact_cost(art_id, query_params):
