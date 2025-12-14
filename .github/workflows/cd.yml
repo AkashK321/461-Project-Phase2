@@ -30,6 +30,7 @@ on:
       - making-timeouts-stricter
       - adding-pydocs
       - license-check-metric
+      - frontend2
 
 # Define the permissions the job will need
 permissions:
