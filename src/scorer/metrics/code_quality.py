@@ -110,6 +110,13 @@ EXCLUDED_DIRS = {
 
 
 def is_allowed(filename: str) -> bool:
+    """Return True if a file path should be analyzed (not excluded).
+
+    Filters out hidden files, excluded directories, and binary/media extensions.
+
+    :param filename: Path or filename to check.
+    :return: ``True`` if the file should be analyzed, otherwise ``False``.
+    """
     parts = filename.split("/")
     if any(p.startswith(".") for p in parts):
         return False
@@ -202,6 +209,11 @@ def run_lizard(path: str) -> Optional[Dict]:
 
 
 def score_from_lizard_totals(totals: dict) -> float:
+    """Convert Lizard totals into a normalized score in [0,1].
+
+    :param totals: Dictionary of Lizard totals (keys like 'Avg CCN', 'Avg NLOC').
+    :return: Float score between 0.0 and 1.0 (higher is better).
+    """
     if not totals:
         return 0.0
 
@@ -231,6 +243,13 @@ def score_from_lizard_totals(totals: dict) -> float:
 
 
 def docstring_ratio(path: str) -> float:
+    """Compute the ratio of documented functions/classes to total in a tree.
+
+    Traverses Python files under ``path`` and returns ``documented/total``.
+
+    :param path: Root filesystem path to traverse for Python files.
+    :return: Fraction (0.0-1.0) of definitions that include docstrings.
+    """
     logger.info(f"Calculating docstring ratio for {path}")
     total = 0
     documented = 0
@@ -289,6 +308,11 @@ def parse_github_url(url: str) -> Tuple[str, str, str, str]:
 
 
 def _check_code_repo_quality(code_url: str) -> float:
+    """Download a GitHub repo zip and compute a heuristic code quality score.
+
+    :param code_url: URL to the repository to analyze (GitHub URL expected).
+    :return: Float score in ``[0.0, 1.0]`` representing estimated code quality.
+    """
     logger.info(f"Checking code repo quality for: {code_url}")
     temp_dir = tempfile.mkdtemp()
     MAX_FILES = 50
@@ -492,6 +516,13 @@ def _check_code_repo_quality(code_url: str) -> float:
 
 
 def get_code_quality(url: str, url_type: str) -> Tuple[float, int]:
+    """Public entrypoint: compute code quality score and latency for a URL.
+
+    :param url: URL to evaluate (repo or other code resource).
+    :param url_type: Type label (e.g. ``"code"``) telling how to treat the URL.
+    :return: Tuple of ``(score, latency_ms)`` where ``score`` is float in
+             ``[0.0,1.0]`` and ``latency_ms`` is an integer latency in ms.
+    """
     start = time.time()
     logger.info(f"Starting code quality check for {url} ({url_type})")
     score = 0.0

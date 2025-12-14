@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def _maybe_login() -> None:
+    """Log into Hugging Face non-interactively if a token is present.
+
+    :return: None
+    """
     token = (
         os.getenv("HF_TOKEN") or os.getenv("HF_Token") or os.getenv("HUGGINGFACE_TOKEN")
     )
@@ -37,6 +41,17 @@ def _maybe_login() -> None:
 
 
 def get_dataset_and_code_score(url: str, url_type: str):
+    """Compute a combined dataset-and-code score for a model or dataset URL.
+
+    The score is a simple heuristic combining whether dataset details are
+    documented in the README and whether runnable code or a GitHub link is
+    available.
+
+    :param url: URL or identifier for the artifact (model or dataset).
+    :param url_type: Type of the URL: ``"model"`` or ``"dataset"``.
+    :return: Tuple ``(score, latency_ms)`` where ``score`` is a float in
+             ``[0.0,1.0]`` and ``latency_ms`` is the elapsed time in ms.
+    """
     _maybe_login()
     start_time = time.time()
 

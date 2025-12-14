@@ -1,3 +1,10 @@
+"""DynamoDB helper utilities for saving and querying model metadata.
+
+Contains convenience helpers to store metadata, convert float types for
+DynamoDB compatibility, and simple lookup/update helpers used by the API
+and scorer functions.
+"""
+
 import boto3
 from boto3.dynamodb.conditions import Attr
 import os

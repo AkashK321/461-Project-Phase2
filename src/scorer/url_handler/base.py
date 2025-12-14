@@ -103,22 +103,32 @@ _MODEL_HOSTS = (
 
 # Fast helpers
 def _endswith_any(s: str, suffixes: tuple[str, ...]) -> bool:
+    """Case-insensitive helper: returns True if ``s`` ends with any ``suffixes``.
+
+    :param s: Input string to test.
+    :param suffixes: Tuple of suffix strings to check against.
+    :return: ``True`` if ``s`` ends with any of the provided suffixes.
+    """
     s = s.lower()
     return any(s.endswith(sfx) for sfx in suffixes)
 
 
 def classify_url(url: str) -> str:
-    """
-    Classify URL as "code", "dataset", "model", or "unknown".
-    Heuristics (in order):
-      1) Known code hosts => code
-      2) Hugging Face paths: /datasets => dataset; otherwise => model
-      3) Known model hosts (tfhub, modelscope) => model
-      4) Known dataset hosts => dataset
-      5) Storage/CDN & direct data-like file extensions => dataset
-      6) Code-like file extensions (outside code hosts) => code
-      7) Path keywords suggesting dataset => dataset
-      8) Fallback: dataset (per course guidance: datasets can be any external link)
+    """Classify a URL as ``"code"``, ``"dataset"``, ``"model"``, or ``"unknown"``.
+
+    The classification follows a sequence of heuristics (checked in order):
+        1) Known code hosts => ``"code"``
+        2) Hugging Face paths: ``/datasets`` => ``"dataset"``; otherwise => ``"model"``
+        3) Known model hosts (e.g. tfhub) => ``"model"``
+        4) Known dataset hosts => ``"dataset"``
+        5) Storage/CDN hosts or data-like file extensions => ``"dataset"``
+        6) Code-like file extensions (outside code hosts) => ``"code"``
+        7) Path keywords suggesting dataset => ``"dataset"``
+        8) Fallback: ``"dataset"``
+
+    :param url: URL string to classify.
+    :return: One of the strings ``"code"``, ``"dataset"``, ``"model"``,
+                        or ``"unknown"``.
     """
     if not url:
         return "unknown"

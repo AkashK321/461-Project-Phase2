@@ -27,20 +27,27 @@ _metric_var = contextvars.ContextVar("metric", default=None)
 
 
 def set_run_id(run_id: Optional[str] = None) -> str:
+    """Set and return a contextual run id used for log correlation.
+
+    If `run_id` is None, a new UUID is generated.
+    """
     rid = run_id or str(uuid.uuid4())
     _run_id_var.set(rid)
     return rid
 
 
 def set_url(url: Optional[str]) -> None:
+    """Store the current request URL in context for enriched logging."""
     _url_var.set(url)
 
 
 def set_metric(metric_name: Optional[str]) -> None:
+    """Store the current metric name in context for enriched logging."""
     _metric_var.set(metric_name)
 
 
 def _extra(**kw) -> Dict[str, Any]:
+    """Build the `extra` mapping injected into LoggerAdapter for structured logs."""
     ex = dict(run_id=_run_id_var.get(), url=_url_var.get(), metric=_metric_var.get())
     ex.update({k: v for k, v in kw.items() if v is not None})
     return ex
@@ -231,11 +238,16 @@ def setup_logging(
 
 
 def get_logger(name: Optional[str] = None) -> logging.LoggerAdapter:
+    """Return a LoggerAdapter pre-wired to include contextual `extra` fields."""
     base = logging.getLogger("scorer" + ("" if not name else f".{name}"))
     return logging.LoggerAdapter(base, _extra())
 
 
 def log_call(phase: str = "metric") -> Callable:
+    """Decorator factory to log entry/exit and exceptions for a function.
+
+    The returned decorator logs start/end timestamps and attaches latency.
+    """
     def deco(fn: Callable) -> Callable:
         def wrapper(*args, **kwargs):
             log = get_logger(fn.__module__)

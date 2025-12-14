@@ -1,3 +1,9 @@
+"""Utilities for model lineage resolution and traversal.
+
+Helpers to determine a model's base model, lineage type, and to traverse
+ancestor/descendant relationships stored in the registry (DynamoDB).
+"""
+
 import logging
 import os
 import boto3
@@ -15,6 +21,17 @@ TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "")
 
 
 def get_model_lineage_type(model_repo_id, base_model):
+    """Determine the lineage category and metadata source for a model.
+
+    :param model_repo_id: Hugging Face repository id (e.g. "user/model").
+    :param base_model: Reported base model id if available (or ``None``).
+    :return: Tuple ``(lineage_type, source)`` where ``lineage_type`` is one of
+             ``"Adapter"``, ``"Quantized"``, ``"Fine-Tune"``,
+             ``"Base"``, or ``"Unknown`` and ``source`` indicates where the
+             decision came from (e.g. ``"model_card"``, ``"config_json"``,
+             ``"filename"``, ``"tags"``, ``"inferred"``, ``"error"``).
+    """
+
     api = HfApi()
     logger.info(f"Determining lineage type for model: {model_repo_id}")
     try:
@@ -54,9 +71,10 @@ def get_model_lineage_type(model_repo_id, base_model):
 
 
 def get_base_model_from_card(model_repo_id):
-    """
-    Fetches the model card from Hugging Face and parses its
-    metadata to find the 'base_model' key.
+    """Fetch the model card and parse its ``base_model`` metadata.
+
+    :param model_repo_id: Hugging Face repository id to inspect.
+    :return: Tuple ``(base_model_id_or_None, lineage_type, source)``.
     """
     try:
         logger.info(f"Fetching model card for {model_repo_id}...")
@@ -86,8 +104,10 @@ def get_base_model_from_card(model_repo_id):
 
 
 def get_model_by_repo_id(repo_id):
-    """
-    Finds a model in DynamoDB by its 'repo_id' using a scan.
+    """Find a model in DynamoDB by its ``repo_id`` using a scan.
+
+    :param repo_id: Repository id string to search for.
+    :return: The model dict when found, otherwise ``None``.
     """
     try:
         tbl = dynamodb.Table(TABLE_NAME)
@@ -102,10 +122,12 @@ def get_model_by_repo_id(repo_id):
 
 
 def get_models_by_base_repo_id(base_repo_id):
-    """
-    Finds all models that have a specific base_model_repo_id.
-    This uses a scan, which is inefficient on large tables.
-    A GSI on 'base_model_repo_id' would be a performance improvement.
+    """Find all models that list ``base_repo_id`` as their parent.
+
+    Note: This implementation uses a scan which can be slow on large tables.
+
+    :param base_repo_id: The base model repository id to search for.
+    :return: List of model dicts matching the base repo id.
     """
     try:
         tbl = dynamodb.Table(TABLE_NAME)
@@ -120,7 +142,11 @@ def get_models_by_base_repo_id(base_repo_id):
 
 
 def get_lineage_items_from_id(start_art_id):
-    """Helper to traverse and return all items in a model's lineage."""
+    """Traverse and return all items in a model's lineage starting from id.
+
+    :param start_art_id: Registry primary id (artifact id) to start traversal.
+    :return: List of registry item dicts in ancestor order (closest first).
+    """
     lineage_items = []
     current_item = get_model_by_id(start_art_id)
     logger.info(f"Starting lineage trace from ID: {current_item}")
@@ -145,9 +171,12 @@ def get_lineage_items_from_id(start_art_id):
 
 
 def get_descendant_items(start_repo_id):
-    """
-    Helper to recursively find all descendants of a model.
-    This performs a breadth-first search.
+    """Recursively find all descendant models of a starting repository id.
+
+    This performs a breadth-first search over the registry using scans.
+
+    :param start_repo_id: Repository id of the model to find descendants for.
+    :return: List of descendant model dicts (may be empty).
     """
     if not start_repo_id:
         return []
@@ -173,8 +202,10 @@ def get_descendant_items(start_repo_id):
 
 
 def _calculate_treescore(base_model_repo_id):
-    """
-    Calculates the Treescore for a new model based on its parent's lineage.
+    """Calculate a Treescore for a model using its parent's lineage metrics.
+
+    :param base_model_repo_id: Repository id of the base model to examine.
+    :return: Floating Treescore averaged across parental lineage scores.
     """
     if not base_model_repo_id:
         logger.info("No base model. Treescore is 0.")

@@ -42,6 +42,13 @@ _SHARD_RE = re.compile(
 
 
 def _looks_like_weight_file(name: str) -> bool:
+    """Return True if filename looks like a model weight shard or weight file.
+
+    Filters out optimizer/optimizer-like files.
+
+    :param name: Filename (or path) to inspect.
+    :return: ``True`` when the name appears to be a model weight file/shard.
+    """
     lower = name.lower()
     if any(
         token in lower
@@ -52,9 +59,12 @@ def _looks_like_weight_file(name: str) -> bool:
 
 
 def _family_key(filename: str) -> str:
-    """
-    Group shards into families; non-sharded files use full basename as family key.
+    """Group shards into families; non-sharded files use full basename as family key.
+
     Families also implicitly separate frameworks by extension.
+
+    :param filename: Filename to analyze for shard-family grouping.
+    :return: Family key string used to group related shard files.
     """
     m = _SHARD_RE.match(filename)
     if m:
@@ -66,6 +76,14 @@ def _family_key(filename: str) -> str:
 
 
 def _framework_weight(filename: str) -> str:
+    """Return a short framework identifier inferred from a filename extension.
+
+    Examples: ``'safetensors'``, ``'pytorch'``, ``'onnx'``, ``'tflite'``,
+    ``'tensorflow'``, or ``'other'``.
+
+    :param filename: Filename to inspect.
+    :return: Short framework identifier string.
+    """
     fn = filename.lower()
     if fn.endswith(".safetensors"):
         return "safetensors"
@@ -92,9 +110,10 @@ _FRAMEWORK_PREF = {
 
 
 def _pick_min_viable_family(files: List[tuple]) -> int:
-    """
-    files: list of (rfilename, size)
-    Return total bytes for the **smallest viable** weight family.
+    """Choose the smallest viable weight family from a list of files.
+
+    :param files: List of tuples ``(relative_filename, size_bytes)``.
+    :return: Total bytes for the selected smallest viable family (int).
     """
     # 1) keep only weight-like files
     weights = [(f, int(sz or 0)) for f, sz in files if _looks_like_weight_file(f)]
@@ -126,6 +145,12 @@ def _pick_min_viable_family(files: List[tuple]) -> int:
 
 
 def _maybe_login() -> None:
+    """Log into Hugging Face non-interactively if a token is present.
+
+    This is safe to call repeatedly; it silently returns if no token.
+
+    :return: None
+    """
     token = (
         os.getenv("HF_TOKEN") or os.getenv("HF_Token") or os.getenv("HUGGINGFACE_TOKEN")
     )
@@ -143,17 +168,35 @@ def _maybe_login() -> None:
 
 
 def _hf_total_weight_bytes_model(repo_id: str) -> int:
+    """Return the estimated number of bytes required for model weights.
+
+    Uses the Hugging Face API model info and chooses the minimal viable shard
+    family to estimate the weight size.
+
+    :param repo_id: HF model repository id (owner/model-name).
+    :return: Estimated size in bytes for the model weights.
+    """
     info = HF_API.model_info(repo_id=repo_id, files_metadata=True)
     files = [(s.rfilename or "", int(s.size or 0)) for s in info.siblings]
     return _pick_min_viable_family(files)
 
 
 def _hf_total_weight_bytes_dataset(repo_id: str) -> int:
+    """Return total bytes for dataset files listed in HF dataset metadata.
+
+    :param repo_id: HF dataset repository id (owner/dataset-name).
+    :return: Sum of file sizes (bytes) reported by HF dataset metadata.
+    """
     info = HF_API.dataset_info(repo_id=repo_id, files_metadata=True)
     return sum(int(s.size or 0) for s in info.siblings)
 
 
 def _github_repo_bytes(repo_id: str) -> int:
+    """Return an approximate repository size in bytes via GitHub API 'size' field.
+
+    :param repo_id: GitHub repository id in the form 'owner/repo'.
+    :return: Approximate repository size in bytes (int).
+    """
     base_url = f"https://api.github.com/repos/{repo_id}"
     code_info = requests.get(base_url).json()
     return int(code_info.get("size", 0) or 0) * 1024
@@ -164,6 +207,14 @@ _K_UNDER = 0.2  # controls drop rate while u in [0,1]
 
 
 def _score_utilization(u: float) -> float:
+    """Score a utilization fraction ``u`` into a ``[0,1]`` score.
+
+    ``u`` is the used/available fraction; values greater than 1 indicate
+    the artifact is larger than effective memory and are penalized.
+
+    :param u: Utilization fraction (used/available).
+    :return: Normalized score in ``[0.0, 1.0]`` (higher is better).
+    """
     if u <= 0:
         return 1.0
     if u <= 1.0:
@@ -173,6 +224,15 @@ def _score_utilization(u: float) -> float:
 
 
 def _score_on_hardware(total_bytes: int, hw_key: str) -> float:
+    """Return a normalized score ``[0,1]`` for fitting ``total_bytes`` on ``hw_key``.
+
+    Uses predefined hardware limits and the configured usable fraction per device
+    to compute an estimated fit score.
+
+    :param total_bytes: Size in bytes of the artifact to evaluate.
+    :param hw_key: Key identifying the hardware profile (e.g. 'desktop_pc').
+    :return: Float score between 0.0 and 1.0 where 1.0 indicates good fit.
+    """
     limit = HARDWARE_LIMITS[hw_key]
     effective = max(1, int(limit * USABLE_FRACTION[hw_key]))
     u = total_bytes / effective
@@ -180,6 +240,14 @@ def _score_on_hardware(total_bytes: int, hw_key: str) -> float:
 
 
 def get_size_score(url: str, url_type: str) -> Tuple[Optional[Dict[str, float]], int]:
+    """Compute per-hardware size suitability scores and latency for a URL.
+
+    :param url: URL or reference to the artifact (model/dataset/code).
+    :param url_type: Type of the URL: ``"model"``, ``"dataset"``, or ``"code"``.
+    :return: Tuple of ``(scores_dict, latency_ms)``. ``scores_dict`` maps
+             hardware keys to float scores and ``latency_ms`` is the elapsed
+             time in milliseconds.
+    """
     _maybe_login()
     t0 = time.time()
     try:

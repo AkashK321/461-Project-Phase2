@@ -1,3 +1,10 @@
+"""API surface for the model registry and ingestion endpoints.
+
+Provides HTTP event parsing, ingestion helpers, system initialization, and
+administrative utilities for operating on the registry and associated S3
+artifacts. Intended for use as an AWS Lambda-backed API.
+"""
+
 import os
 import json
 import base64
@@ -88,10 +95,24 @@ SEMVER_PATTERN = re.compile(
 
 
 def _timeout_handler(signum, frame):
+    """Signal handler used to raise a timeout during long-running regex ops.
+
+    This helper is installed temporarily around regex calls that may hang
+    on pathological inputs.
+
+    :param signum: Signal number passed by the OS.
+    :param frame: Current stack frame.
+    :return: None (always raises TimeoutError).
+    """
     raise TimeoutError("Regex execution timed out")
 
 
 def parse_semver(version: str):
+    """Parse a semantic version string into a (major, minor, patch) tuple.
+
+    :param version: Version string to parse (e.g. 'v1.2.3' or '1.2').
+    :return: Tuple[int, int, int] when parsing succeeds, otherwise ``None``.
+    """
     if not version:
         return None
     s = version.strip()
@@ -104,6 +125,15 @@ def parse_semver(version: str):
 
 
 def version_satisfies(ver: str, constraint: str) -> bool:
+    """Check whether a version string satisfies a given constraint.
+
+    Supports simple ranges (``"1.2-1.4"``), caret (``^``), and tilde (``~``)
+    notation. If the constraint is empty this returns ``True``.
+
+    :param ver: Version string to test.
+    :param constraint: Constraint expression to evaluate against.
+    :return: ``True`` if ``ver`` satisfies ``constraint``, otherwise ``False``.
+    """
     if not constraint:
         return True
     v = parse_semver(ver)
@@ -136,6 +166,11 @@ def version_satisfies(ver: str, constraint: str) -> bool:
 
 
 def parse_event(event):
+    """Normalize an API Gateway / Lambda event into method, path, body, query.
+
+    :param event: The raw Lambda event dict from API Gateway.
+    :return: Tuple of ``(method, path, body_dict, query_params_dict)``.
+    """
     path = event.get("rawPath", "") or event.get("path") or "/"
     method = event.get("requestContext", {}).get("http", {}).get(
         "method", "GET"
@@ -158,6 +193,12 @@ def parse_event(event):
 
 
 def initialize_system():
+    """Perform one-time initialization tasks (create default user).
+
+    This is safe to call multiple times; the work runs only once per process.
+
+    :return: None
+    """
     global _initialized
     if _initialized:
         return
@@ -167,6 +208,15 @@ def initialize_system():
 
 
 def reset_state(restore_jti=None):
+    """Wipe registry, S3 artifact prefixes, and user table (test helper).
+
+    This removes all items from the configured DynamoDB registry table,
+    deletes objects under the configured S3 prefixes, and clears the user
+    table. Optionally restores a token JTI for the default admin user.
+
+    :param restore_jti: Optional JTI string to restore for the default admin.
+    :return: A dict indicating the reset result, e.g. ``{"reset": "ok"}``.
+    """
     # 1. Wipe Registry
     tbl = dynamodb.Table(TABLE_NAME)
     scan = tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
@@ -1022,6 +1072,11 @@ def calculate_artifact_cost(art_id, query_params):
 
 
 def handler(event, context):
+    """Main Lambda entrypoint handling HTTP-style events.
+
+    Routes incoming requests to the registry API implementation, performs
+    authentication/authorization, and returns API Gateway-compatible responses.
+    """
     # Initialize the system on first run (ensures default user exists)
     initialize_system()
 
