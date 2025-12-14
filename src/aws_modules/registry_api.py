@@ -1289,7 +1289,8 @@ def handler(event, context):
             return make_response(
                 400,
                 {
-                    "error": "missing field(s) in artifact_type, artifact_id, or invalid"
+                    "error": "missing field in artifact_type, artifact_id, "
+                    "or invalid"
                 },
             )
 
