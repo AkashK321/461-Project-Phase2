@@ -1,8 +1,22 @@
+/**
+ * Base URL for the backend API.
+ * @constant {string}
+ */
 const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
 
+/**
+ * The current authentication token (JWT), retrieved from LocalStorage if available.
+ * @type {string|null}
+ */
 let authToken = localStorage.getItem('auth_token');
+
+/**
+ * The decoded user object from the current auth token.
+ * @type {Object|null}
+ */
 let currentUser = null;
 
+// Initialize user state from persisted token
 if (authToken) {
     const decoded = parseJwt(authToken);
     if (decoded) {
@@ -18,14 +32,21 @@ if (authToken) {
 window.addEventListener('load', router);
 window.addEventListener('hashchange', router);
 
+/**
+ * Handles client-side routing based on the URL hash.
+ * redirects unauthenticated users to login and authenticated users to dashboard.
+ * Opens specific modals based on admin routes.
+ */
 function router() {
     const hash = window.location.hash || '#/login';
 
+    // 1. Auth Guard: Redirect to login if no token
     if (!authToken && hash !== '#/login') {
         window.location.hash = '#/login';
         return;
     }
 
+    // 2. Auth Guard: Redirect to dashboard if logged in but on login page
     if (authToken && hash === '#/login') {
         window.location.hash = '#/dashboard';
         return;
@@ -59,6 +80,12 @@ function router() {
 }
 
 // --- Auth & JWT ---
+
+/**
+ * Decodes a JSON Web Token (JWT) without validating the signature.
+ * @param {string} token - The JWT string to decode.
+ * @returns {Object|null} The decoded payload object, or null if parsing fails.
+ */
 function parseJwt (token) {
     try {
         var base64Url = token.split('.')[1];
@@ -72,6 +99,10 @@ function parseJwt (token) {
     }
 }
 
+/**
+ * Handles the login process.
+ * Sends credentials to the API, saves the token to LocalStorage, and redirects to dashboard.
+ */
 async function handleLogin() {
     const name = document.getElementById('username').value;
     const pass = document.getElementById('password').value;
@@ -100,6 +131,7 @@ async function handleLogin() {
                 authToken = rawToken;
                 currentUser = decoded;
                 
+                // Save to LocalStorage
                 localStorage.setItem('auth_token', authToken);
 
                 errDiv.classList.add('hidden');
@@ -118,6 +150,10 @@ async function handleLogin() {
     }
 }
 
+/**
+ * Logs the user out.
+ * Clears the auth token from memory and LocalStorage, and redirects to the login page.
+ */
 function handleLogout() {
     authToken = null;
     currentUser = null;
@@ -134,6 +170,10 @@ function handleLogout() {
     window.location.hash = '#/login';
 }
 
+/**
+ * Updates the UI visibility based on the user's login status and role.
+ * @param {boolean} isLoggedIn - Whether the user is currently authenticated.
+ */
 function updateUI(isLoggedIn) {
     const nav = document.getElementById('nav-bar');
     const login = document.getElementById('login-section');
@@ -144,6 +184,7 @@ function updateUI(isLoggedIn) {
         login.classList.add('hidden');
         dash.classList.remove('hidden');
 
+        // Check currentUser exists before checking roles
         const isAdmin = currentUser && currentUser.roles && currentUser.roles.includes('admin');
         
         document.querySelectorAll('.admin-only').forEach(el => {
@@ -164,10 +205,23 @@ function updateUI(isLoggedIn) {
 }
 
 // --- RESULT RENDERING HELPERS ---
+
+/**
+ * Formats a key string for display (e.g., "my_key" -> "My Key").
+ * @param {string} key - The raw key string.
+ * @returns {string} The formatted key string.
+ */
 function formatKey(key) {
     return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/**
+ * Extracts score-related fields from an item object.
+ * @param {Object} item - The item containing potential scores.
+ * @param {string[]} excludedKeys - Keys to explicitly exclude.
+ * @param {string[]} scoreKeywords - Keywords that identify a field as a score.
+ * @returns {Object} An object containing only the extracted scores.
+ */
 function extractScores(item, excludedKeys, scoreKeywords) {
     const foundScores = {};
     if (item.scores && typeof item.scores === 'object' && !Array.isArray(item.scores)) {
@@ -184,6 +238,11 @@ function extractScores(item, excludedKeys, scoreKeywords) {
     return foundScores;
 }
 
+/**
+ * Initiates the download of an artifact by fetching a presigned URL.
+ * @param {string} type - The type of artifact (e.g., 'model').
+ * @param {string} id - The unique ID of the artifact.
+ */
 async function downloadArtifact(type, id) {
     const artifactType = type || 'model'; 
     try {
@@ -204,6 +263,11 @@ async function downloadArtifact(type, id) {
     } catch (err) { alert("Download failed: " + err.message); }
 }
 
+/**
+ * Renders the detailed view of a specific search result item.
+ * @param {Object} item - The data item to render.
+ * @returns {string} HTML string representing the detailed view.
+ */
 function renderDetailView(item) {
     const excludedKeys = ['model_name', 'Name', 'version', 'id']; 
     const scoreKeywords = [
@@ -277,6 +341,11 @@ function renderDetailView(item) {
     return output;
 }
 
+/**
+ * Generates HTML for the result of a package upload.
+ * @param {Object} data - The response data from the upload API.
+ * @returns {string} HTML string displaying success or debug info.
+ */
 function renderUploadResult(data) {
     if (data.metadata) {
         const meta = data.metadata;
@@ -292,6 +361,11 @@ function renderUploadResult(data) {
     return `<div style="background:#333; color:#fff; padding:1rem; border-radius:5px;"><pre style="margin:0; color:#fff;">${JSON.stringify(data, null, 2)}</pre></div>`;
 }
 
+/**
+ * Generates HTML for the search results table.
+ * @param {Array|Object} data - The search results array or object.
+ * @returns {string} HTML string for the results table.
+ */
 function renderSearchResult(data) {
     if (Array.isArray(data)) {
         if (data.length === 0) return `<p>No packages found matching your query.</p>`;
@@ -342,6 +416,11 @@ function renderSearchResult(data) {
     return `<div style="background:#333; color:#fff; padding:1rem; border-radius:5px;"><pre style="margin:0; color:#fff;">${JSON.stringify(data, null, 2)}</pre></div>`;
 }
 
+/**
+ * Toggles the visibility of a detail row in the search results.
+ * @param {string} detailId - The ID of the detail row.
+ * @param {string} mainRowId - The ID of the main row (for aria states).
+ */
 function toggleRow(detailId, mainRowId) {
     const detailRow = document.getElementById(detailId);
     const mainRow = document.getElementById(mainRowId);
@@ -358,6 +437,12 @@ function toggleRow(detailId, mainRowId) {
     }
 }
 
+/**
+ * Handles keyboard accessibility for toggling search result rows.
+ * @param {KeyboardEvent} event - The keyboard event.
+ * @param {string} detailId - The ID of the detail row.
+ * @param {string} mainRowId - The ID of the main row.
+ */
 function handleRowKey(event, detailId, mainRowId) {
     if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
@@ -367,6 +452,9 @@ function handleRowKey(event, detailId, mainRowId) {
 
 // --- Admin User Management Logic ---
 
+/**
+ * Resets the Create User modal form inputs.
+ */
 function prepCreateUserModal() {
     document.getElementById('new-user-name').value = '';
     document.getElementById('new-user-pass').value = '';
@@ -377,6 +465,10 @@ function prepCreateUserModal() {
     });
 }
 
+/**
+ * Toggles other role checkboxes based on the Admin role selection.
+ * @param {HTMLInputElement} adminCheckbox - The admin checkbox element.
+ */
 function toggleAdminRoles(adminCheckbox) {
     const others = document.querySelectorAll('.role-chk');
     others.forEach(chk => {
@@ -390,6 +482,9 @@ function toggleAdminRoles(adminCheckbox) {
     });
 }
 
+/**
+ * Creates a new user via the API.
+ */
 async function createUser() {
     const name = document.getElementById('new-user-name').value;
     const pass = document.getElementById('new-user-pass').value;
@@ -425,6 +520,9 @@ async function createUser() {
     } catch(e) { alert("Network Error: " + e.message); }
 }
 
+/**
+ * Fetches and displays the list of users in the View Users modal.
+ */
 async function fetchUsersList() {
     const list = document.getElementById('users-list-container');
     list.innerHTML = "<p>Loading users...</p>";
@@ -466,6 +564,12 @@ async function fetchUsersList() {
     }
 }
 
+/**
+ * Prepares and opens the Modify Roles modal for a specific user.
+ * @param {string} id - The user's ID.
+ * @param {string} name - The user's username.
+ * @param {string} rolesStr - Comma-separated list of roles.
+ */
 function openModifyRoles(id, name, rolesStr) {
     document.getElementById('mod-user-id').value = id;
     document.getElementById('mod-user-display').innerText = "Editing User: " + name;
@@ -480,6 +584,9 @@ function openModifyRoles(id, name, rolesStr) {
     document.getElementById('modify-roles-modal').showModal();
 }
 
+/**
+ * Submits the updated roles for a user to the API.
+ */
 async function submitRoleUpdate() {
     const id = document.getElementById('mod-user-id').value;
     const isAdmin = document.getElementById('mod-role-admin').checked;
@@ -510,6 +617,11 @@ async function submitRoleUpdate() {
     } catch(e) { alert("Error: " + e.message); }
 }
 
+/**
+ * Deletes a user by ID after confirmation.
+ * @param {string} id - The user ID to delete.
+ * @param {string} username - The username (for display in confirmation).
+ */
 async function deleteUser(id, username) {
     if(!confirm(`Are you sure you want to delete user "${username}"?`)) return;
     try {
@@ -526,6 +638,9 @@ async function deleteUser(id, username) {
     } catch(e) { alert("Error: " + e.message); }
 }
 
+/**
+ * Deletes the currently logged-in user's account.
+ */
 async function deleteSelf() {
     if(!confirm("Are you sure you want to delete your account? This action cannot be undone.")) return;
     try {
@@ -543,6 +658,10 @@ async function deleteSelf() {
     } catch(e) { alert("Error: " + e.message); }
 }
 
+/**
+ * Handles the package upload process.
+ * Reads the URL input, sends it to the API, and renders the result.
+ */
 async function uploadPackage() {
     const url = document.getElementById('pkg-url').value;
     const resDiv = document.getElementById('upload-res');
@@ -566,6 +685,10 @@ async function uploadPackage() {
     } catch(e) { resDiv.innerHTML = `<div class='error-box'>Error: ${e.message}</div>`; }
 }
 
+/**
+ * Handles the package search process.
+ * Sends the regex query to the API and renders the results table.
+ */
 async function searchPackages() {
     const q = document.getElementById('search-q').value;
     const resDiv = document.getElementById('search-res');
@@ -583,6 +706,9 @@ async function searchPackages() {
     } catch(e) { resDiv.innerHTML = `<div class='error-box'>Error: ${e.message}</div>`; }
 }
 
+/**
+ * Admin utility to completely reset the registry database.
+ */
 async function resetRegistry() {
     if(!confirm("WARNING: This will wipe the entire registry database. Continue?")) return;
     try {
