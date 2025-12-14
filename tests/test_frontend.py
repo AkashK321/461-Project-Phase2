@@ -113,7 +113,7 @@ class TestFrontend:
         time.sleep(0.5)
 
         search_input = driver.find_element(By.ID, "search-q")
-        assert search_input.get_attribute("value") == ".*"
+        assert search_input.get_attribute("value") == "*"
 
         search_input.clear()
         search_input.send_keys("React")
