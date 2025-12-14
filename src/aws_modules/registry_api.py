@@ -487,9 +487,7 @@ def ingest_artifact(artifact_type, payload):
                 # 3a. Verify integrity hash again immediately before extraction
                 verify_zip_sha256 = _sha256_file(tmp_download_path)
                 if verify_zip_sha256 != expected_zip_sha256:
-                    raise Exception(
-                        "Repo zip failed SHA256 check before extraction"
-                    )
+                    raise Exception("Repo zip failed SHA256 check before extraction")
 
                 with zipfile.ZipFile(tmp_download_path, "r") as z:
                     for file_info in z.infolist():
@@ -1208,9 +1206,7 @@ def handler(event, context):
         if not isinstance(body, dict) or not body.get("github_url"):
             return make_response(
                 400,
-                {
-                    "error": "License check request malformed or missing github_url"
-                },
+                {"error": "License check request malformed or missing github_url"},
             )
 
         github_url = body.get("github_url")
@@ -1288,10 +1284,7 @@ def handler(event, context):
         if artifact_type not in {"model", "dataset", "code"} or not art_id:
             return make_response(
                 400,
-                {
-                    "error": "missing field in artifact_type, artifact_id, "
-                    "or invalid"
-                },
+                {"error": "missing field in artifact_type, artifact_id, " "or invalid"},
             )
 
         # Permission: only admins can delete artifacts
