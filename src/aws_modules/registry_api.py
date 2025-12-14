@@ -8,6 +8,7 @@ import logging
 import requests
 import zipfile
 import signal
+import hashlib
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -88,6 +89,14 @@ SEMVER_PATTERN = re.compile(
     r"(?:\.(?P<min>0|[1-9]\d*))?"
     r"(?:\.(?P<patch>0|[1-9]\d*))?$"
 )
+
+
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _timeout_handler(signum, frame):
@@ -350,6 +359,12 @@ def ingest_artifact(artifact_type, payload):
 
     try:
         os.makedirs(tmp_dir, exist_ok=True)
+
+        try:
+            os.chmod(tmp_dir, 0o700)
+        except Exception:
+            pass
+
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
         if "github.com" in url:
@@ -382,6 +397,15 @@ def ingest_artifact(artifact_type, payload):
                     for chunk in r_zip.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
+
+            # 2b. Record integrity hash immediately after download
+            try:
+                os.chmod(tmp_download_path, 0o600)
+            except Exception:
+                pass
+
+            expected_zip_sha256 = _sha256_file(tmp_download_path)
+            logger.info(f"Downloaded repo zip SHA256: {expected_zip_sha256}")
 
             # 3. Extract with Filtering
             excluded_extensions = {
@@ -459,6 +483,14 @@ def ingest_artifact(artifact_type, payload):
                 return True
 
             try:
+
+                # 3a. Verify integrity hash again immediately before extraction
+                verify_zip_sha256 = _sha256_file(tmp_download_path)
+                if verify_zip_sha256 != expected_zip_sha256:
+                    raise Exception(
+                        "Repository zip failed integrity check (SHA256 mismatch) before extraction"
+                    )
+
                 with zipfile.ZipFile(tmp_download_path, "r") as z:
                     for file_info in z.infolist():
                         if not file_info.filename.endswith("/"):
