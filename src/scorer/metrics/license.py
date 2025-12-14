@@ -108,3 +108,4 @@ def get_license_score(url: str, url_type: str) -> Tuple[Optional[int], int]:
         return 1, latency
     else:
         return 0, latency
+
