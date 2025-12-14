@@ -8,6 +8,7 @@ import logging
 import requests
 import zipfile
 import signal
+import hashlib
 
 os.environ["HF_HOME"] = "/tmp/huggingface"
 os.environ["HUGGINGFACE_HUB_CACHE"] = "/tmp/huggingface/hub"
@@ -23,11 +24,13 @@ from aws_modules.s3_utils import (
     upload_model,
     generate_presigned_download_url,
     get_object_size,
+    delete_model,
 )
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
     get_model_by_model_name,
+    delete_model_metadata,
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -35,6 +38,7 @@ from utils.lineage_utils import (
     get_descendant_items,
 )
 from scorer.metrics.base import get_repo_id
+from scorer.metrics.license import license_check_bool, LicenseCheckError
 from aws_modules.api_utils import make_response
 
 from aws_modules.auth import (
@@ -85,6 +89,14 @@ SEMVER_PATTERN = re.compile(
     r"(?:\.(?P<min>0|[1-9]\d*))?"
     r"(?:\.(?P<patch>0|[1-9]\d*))?$"
 )
+
+
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _timeout_handler(signum, frame):
@@ -347,6 +359,12 @@ def ingest_artifact(artifact_type, payload):
 
     try:
         os.makedirs(tmp_dir, exist_ok=True)
+
+        try:
+            os.chmod(tmp_dir, 0o700)
+        except Exception:
+            pass
+
         logger.info(f"Downloading {artifact_type} '{repo}' to '{tmp_dir}'")
 
         if "github.com" in url:
@@ -379,6 +397,15 @@ def ingest_artifact(artifact_type, payload):
                     for chunk in r_zip.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
+
+            # 2b. Record integrity hash immediately after download
+            try:
+                os.chmod(tmp_download_path, 0o600)
+            except Exception:
+                pass
+
+            expected_zip_sha256 = _sha256_file(tmp_download_path)
+            logger.info(f"Downloaded repo zip SHA256: {expected_zip_sha256}")
 
             # 3. Extract with Filtering
             excluded_extensions = {
@@ -456,6 +483,12 @@ def ingest_artifact(artifact_type, payload):
                 return True
 
             try:
+
+                # 3a. Verify integrity hash again immediately before extraction
+                verify_zip_sha256 = _sha256_file(tmp_download_path)
+                if verify_zip_sha256 != expected_zip_sha256:
+                    raise Exception("Repo zip failed SHA256 check before extraction")
+
                 with zipfile.ZipFile(tmp_download_path, "r") as z:
                     for file_info in z.infolist():
                         if not file_info.filename.endswith("/"):
@@ -1163,6 +1196,47 @@ def handler(event, context):
             return make_response(400, {"error": "Missing artifact ID in path"})
         return get_lineage_graph(art_id)
 
+    # POST /artifact/model/{id}/license-check
+    license_check_match = re.match(r"/artifact/model/([^/]+)/license-check", path)
+    if method == "POST" and license_check_match:
+        art_id = license_check_match.group(1)
+        if not art_id:
+            return make_response(400, {"error": "Missing artifact ID in path"})
+
+        if not isinstance(body, dict) or not body.get("github_url"):
+            return make_response(
+                400,
+                {"error": "License check request malformed or missing github_url"},
+            )
+
+        github_url = body.get("github_url")
+
+        # confirm the model exists in our registry first.
+        model_item = get_model_by_id(art_id)
+        if not model_item or model_item.get("type") != "model":
+            return make_response(404, {"error": "The artifact could not be found."})
+
+        model_url = model_item.get("source_url")
+        if not model_url:
+            # If ingest ever produced a model without a source_url,
+            # treat it like upstream failure.
+            return make_response(
+                502,
+                {"error": "External license information could not be retrieved."},
+            )
+
+        try:
+            compatible = license_check_bool(model_url=model_url, github_url=github_url)
+            return make_response(200, compatible)
+        except LicenseCheckError as e:
+            return make_response(e.status_code, {"error": e.message})
+        except Exception:
+            logger.exception("Unhandled error during license check")
+            return make_response(
+                502,
+                {"error": "External license information could not be retrieved."},
+            )
+
     # GET /artifact/{type}/{id}/cost
     cost_match = re.match(r"/artifact/([^/]+)/([^/]+)/cost", path)
     if method == "GET" and cost_match:
@@ -1200,6 +1274,38 @@ def handler(event, context):
             return search_artifacts(body or [], query_params)
         except Exception as e:
             return make_response(400, {"error": str(e)})
+
+    # DELETE /artifacts/{artifact_type}/{id}
+    delete_match = re.match(r"/artifacts/([^/]+)/([^/]+)$", path)
+    if method == "DELETE" and delete_match and path.count("/") == 3:
+        artifact_type = delete_match.group(1)
+        art_id = delete_match.group(2)
+
+        if artifact_type not in {"model", "dataset", "code"} or not art_id:
+            return make_response(
+                400,
+                {"error": "missing field in artifact_type, artifact_id, " "or invalid"},
+            )
+
+        # Permission: only admins can delete artifacts
+        if "admin" not in user_roles:
+            return make_response(403, {"error": "Permission denied"})
+
+        item = get_model_by_id(art_id)
+        if not item or item.get("type") != artifact_type:
+            return make_response(404, {"error": "Artifact does not exist."})
+
+        s3_key = item.get("s3_key")
+        if s3_key:
+            if not delete_model(s3_key):
+                return make_response(
+                    500, {"error": "Failed to delete artifact content."}
+                )
+
+        if not delete_model_metadata(art_id):
+            return make_response(500, {"error": "Failed to delete artifact metadata."})
+
+        return make_response(200, {"message": "Artifact is deleted."})
 
     # anything else is a 404
     return make_response(404, {"error": f"Route not found: {method} {path}"})
