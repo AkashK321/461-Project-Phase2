@@ -8,6 +8,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
+
 def calculate_artifact_cost(art_id, query_params):
     """
     Handle GET /artifact/{type}/{id}/cost
