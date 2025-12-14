@@ -23,11 +23,13 @@ from aws_modules.s3_utils import (
     upload_model,
     generate_presigned_download_url,
     get_object_size,
+    delete_model
 )
 from aws_modules.db_utils import (
     save_model_metadata,
     get_model_by_id,
     get_model_by_model_name,
+    delete_model_metadata
 )
 from utils.lineage_utils import (
     get_base_model_from_card,
@@ -1243,6 +1245,39 @@ def handler(event, context):
             return search_artifacts(body or [], query_params)
         except Exception as e:
             return make_response(400, {"error": str(e)})
+
+    # DELETE /artifacts/{artifact_type}/{id}
+    delete_match = re.match(r"/artifacts/([^/]+)/([^/]+)$", path)
+    if method == "DELETE" and delete_match and path.count("/") == 3:
+        artifact_type = delete_match.group(1)
+        art_id = delete_match.group(2)
+
+        if artifact_type not in {"model", "dataset", "code"} or not art_id:
+            return make_response(
+                400,
+                {
+                    "error": "There is missing field(s) in the artifact_type or artifact_id or invalid"
+                },
+            )
+
+        # Permission: only admins can delete artifacts
+        if "admin" not in user_roles:
+            return make_response(403, {"error": "Permission denied"})
+
+        item = get_model_by_id(art_id)
+        if not item or item.get("type") != artifact_type:
+            return make_response(404, {"error": "Artifact does not exist."})
+
+        s3_key = item.get("s3_key")
+        if s3_key:
+            if not delete_model(s3_key):
+                return make_response(500, {"error": "Failed to delete artifact content."})
+
+        if not delete_model_metadata(art_id):
+            return make_response(500, {"error": "Failed to delete artifact metadata."})
+
+        return make_response(200, {"message": "Artifact is deleted."})
+
 
     # anything else is a 404
     return make_response(404, {"error": f"Route not found: {method} {path}"})
