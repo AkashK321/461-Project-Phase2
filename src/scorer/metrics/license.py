@@ -227,7 +227,6 @@ def _get_hf_model_spdx(model_url: str) -> str | None:
     """I fetch the license string from HuggingFace model metadata."""
     repo_id = get_repo_id(model_url, "model")
     if not repo_id:
-        # For Phase 2 license-check, I only support HF model URLs.
         raise LicenseCheckError(404, "Model not found on HuggingFace")
 
     try:
