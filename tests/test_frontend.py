@@ -32,7 +32,7 @@ class TestFrontend:
             pytest.fail(f"HTML file not found at expected path: {html_path}")
 
         self.driver.get(f"file://{html_path}")
-        
+
         # Allow a brief moment for the app.js router to initialize
         time.sleep(0.5)
 
@@ -45,24 +45,24 @@ class TestFrontend:
         # Should default to #/login
         assert driver.find_element(By.ID, "username").is_displayed()
         assert driver.find_element(By.ID, "password").is_displayed()
-        
+
         dashboard = driver.find_element(By.ID, "dashboard")
         assert "hidden" in dashboard.get_attribute("class")
 
     def test_routing_logic(self):
         """Test that changing the hash routes to the correct view."""
         driver = self.driver
-        
+
         # Mock a logged-in state so the Router allows access to dashboard
         driver.execute_script("authToken = 'mock_token';")
-        
+
         # Navigate using the Hash, which tests your Router logic
         driver.execute_script("window.location.hash = '#/dashboard';")
-        time.sleep(0.5) # Wait for hashchange event
-        
+        time.sleep(0.5)  # Wait for hashchange event
+
         dashboard = driver.find_element(By.ID, "dashboard")
         login_section = driver.find_element(By.ID, "login-section")
-        
+
         # Dashboard should be visible, Login hidden
         assert "hidden" not in dashboard.get_attribute("class")
         assert "hidden" in login_section.get_attribute("class")
@@ -71,11 +71,11 @@ class TestFrontend:
         """Test that admin routes open the corresponding modals."""
         driver = self.driver
         driver.execute_script("authToken = 'mock_token';")
-        
+
         # 1. Test Create User Modal
         driver.execute_script("window.location.hash = '#/admin/create-user';")
         time.sleep(0.5)
-        
+
         modal = driver.find_element(By.ID, "create-user-modal")
         # Check if the dialog is open (HTML5 dialog uses 'open' attribute)
         assert modal.get_attribute("open") is not None
@@ -83,17 +83,17 @@ class TestFrontend:
         # 2. Test View Users Modal
         driver.execute_script("window.location.hash = '#/admin/view-users';")
         time.sleep(0.5)
-        
+
         modal_view = driver.find_element(By.ID, "view-users-modal")
         assert modal_view.get_attribute("open") is not None
 
     def test_invalid_login_flow(self):
         driver = self.driver
         wait = WebDriverWait(driver, 5)
-        
+
         # Ensure we are on login page
         driver.execute_script("window.location.hash = '#/login';")
-        
+
         driver.find_element(By.ID, "username").send_keys("fakeuser")
         driver.find_element(By.ID, "password").send_keys("badpass")
 
@@ -106,7 +106,7 @@ class TestFrontend:
 
     def test_search_ui_interaction(self):
         driver = self.driver
-        
+
         # Bypass login via router hash + mock token
         driver.execute_script("authToken = 'mock_token';")
         driver.execute_script("window.location.hash = '#/dashboard';")
@@ -118,6 +118,7 @@ class TestFrontend:
         search_input.clear()
         search_input.send_keys("React")
 
-        search_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Search')]")
+        search_btn = driver.find_element(
+            By.XPATH, "//button[contains(text(), 'Search')]"
+        )
         search_btn.click()
-        

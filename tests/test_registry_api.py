@@ -560,3 +560,66 @@ def test_handler_unknown_route():
     status, body = decode_body(resp)
     assert status == 404
     assert "Route not found" in body["error"]
+
+
+def test_handler_get_users_calls_get_all_users(monkeypatch):
+    """Test GET /users endpoint calls get_all_users with correct permissions."""
+
+    def fake_get_validated_user(event):
+        return {"sub": "admin_user", "roles": ["admin"]}
+
+    called = {}
+
+    def fake_get_all_users(requesting_user_roles):
+        called["roles"] = requesting_user_roles
+        return reg.make_response(200, [{"username": "alice"}, {"username": "bob"}])
+
+    monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
+    monkeypatch.setattr(reg, "get_all_users", fake_get_all_users)
+
+    event = {
+        "rawPath": "/users",
+        "requestContext": {"http": {"method": "GET"}},
+        "body": "",
+    }
+
+    resp = reg.handler(event, None)
+    status, body = decode_body(resp)
+
+    assert status == 200
+    assert len(body) == 2
+    assert "admin" in called["roles"]
+
+
+def test_handler_update_user_roles_calls_update_user_roles(monkeypatch):
+    """Test PUT /users/{id} endpoint calls update_user_roles with correct args."""
+
+    def fake_get_validated_user(event):
+        return {"sub": "admin_user", "roles": ["admin"]}
+
+    called = {}
+
+    def fake_update_user_roles(target_id, new_roles, requesting_roles):
+        called["target_id"] = target_id
+        called["new_roles"] = new_roles
+        called["req_roles"] = requesting_roles
+        return reg.make_response(200, {"message": "Roles updated successfully"})
+
+    monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
+    monkeypatch.setattr(reg, "update_user_roles", fake_update_user_roles)
+
+    payload = {"roles": ["search", "download"]}
+    event = {
+        "rawPath": "/users/target-user-123",
+        "requestContext": {"http": {"method": "PUT"}},
+        "body": json.dumps(payload),
+    }
+
+    resp = reg.handler(event, None)
+    status, body = decode_body(resp)
+
+    assert status == 200
+    assert body["message"] == "Roles updated successfully"
+    assert called["target_id"] == "target-user-123"
+    assert called["new_roles"] == ["search", "download"]
+    assert "admin" in called["req_roles"]
