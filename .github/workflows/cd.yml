@@ -29,6 +29,7 @@ on:
       - cost
       - making-timeouts-stricter
       - adding-pydocs
+      - license-check-metric
 
 # Define the permissions the job will need
 permissions:

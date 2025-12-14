@@ -1,0 +1,588 @@
+openapi: 3.0.2
+info:
+  title: ECE 461 - Project Phase 2 Registry API
+  version: 1.0.0
+  description: |-
+    API Specification for ECE 461 Project.
+paths:
+  # --- Public Routes ---
+  /health:
+    get:
+      summary: Heartbeat check
+      description: Returns HTTP 200 if the system is reachable.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /tracks:
+    get:
+      summary: Get planned tracks
+      operationId: getTracks
+      responses:
+        "200":
+          description: List of planned tracks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plannedTracks:
+                    type: array
+                    items:
+                      type: string
+
+  /authenticate:
+    put:
+      summary: Authenticate user
+      description: Validates credentials and returns a JWT.
+      operationId: authenticateUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthenticationRequest"
+        required: true
+      responses:
+        "200":
+          description: Authentication successful.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationToken"
+        "401":
+          description: Invalid credentials.
+        "501":
+          description: Authentication not supported.
+
+  # --- Authenticated Routes ---
+  
+  # User Management
+  /users:
+    post:
+      summary: Register a new user
+      operationId: registerUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRegistration"
+      responses:
+        "201":
+          description: User created.
+        "403":
+          description: Permission denied.
+    get:
+      summary: List all users
+      operationId: listUsers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    put:
+      summary: Update user roles
+      operationId: updateUserRoles
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roles:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: User roles updated.
+    delete:
+      summary: Delete a user
+      operationId: deleteUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User deleted.
+
+  /reset:
+    delete:
+      summary: Reset the registry
+      description: Wipes DB, S3, and Users (restoring default admin).
+      operationId: resetRegistry
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Registry reset successful.
+        "403":
+          description: Permission denied (Admin only).
+
+  # --- Artifact Operations ---
+
+  /artifacts:
+    post:
+      summary: Search for artifacts
+      description: Paginated search by name, version, or type.
+      operationId: searchArtifacts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            $ref: "#/components/schemas/EnumerateOffset"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/ArtifactQuery"
+      responses:
+        "200":
+          headers:
+            Offset:
+              schema:
+                $ref: "#/components/schemas/EnumerateOffset"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArtifactMetadata"
+
+  /artifact/byRegEx:
+    post:
+      summary: Search artifacts by Regex
+      operationId: searchByRegex
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactRegEx"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArtifactMetadata"
+        "400":
+          description: Invalid Regex or ReDoS detected.
+        "404":
+          description: No matches found.
+
+  /artifact/byName/{name}:
+    get:
+      summary: Get artifact metadata by name
+      operationId: getArtifactByName
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArtifactMetadata"
+        "404":
+          description: No such artifact.
+
+  /artifact/{artifact_type}:
+    post:
+      summary: Ingest a new artifact
+      operationId: ingestArtifact
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactType"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactData"
+      responses:
+        "201":
+          description: Artifact created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+        "424":
+          description: Failed quality gate or authentication required.
+
+  /artifacts/{artifact_type}/{id}:
+    get:
+      summary: Retrieve an artifact
+      operationId: getArtifact
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactType"
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactID"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+        "404":
+          description: Artifact not found.
+    delete:
+      summary: Delete an artifact
+      operationId: deleteArtifact
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactType"
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactID"
+      responses:
+        "200":
+          description: Artifact deleted.
+        "403":
+          description: Permission denied.
+        "404":
+          description: Artifact not found.
+
+  /artifact/model/{id}/lineage:
+    get:
+      summary: Get model lineage
+      operationId: getLineage
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactID"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactLineageGraph"
+        "404":
+          description: Artifact not found.
+
+  /artifact/model/{id}/license-check:
+    post:
+      summary: Check license compatibility
+      operationId: checkLicense
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimpleLicenseCheckRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: boolean
+
+  /artifact/model/{id}/rate:
+    get:
+      summary: Get artifact ratings
+      operationId: rateArtifact
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactID"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRating"
+
+  /artifact/{artifact_type}/{id}/cost:
+    get:
+      summary: Calculate artifact cost
+      operationId: getArtifactCost
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactType"
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArtifactID"
+        - name: dependency
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactCost"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: apiKey
+      in: header
+      name: X-Authorization
+
+  schemas:
+    Artifact:
+      type: object
+      properties:
+        metadata:
+          $ref: "#/components/schemas/ArtifactMetadata"
+        data:
+          $ref: "#/components/schemas/ArtifactData"
+
+    ArtifactData:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+        download_url:
+          type: string
+          format: uri
+          readOnly: true
+
+    ArtifactType:
+      type: string
+      enum:
+        - model
+        - dataset
+        - code
+
+    ArtifactID:
+      type: string
+      pattern: '^[a-zA-Z0-9\-]+$'
+
+    ArtifactMetadata:
+      type: object
+      required:
+        - name
+        - id
+        - type
+      properties:
+        name:
+          type: string
+        id:
+          $ref: "#/components/schemas/ArtifactID"
+        type:
+          $ref: "#/components/schemas/ArtifactType"
+
+    ArtifactQuery:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        types:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactType"
+        version:
+          type: string
+        version_range:
+          type: string
+
+    ArtifactRegEx:
+      type: object
+      required:
+        - regex
+      properties:
+        regex:
+          type: string
+
+    ArtifactCost:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          standalone_cost:
+            type: number
+          total_cost:
+            type: number
+        required:
+          - total_cost
+
+    ArtifactLineageGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactLineageNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactLineageEdge"
+
+    ArtifactLineageNode:
+      type: object
+      properties:
+        artifact_id:
+          $ref: "#/components/schemas/ArtifactID"
+        name:
+          type: string
+        source:
+          type: string
+
+    ArtifactLineageEdge:
+      type: object
+      properties:
+        from_node_artifact_id:
+          $ref: "#/components/schemas/ArtifactID"
+        to_node_artifact_id:
+          $ref: "#/components/schemas/ArtifactID"
+        relationship:
+          type: string
+
+    SimpleLicenseCheckRequest:
+      type: object
+      required:
+        - github_url
+      properties:
+        github_url:
+          type: string
+          format: uri
+
+    ModelRating:
+      type: object
+      description: Dynamic dictionary of metric scores (implementation uses generic key-values)
+      additionalProperties:
+        type: number
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        is_admin:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+
+    UserRegistration:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        is_admin:
+          type: boolean
+
+    AuthenticationRequest:
+      type: object
+      required:
+        - user
+        - secret
+      properties:
+        user:
+          type: object
+          properties:
+            name:
+              type: string
+            is_admin:
+              type: boolean
+        secret:
+          type: object
+          properties:
+            password:
+              type: string
+
+    AuthenticationToken:
+      type: string
+      description: JWT Token
+
+    EnumerateOffset:
+      type: string
