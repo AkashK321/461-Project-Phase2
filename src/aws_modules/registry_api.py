@@ -488,7 +488,7 @@ def ingest_artifact(artifact_type, payload):
                 verify_zip_sha256 = _sha256_file(tmp_download_path)
                 if verify_zip_sha256 != expected_zip_sha256:
                     raise Exception(
-                        "Repository zip failed integrity check (SHA256 mismatch) before extraction"
+                        "Repo zip failed SHA256 check before extraction"
                     )
 
                 with zipfile.ZipFile(tmp_download_path, "r") as z:
@@ -1209,7 +1209,7 @@ def handler(event, context):
             return make_response(
                 400,
                 {
-                    "error": "The license check request is malformed or missing github_url."
+                    "error": "License check request malformed or missing github_url"
                 },
             )
 
@@ -1222,7 +1222,8 @@ def handler(event, context):
 
         model_url = model_item.get("source_url")
         if not model_url:
-            # If ingest ever produced a model without a source_url, treat it like upstream failure.
+            # If ingest ever produced a model without a source_url,
+            # treat it like upstream failure.
             return make_response(
                 502,
                 {"error": "External license information could not be retrieved."},
@@ -1288,7 +1289,7 @@ def handler(event, context):
             return make_response(
                 400,
                 {
-                    "error": "There is missing field(s) in the artifact_type or artifact_id or invalid"
+                    "error": "missing field(s) in artifact_type, artifact_id, or invalid"
                 },
             )
 
