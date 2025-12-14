@@ -1,28 +1,37 @@
 const API_URL = "https://bbdudjvh08.execute-api.us-east-2.amazonaws.com"; 
-let authToken = null;
+
+let authToken = localStorage.getItem('auth_token');
 let currentUser = null;
 
-// --- NEW: Router Logic ---
+if (authToken) {
+    const decoded = parseJwt(authToken);
+    if (decoded) {
+        currentUser = decoded;
+    } else {
+        // If token is invalid/expired, clear it
+        authToken = null;
+        localStorage.removeItem('auth_token');
+    }
+}
+
+// --- Router Logic ---
 window.addEventListener('load', router);
 window.addEventListener('hashchange', router);
 
 function router() {
-    // Default to #/login if empty
     const hash = window.location.hash || '#/login';
 
-    // 1. Auth Guard: Redirect to login if no token
     if (!authToken && hash !== '#/login') {
         window.location.hash = '#/login';
         return;
     }
 
-    // 2. Auth Guard: Redirect to dashboard if logged in but on login page
     if (authToken && hash === '#/login') {
         window.location.hash = '#/dashboard';
         return;
     }
 
-    // 3. Close all modals by default (clean state)
+    // 3. Close all modals by default
     const allDialogs = document.querySelectorAll('dialog');
     allDialogs.forEach(d => d.close());
 
@@ -40,11 +49,10 @@ function router() {
     } 
     else if (hash === '#/admin/view-users') {
         updateUI(true);
-        fetchUsersList(); // Extracted fetch logic
+        fetchUsersList(); 
         document.getElementById('view-users-modal').showModal();
     }
     else if (hash === '#/admin/reset') {
-            // Trigger reset then go back to dashboard
             resetRegistry();
             window.location.hash = '#/dashboard';
     }
@@ -84,13 +92,17 @@ async function handleLogin() {
 
         if(res.ok) {
             const txt = await res.json();
-            authToken = txt.replace(/"/g, '').split(' ')[1]; 
+            // Extract token
+            const rawToken = txt.replace(/"/g, '').split(' ')[1]; 
             
-            const decoded = parseJwt(authToken);
+            const decoded = parseJwt(rawToken);
             if(decoded) {
+                authToken = rawToken;
                 currentUser = decoded;
+                
+                localStorage.setItem('auth_token', authToken);
+
                 errDiv.classList.add('hidden');
-                // UPDATE: Navigation is now driven by Hash
                 window.location.hash = '#/dashboard';
             } else {
                 errDiv.innerText = "System Error: Failed to parse authentication token.";
@@ -110,15 +122,15 @@ function handleLogout() {
     authToken = null;
     currentUser = null;
     
+    localStorage.removeItem('auth_token');
+
     document.getElementById('username').value = '';
     document.getElementById('password').value = '';
     document.getElementById('login-error').classList.add('hidden');
     
-    // Clear results on logout
     document.getElementById('upload-res').innerHTML = '';
     document.getElementById('search-res').innerHTML = '';
 
-    // UPDATE: Redirect to login hash
     window.location.hash = '#/login';
 }
 
@@ -132,7 +144,7 @@ function updateUI(isLoggedIn) {
         login.classList.add('hidden');
         dash.classList.remove('hidden');
 
-        const isAdmin = currentUser.roles && currentUser.roles.includes('admin');
+        const isAdmin = currentUser && currentUser.roles && currentUser.roles.includes('admin');
         
         document.querySelectorAll('.admin-only').forEach(el => {
             if(isAdmin) el.classList.remove('hidden');
@@ -288,10 +300,7 @@ function renderSearchResult(data) {
             const detailId = `detail-${index}`;
             const formattedDetails = renderDetailView(item);
             
-            // FIXED: Account for 'name' sent by API and 'metadata.name'
             const displayName = item.name || item.Name || item.model_name || (item.metadata && item.metadata.name) || 'Unknown';
-            
-            // FIXED: Display Type instead of Version (as version is often missing)
             const displayType = item.type || 'Unknown';
 
             return `
@@ -358,7 +367,6 @@ function handleRowKey(event, detailId, mainRowId) {
 
 // --- Admin User Management Logic ---
 
-// Renamed from openCreateUserModal - called by Router now
 function prepCreateUserModal() {
     document.getElementById('new-user-name').value = '';
     document.getElementById('new-user-pass').value = '';
@@ -417,7 +425,6 @@ async function createUser() {
     } catch(e) { alert("Network Error: " + e.message); }
 }
 
-// Renamed from openViewUsersModal - logic split for Router
 async function fetchUsersList() {
     const list = document.getElementById('users-list-container');
     list.innerHTML = "<p>Loading users...</p>";
@@ -459,7 +466,6 @@ async function fetchUsersList() {
     }
 }
 
-// --- Modify Roles ---
 function openModifyRoles(id, name, rolesStr) {
     document.getElementById('mod-user-id').value = id;
     document.getElementById('mod-user-display').innerText = "Editing User: " + name;
@@ -496,7 +502,7 @@ async function submitRoleUpdate() {
         if(res.ok) {
             alert("Roles Updated Successfully");
             document.getElementById('modify-roles-modal').close();
-            fetchUsersList(); // Reload list using extracted function
+            fetchUsersList(); 
         } else {
             const json = await res.json();
             alert("Error: " + json.error);
@@ -504,7 +510,6 @@ async function submitRoleUpdate() {
     } catch(e) { alert("Error: " + e.message); }
 }
 
-// --- Delete Logic ---
 async function deleteUser(id, username) {
     if(!confirm(`Are you sure you want to delete user "${username}"?`)) return;
     try {
@@ -513,7 +518,7 @@ async function deleteUser(id, username) {
             headers: { 'X-Authorization': `bearer ${authToken}` }
         });
         if(res.ok) {
-            fetchUsersList(); // Reload list
+            fetchUsersList();
         } else {
             const json = await res.json();
             alert("Error: " + json.error);
@@ -538,7 +543,6 @@ async function deleteSelf() {
     } catch(e) { alert("Error: " + e.message); }
 }
 
-// --- Core Features ---
 async function uploadPackage() {
     const url = document.getElementById('pkg-url').value;
     const resDiv = document.getElementById('upload-res');
