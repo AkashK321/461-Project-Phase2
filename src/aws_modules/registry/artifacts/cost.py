@@ -1,8 +1,12 @@
 from aws_modules.api_utils import make_response
 from aws_modules.db_utils import get_model_by_id
 from utils.lineage_utils import get_lineage_items_from_id
-from aws_modules.registry.system import logger
+import logging
 
+# logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 def calculate_artifact_cost(art_id, query_params):
     """
