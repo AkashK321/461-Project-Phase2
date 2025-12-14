@@ -27,6 +27,7 @@ on:
       - dataset-quality-llm-integration
       - datasetcode-metrics-inconsistent
       - cost
+      - making-timeouts-stricter
 
 # Define the permissions the job will need
 permissions:
