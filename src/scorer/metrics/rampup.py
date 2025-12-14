@@ -28,9 +28,11 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_repo_id(url: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Parses a URL to determine repo_id and repo_type (model, dataset, space).
-    Returns (repo_id, repo_type).
+    """Parse a URL to determine a Hugging Face repo id and type.
+
+    :param url: URL or short identifier referring to a HF resource.
+    :return: Tuple ``(repo_id, repo_type)`` where ``repo_type`` is one of
+             ``"model"``, ``"dataset"``, ``"space"`` or ``None`` on error.
     """
     p = urlparse(url)
 
@@ -79,7 +81,13 @@ SKIP_DIRS = {
 
 
 def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
-    """Downloads a specific file from HF Hub into memory."""
+    """Download a specific file from the Hugging Face Hub into memory.
+
+    :param repo_id: HF repository id (owner/name).
+    :param repo_type: Repository type (e.g. ``"model"`` or ``"dataset"``).
+    :param filename: Filename to download (e.g. ``"README.md"``).
+    :return: File contents as a string, or empty string on failure.
+    """
     try:
         local_path = hf_hub_download(
             repo_id=repo_id, filename=filename, repo_type=repo_type, local_dir=None
@@ -93,8 +101,13 @@ def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
 def _get_repo_tree_hf(
     repo_id: str, repo_type: str, max_files: int = 120
 ) -> Tuple[str, Optional[str]]:
-    """
-    Uses HfApi to list files. Returns (tree_string, readme_content).
+    """List repository files via the HF API and optionally return README.
+
+    :param repo_id: HF repository id (owner/name).
+    :param repo_type: Repository type for API listing.
+    :param max_files: Maximum number of files to include in the tree string.
+    :return: Tuple ``(tree_string, readme_content)`` where ``readme_content``
+             may be ``None`` when no README is found.
     """
     try:
         files = HF_API.list_repo_files(repo_id=repo_id, repo_type=repo_type)
@@ -165,12 +178,22 @@ _HEUR_PATTERNS = [
 
 
 def _heuristic_rampup(readme: str, tree: str) -> float:
+    """Compute a simple heuristic ramp-up score from README and file tree.
+
+    :param readme: README text (may be empty).
+    :param tree: Short listing of repository files.
+    :return: Float score between 0.0 and 1.0 (higher means faster ramp-up).
+    """
     txt = (readme or "") + "\n" + (tree or "")
     hits = sum(1 for pat in _HEUR_PATTERNS if re.search(pat, txt, flags=re.IGNORECASE))
     return max(0.0, min(1.0, 0.15 + 0.06 * hits))
 
 
 def _session_with_retry() -> requests.Session:
+    """Create a ``requests.Session`` configured with retry/backoff policy.
+
+    :return: Configured ``requests.Session`` instance.
+    """
     logger.info("Creating session with retries")
     s = requests.Session()
     r = Retry(
@@ -187,6 +210,11 @@ def _session_with_retry() -> requests.Session:
 
 
 def _extract_json_first(s: str) -> dict | None:
+    """Extract the first JSON object from a text blob, or return None.
+
+    :param s: Text to search.
+    :return: Parsed JSON dict if found, otherwise ``None``.
+    """
     if not s:
         return None
     depth = 0
@@ -224,6 +252,12 @@ def _extract_json_first(s: str) -> dict | None:
 
 
 def _ask_llm(readme: str, tree: str) -> Optional[float]:
+    """Query the configured LLM with README and repo tree to estimate ramp-up.
+
+    :param readme: README content to provide as context.
+    :param tree: Short textual listing/summary of repository files.
+    :return: Float score in ``[0.0,1.0]`` when available, otherwise ``None``.
+    """
     api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
     if not api_key:
         return None

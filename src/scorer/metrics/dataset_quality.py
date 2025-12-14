@@ -82,13 +82,23 @@ def _maybe_login() -> None:
 
 
 def normalize(value: int, target: int) -> float:
+    """Normalize an integer `value` to [0,1] using a log-scale toward `target`.
+
+    Useful for downloads/likes normalization.
+    """
     if value <= 0:
         return 0.0
     return min(1.0, math.log10(value + 1) / math.log10(target + 1))
 
 
 def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
-    """Downloads a specific file from HF Hub into memory."""
+    """Download a specific file from the Hugging Face Hub into memory.
+
+    :param repo_id: HF repository id (owner/name).
+    :param repo_type: Repository type (e.g. 'model' or 'dataset').
+    :param filename: Filename to fetch (e.g. 'README.md').
+    :return: File content as a string or empty string on failure.
+    """
     try:
         local_path = hf_hub_download(
             repo_id=repo_id, filename=filename, repo_type=repo_type, local_dir=None
@@ -100,6 +110,10 @@ def _fetch_file_content(repo_id: str, repo_type: str, filename: str) -> str:
 
 
 def _session_with_retry() -> requests.Session:
+    """Create a requests.Session configured with retries/backoff.
+
+    :return: Configured ``requests.Session`` instance.
+    """
     logger.info("Creating session with retries")
     s = requests.Session()
     r = Retry(
@@ -116,6 +130,11 @@ def _session_with_retry() -> requests.Session:
 
 
 def _extract_json_first(s: str) -> dict | None:
+    """Extract the first JSON object-like substring from ``s``.
+
+    :param s: Text to inspect for an embedded JSON object.
+    :return: Parsed JSON dict when found, otherwise ``None``.
+    """
     if not s:
         return None
     depth = 0
@@ -157,6 +176,11 @@ USER_PROMPT_TEMPLATE = "{readme}"
 
 
 def _ask_llm(readme: str) -> Optional[float]:
+    """Query configured GenAI Studio LLM to evaluate dataset quality.
+
+    :param readme: README text to send to the LLM.
+    :return: Float score in ``[0,1]`` on success, otherwise ``None``.
+    """
     api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
     if not api_key:
         return None
@@ -276,6 +300,13 @@ def _ask_llm(readme: str) -> Optional[float]:
 
 
 def get_dataset_quality_score(url: str, url_type: str) -> Tuple[Optional[float], int]:
+    """Compute dataset quality score for a model or dataset URL.
+
+    :param url: URL or identifier of the model/dataset.
+    :param url_type: Type of the URL: ``"model"`` or ``"dataset"``.
+    :return: Tuple ``(score, latency_ms)`` where ``score`` may be ``None`` if
+             not applicable, otherwise a float in ``[0.0,1.0]``.
+    """
     _maybe_login()
     start_time = time.time()
     logger.info(f"Starting dataset quality scoring for {url}")

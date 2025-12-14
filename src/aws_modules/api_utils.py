@@ -1,3 +1,9 @@
+"""Small API utility helpers.
+
+Provides JSON response shaping and a Decimal encoder for DynamoDB items so
+responses can be serialized to JSON for API Gateway.
+"""
+
 import json
 import decimal
 import logging

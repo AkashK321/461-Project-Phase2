@@ -1,3 +1,9 @@
+"""Authentication and user management helpers.
+
+Provides user registration, token creation/validation, and basic admin
+utilities backed by a DynamoDB users table and JWT tokens.
+"""
+
 import os
 import boto3
 import jwt
@@ -115,6 +121,12 @@ def create_token(user_id, roles):
 
 
 def register_user(body, current_user_roles=None):
+    """Register a new user (admin-only).
+
+    :param body: Must contain 'username' and 'password'.
+    :param current_user_roles: Roles of the current user, defaults to None.
+    :return: API response indicating success or failure.
+    """
     if "admin" not in (current_user_roles or []):
         return make_response(403, {"error": "Permission denied: 'admin' role required"})
 
@@ -240,6 +252,11 @@ def update_user_roles(target_user_id, new_roles, current_user_roles):
 
 
 def authenticate_user(body):
+    """Authenticate a user given an authentication payload.
+
+    :param body: Contains 'user' and 'secret' structure.
+    :return: 200 response with token string on success or an error response.
+    """
     try:
         user_obj = body.get("user", {})
         username = user_obj.get("name")
@@ -289,6 +306,11 @@ def authenticate_user(body):
 
 
 def get_validated_user(event):
+    """Validate and decode a bearer JWT from the event headers.
+
+    :param event: API Gateway-style event dict containing headers.
+    :return: Token payload dict on success, otherwise None.
+    """
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
     auth_header = headers.get("x-authorization", "")
 

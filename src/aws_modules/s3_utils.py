@@ -1,3 +1,9 @@
+"""Simple S3 helpers for uploading, downloading, and basic object info.
+
+Contains helpers used by integration tests and the registry API to manage
+model artifacts in S3.
+"""
+
 import boto3
 import os
 import logging

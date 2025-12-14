@@ -42,6 +42,11 @@ USER_PROMPT_TEMPLATE = "README (truncated if very long)\n----------------\n{read
 
 
 def _extract_json_first(s: str) -> dict | None:
+    """Extract the first JSON object-like substring from a text blob.
+
+    :param s: Text to search for a JSON object.
+    :return: Parsed JSON dict if found, otherwise ``None``.
+    """
     if not s:
         return None
     depth = 0
@@ -79,6 +84,12 @@ def _extract_json_first(s: str) -> dict | None:
 
 
 def _session_with_retry() -> requests.Session:
+    """Create a requests.Session configured with retries for POST requests.
+
+    Useful for calling external LLM endpoints with transient failures.
+
+    :return: Configured ``requests.Session`` with retry logic mounted.
+    """
     logger.info("Creating session with retries")
     s = requests.Session()
     r = Retry(
@@ -95,6 +106,12 @@ def _session_with_retry() -> requests.Session:
 
 
 def _ask_llm(readme: str) -> Optional[float]:
+    """Query the configured GenAI Studio LLM to extract a performance score.
+
+    :param readme: README text to provide as context to the LLM.
+    :return: Float between 0.0 and 1.0 when extraction succeeds, otherwise
+             ``None`` if not configured or parsing fails.
+    """
     api_key = os.getenv("GEN_AI_STUDIO_API_KEY", "").strip()
     if not api_key:
         return None
@@ -214,8 +231,12 @@ def _ask_llm(readme: str) -> Optional[float]:
 
 
 def get_performance_claims(url: str, url_type: str) -> Tuple[float, int]:
-    """
-    Function to get model or code performance claims based on URL type.
+    """Get performance-claim score and latency for a model/code URL.
+
+    :param url: URL to the artifact (model or code repository).
+    :param url_type: Type of URL: ``"model"`` or ``"code"``.
+    :return: Tuple ``(score, latency_ms)`` where ``score`` is float in
+             ``[0.0,1.0]`` and ``latency_ms`` is elapsed time in milliseconds.
     """
 
     start_time = time.time()
@@ -244,9 +265,13 @@ def get_performance_claims(url: str, url_type: str) -> Tuple[float, int]:
 
 
 def _check_code_repo_performance(code_url: str) -> Tuple[float, str]:
-    """
-    Function to check the code repo for performance claims without using GitPython.
-    Downloads the repo as a zip archive.
+    """Check a code repository for performance claim signals by scanning files.
+
+    The function downloads the repo zip, looks for README and test/eval
+    scripts and computes a heuristic score.
+
+    :param code_url: HTTPS URL to the code repository.
+    :return: Tuple ``(score, readme_text)`` with heuristic score and README text.
     """
 
     score = 0.0
@@ -320,8 +345,11 @@ def _check_code_repo_performance(code_url: str) -> Tuple[float, str]:
 
 
 def _check_model_card_performance(model_url: str) -> Tuple[float, str]:
-    """
-    Function to check the model card/README on Hugging Face for performance claims.
+    """Check a Hugging Face model card (README) for performance claim signals.
+
+    :param model_url: URL to the Hugging Face model page.
+    :return: Tuple ``(score, text)`` where ``score`` is float in ``[0,1]`` and
+             ``text`` contains the README contents (may be empty on failure).
     """
 
     load_dotenv(dotenv_path=Path(__file__).resolve().parents[3] / ".env")
@@ -441,8 +469,11 @@ def _check_model_card_performance(model_url: str) -> Tuple[float, str]:
 
 
 def _keyword_score(text: str, keywords: list[str]) -> float:
-    """
-    Function to count keywords in a string and compute score.
+    """Count keywords in a text and compute a simple normalized score.
+
+    :param text: Text to search for keywords.
+    :param keywords: List of keywords to match (case-insensitive).
+    :return: Float score in ``[0.0,1.0]`` representing keyword density heuristic.
     """
 
     if not text:

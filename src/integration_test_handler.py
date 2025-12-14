@@ -1,3 +1,9 @@
+"""Integration test Lambda handler for S3 and DynamoDB operations.
+
+Provides a single handler `test_aws_integration` used by CI/tests
+to verify S3 upload/download and DynamoDB save/get/delete flows.
+"""
+
 import logging
 import os
 import tempfile
