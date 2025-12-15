@@ -1,6 +1,11 @@
+"""
+Parsing utilities for semantic versioning and API events.
+"""
+
 import json
 import base64
 import re
+
 
 SEMVER_PATTERN = re.compile(
     r"^v?(?P<maj>0|[1-9]\d*)"
@@ -14,6 +19,11 @@ def _timeout_handler(signum, frame):
 
 
 def parse_semver(version: str):
+    """Parse a semantic version string into a tuple of integers.
+
+    :param version: The version string to parse.
+    :return: A tuple (major, minor, patch) or None if invalid.
+    """
     if not version:
         return None
     s = version.strip()
@@ -26,6 +36,12 @@ def parse_semver(version: str):
 
 
 def version_satisfies(ver: str, constraint: str) -> bool:
+    """Check if a version satisfies a semantic version constraint.
+
+    :param ver: The version string to check.
+    :param constraint: The constraint string (e.g., "^1.0.0", "~1.0").
+    :return: True if the version satisfies the constraint, False otherwise.
+    """
     if not constraint:
         return True
     v = parse_semver(ver)
@@ -58,6 +74,11 @@ def version_satisfies(ver: str, constraint: str) -> bool:
 
 
 def parse_event(event):
+    """Parse an API Gateway event into method, path, body, and query params.
+
+    :param event: The event dictionary from API Gateway.
+    :return: A tuple (method, path, body, query_params).
+    """
     path = event.get("rawPath", "") or event.get("path") or "/"
     method = event.get("requestContext", {}).get("http", {}).get(
         "method", "GET"

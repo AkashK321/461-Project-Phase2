@@ -1,3 +1,7 @@
+"""
+Artifact ingestion utilities.
+"""
+
 import os
 import json
 import shutil
@@ -38,6 +42,9 @@ def get_readme_content(directory):
     """
     Scans the given directory for a README file and returns its content.
     Limits content to 10KB to avoid DynamoDB size limits.
+
+    :param directory: The directory to scan for README files.
+    :return: The content of the README file or an empty string.
     """
     for root, dirs, files in os.walk(directory):
         for file in files:
@@ -54,6 +61,10 @@ def ingest_artifact(artifact_type, payload):
     """
     Ingests an artifact. Supports 'model', 'dataset', 'code'.
     Assumes payload['url'] is a valid HTTPS URL.
+
+    :param artifact_type: The type of artifact ('model', 'dataset', 'code').
+    :param payload: The payload dictionary containing URL and other data.
+    :return: A response indicating success or failure.
     """
     logger.info(f"--- Starting Ingestion (Type: {artifact_type}) ---")
 

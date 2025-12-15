@@ -1,3 +1,7 @@
+"""
+Artifact search utilities.
+"""
+
 import os
 import re
 import signal
@@ -12,6 +16,9 @@ DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "10"))
 def get_all_items_from_db(table):
     """
     Robustly scans the entire table handling pagination via LastEvaluatedKey.
+
+    :param table: The DynamoDB table resource.
+    :return: A list of all items in the table.
     """
     items = []
     done = False
@@ -32,6 +39,10 @@ def get_all_items_from_db(table):
 def search_artifacts(query_array, query_params):
     """
     Search artifacts with pagination based on OFFSET (record index), not page number.
+
+    :param query_array: List of search query terms.
+    :param query_params: Dictionary of query parameters including offset.
+    :return: A response with search results.
     """
     # Parse offset as an integer record index (default 0)
     try:
@@ -110,6 +121,9 @@ def search_by_regex(body):
     """
     Searches for artifacts using a regular expression over names and README content.
     Includes ReDoS protection using signal.setitimer.
+
+    :param body: The request body containing the regex.
+    :return: A response with matching artifacts.
     """
     regex = body.get("regex")
     logger.info(f"Entering search_by_regex with regex='{regex}'")

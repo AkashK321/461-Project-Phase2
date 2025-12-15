@@ -1,8 +1,13 @@
+"""
+Artifact cost calculation utilities.
+"""
+
 from aws_modules.api_utils import make_response
 from aws_modules.db_utils import get_model_by_id
 from utils.lineage_utils import get_lineage_items_from_id
 import logging
 import json
+
 
 # logging setup
 logger = logging.getLogger()
@@ -20,6 +25,10 @@ def calculate_artifact_cost(art_id, query_params):
     Returns the size cost of the artifact in MB.
     If 'dependency=true' (query param),
     it includes dependencies (ancestors) in the cost.
+
+    :param art_id: The ID of the artifact.
+    :param query_params: Query parameters dictionary.
+    :return: A response with cost data.
     """
     logger.info(
         f"Entering calculate_artifact_cost \

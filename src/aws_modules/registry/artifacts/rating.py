@@ -1,3 +1,7 @@
+"""
+Artifact rating utilities.
+"""
+
 import json
 
 from aws_modules.db_utils import get_model_by_id
@@ -12,6 +16,9 @@ def rate_model(art_id):
     Handle GET /artifact/model/{id}/rate
     Retrieves and returns the stored scores for a given model artifact.
     Falls back to invoking scorer if DB scores are missing.
+
+    :param art_id: The ID of the artifact to rate.
+    :return: A response with the rating scores.
     """
     item = get_model_by_id(art_id)
     if not item:

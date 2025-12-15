@@ -1,3 +1,7 @@
+"""
+Lineage graph utilities for artifacts.
+"""
+
 from aws_modules.db_utils import get_model_by_id
 from utils.lineage_utils import get_lineage_items_from_id, get_descendant_items
 from aws_modules.api_utils import make_response
@@ -8,6 +12,9 @@ def get_lineage_graph(start_art_id):
     """
     Handle GET /artifact/model/{id}/lineage
     Constructs and returns the lineage graph for a given model ID.
+
+    :param start_art_id: The ID of the starting artifact.
+    :return: A response with nodes and edges of the lineage graph.
     """
     start_item = get_model_by_id(start_art_id)
     if not start_item:

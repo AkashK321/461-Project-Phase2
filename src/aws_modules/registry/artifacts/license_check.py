@@ -1,3 +1,7 @@
+"""
+License checking utilities for artifacts.
+"""
+
 from aws_modules.db_utils import get_model_by_id
 from scorer.metrics.license import license_check_bool, LicenseCheckError
 from aws_modules.api_utils import make_response
@@ -5,6 +9,12 @@ from aws_modules.registry.system import logger
 
 
 def license_check(art_id, body):
+    """Perform a license compatibility check for a given artifact.
+
+    :param art_id: The ID of the artifact to check.
+    :param body: The request body containing the github_url.
+    :return: A response indicating license compatibility or an error.
+    """
     if not art_id:
         return make_response(400, {"error": "Missing artifact ID in path"})
 

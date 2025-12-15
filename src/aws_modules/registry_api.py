@@ -1,5 +1,10 @@
-import re
+"""Registry API handler for managing artifacts, users, and authentication.
 
+Provides the main Lambda handler function that routes requests to appropriate
+artifact and user management functions.
+"""
+
+import re
 from aws_modules.api_utils import make_response
 from aws_modules.auth import (
     authenticate_user,
@@ -36,6 +41,16 @@ from aws_modules.registry.artifacts.crud import get_artifact, delete_artifact
 
 
 def handler(event, context):
+    """
+    Main Lambda handler for the registry API.
+
+    Routes incoming API Gateway events to appropriate handlers for artifacts,
+    users, authentication, and system operations.
+
+    :param event: The API Gateway event dictionary.
+    :param context: The Lambda context object.
+    :return: A response dictionary with status code and body.
+    """
     # Initialize the system on first run (ensures default user exists)
     initialize_system()
 

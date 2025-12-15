@@ -1,3 +1,7 @@
+"""
+System initialization and reset utilities for the registry.
+"""
+
 import os
 import uuid
 import logging
@@ -27,6 +31,10 @@ _initialized = False
 
 
 def initialize_system():
+    """Initialize the system by ensuring the default user exists.
+
+    This function is idempotent and can be called multiple times safely.
+    """
     global _initialized
     if _initialized:
         return
@@ -36,6 +44,11 @@ def initialize_system():
 
 
 def reset_state(restore_jti=None):
+    """Reset the system state by wiping the registry and S3, and recreating the default user.
+
+    :param restore_jti: Optional JTI to restore for the default admin user.
+    :return: A dictionary with the reset status.
+    """
     # 1. Wipe Registry
     tbl = dynamodb.Table(TABLE_NAME)
     scan = tbl.scan(ProjectionExpression="#i", ExpressionAttributeNames={"#i": "id"})
