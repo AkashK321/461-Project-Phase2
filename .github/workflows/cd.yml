@@ -30,7 +30,6 @@ on:
       - making-timeouts-stricter
       - adding-pydocs
       - license-check-metric
-      - refactor_registry_api
 
 # Define the permissions the job will need
 permissions:
