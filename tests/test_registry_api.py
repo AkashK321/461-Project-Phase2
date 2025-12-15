@@ -19,8 +19,6 @@ from aws_modules import registry_api as reg
 from aws_modules.registry import parsing as parsing_mod
 from aws_modules.registry.artifacts import search as search_mod
 from aws_modules.registry.artifacts import ingest as ingest_mod
-from aws_modules import db_utils as db_utils_mod
-from aws_modules import s3_utils as s3_utils_mod
 from aws_modules.registry.artifacts import crud as crud_mod
 
 

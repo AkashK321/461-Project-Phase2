@@ -25,19 +25,6 @@ USER_TABLE_NAME = ctx.USER_TABLE_NAME
 JWT_SECRET_KEY = ctx.JWT_SECRET_KEY
 
 
-# expose helpers expected by tests
-from aws_modules.registry.parsing import parse_event
-from aws_modules.registry.artifacts.search import search_artifacts
-from aws_modules.registry.artifacts.ingest import ingest_artifact
-
-# wherever these live now (adjust if needed)
-from aws_modules.registry.parsing import parse_semver, version_satisfies
-
-# expose helpers expected by tests / handler
-from aws_modules.db_utils import get_model_by_id
-from aws_modules.s3_utils import generate_presigned_download_url
-
-
 # Core helpers
 from aws_modules.registry.parsing import parse_event
 
@@ -53,10 +40,6 @@ from aws_modules.registry.artifacts.cost import calculate_artifact_cost
 from aws_modules.registry.artifacts.rating import rate_model
 from aws_modules.registry.artifacts.by_name import get_artifacts_by_name
 from aws_modules.registry.artifacts.crud import get_artifact, delete_artifact
-
-from aws_modules.registry.artifacts.search import (
-    search_artifacts as _search_artifacts_impl,
-)
 
 
 def handler(event, context):
