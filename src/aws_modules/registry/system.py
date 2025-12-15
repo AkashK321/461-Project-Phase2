@@ -44,7 +44,8 @@ def initialize_system():
 
 
 def reset_state(restore_jti=None):
-    """Reset the system state by wiping the registry and S3, and recreating the default user.
+    """Reset the system state by wiping the registry and S3,
+    and recreating the default user.
 
     :param restore_jti: Optional JTI to restore for the default admin user.
     :return: A dictionary with the reset status.
