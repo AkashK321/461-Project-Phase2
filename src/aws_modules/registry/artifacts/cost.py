@@ -13,6 +13,7 @@ from aws_modules.s3_utils import (
     get_object_size,
 )
 
+
 def calculate_artifact_cost(art_id, query_params):
     """
     Handle GET /artifact/{type}/{id}/cost
