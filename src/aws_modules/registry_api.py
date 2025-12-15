@@ -4,6 +4,13 @@ Provides the main Lambda handler function that routes requests to appropriate
 artifact and user management functions.
 """
 
+# Export required functions/objects for tests
+from aws_modules.registry.parsing import parse_semver
+from aws_modules.registry.parsing import version_satisfies
+from aws_modules.registry.artifacts.crud import get_model_by_id
+from aws_modules.registry.dynamo import dynamodb
+from aws_modules.registry.artifacts.crud import get_repo_id
+
 import re
 from aws_modules.api_utils import make_response
 from aws_modules.auth import (
