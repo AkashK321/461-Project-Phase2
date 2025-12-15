@@ -16,6 +16,13 @@ if SRC_DIR not in sys.path:
 # Now this matches how registry_api and its internal imports are written
 from aws_modules import registry_api as reg
 
+from aws_modules.registry import parsing as parsing_mod
+from aws_modules.registry.artifacts import search as search_mod
+from aws_modules.registry.artifacts import ingest as ingest_mod
+from aws_modules import db_utils as db_utils_mod
+from aws_modules import s3_utils as s3_utils_mod
+from aws_modules.registry.artifacts import crud as crud_mod
+
 
 # ---------- helpers ----------
 
@@ -36,56 +43,56 @@ def decode_body(resp):
 
 
 def test_parse_semver_valid():
-    assert reg.parse_semver("1.2.3") == (1, 2, 3)
-    assert reg.parse_semver("v1.2.3") == (1, 2, 3)
-    assert reg.parse_semver("1.2") == (1, 2, 0)
-    assert reg.parse_semver("2") == (2, 0, 0)
+    assert parsing_mod.parse_semver("1.2.3") == (1, 2, 3)
+    assert parsing_mod.parse_semver("v1.2.3") == (1, 2, 3)
+    assert parsing_mod.parse_semver("1.2") == (1, 2, 0)
+    assert parsing_mod.parse_semver("2") == (2, 0, 0)
 
 
 def test_parse_semver_invalid():
-    assert reg.parse_semver("") is None
-    assert reg.parse_semver("foo") is None
-    assert reg.parse_semver("1.2.3.4") is None
+    assert parsing_mod.parse_semver("") is None
+    assert parsing_mod.parse_semver("foo") is None
+    assert parsing_mod.parse_semver("1.2.3.4") is None
 
 
 def test_version_satisfies_exact_and_raw_fallback():
     # exact
-    assert reg.version_satisfies("1.2.3", "1.2.3")
-    assert not reg.version_satisfies("1.2.3", "1.2.4")
+    assert parsing_mod.version_satisfies("1.2.3", "1.2.3")
+    assert not parsing_mod.version_satisfies("1.2.3", "1.2.4")
 
     # raw fallback when constraint not parseable
-    assert reg.version_satisfies("weird", "weird")
-    assert not reg.version_satisfies("weird", "other")
+    assert parsing_mod.version_satisfies("weird", "weird")
+    assert not parsing_mod.version_satisfies("weird", "other")
 
 
 def test_version_satisfies_bounded():
     # inclusive bounds
-    assert reg.version_satisfies("1.2.0", "1.2.0-1.3.0")
-    assert reg.version_satisfies("1.3.0", "1.2.0-1.3.0")
-    assert not reg.version_satisfies("1.4.0", "1.2.0-1.3.0")
+    assert parsing_mod.version_satisfies("1.2.0", "1.2.0-1.3.0")
+    assert parsing_mod.version_satisfies("1.3.0", "1.2.0-1.3.0")
+    assert not parsing_mod.version_satisfies("1.4.0", "1.2.0-1.3.0")
 
 
 def test_version_satisfies_tilde():
     # ~1.2.0 => [1.2.0, 1.3.0)
-    assert reg.version_satisfies("1.2.0", "~1.2.0")
-    assert reg.version_satisfies("1.2.5", "~1.2.0")
-    assert not reg.version_satisfies("1.3.0", "~1.2.0")
+    assert parsing_mod.version_satisfies("1.2.0", "~1.2.0")
+    assert parsing_mod.version_satisfies("1.2.5", "~1.2.0")
+    assert not parsing_mod.version_satisfies("1.3.0", "~1.2.0")
 
 
 def test_version_satisfies_caret():
     # ^1.2.0 => [1.2.0, 2.0.0)
-    assert reg.version_satisfies("1.2.0", "^1.2.0")
-    assert reg.version_satisfies("1.9.9", "^1.2.0")
-    assert not reg.version_satisfies("2.0.0", "^1.2.0")
+    assert parsing_mod.version_satisfies("1.2.0", "^1.2.0")
+    assert parsing_mod.version_satisfies("1.9.9", "^1.2.0")
+    assert not parsing_mod.version_satisfies("2.0.0", "^1.2.0")
 
     # ^0.2.3 => [0.2.3, 0.3.0)
-    assert reg.version_satisfies("0.2.3", "^0.2.3")
-    assert reg.version_satisfies("0.2.9", "^0.2.3")
-    assert not reg.version_satisfies("0.3.0", "^0.2.3")
+    assert parsing_mod.version_satisfies("0.2.3", "^0.2.3")
+    assert parsing_mod.version_satisfies("0.2.9", "^0.2.3")
+    assert not parsing_mod.version_satisfies("0.3.0", "^0.2.3")
 
     # ^0.0.3 => [0.0.3, 0.0.4)
-    assert reg.version_satisfies("0.0.3", "^0.0.3")
-    assert not reg.version_satisfies("0.0.4", "^0.0.3")
+    assert parsing_mod.version_satisfies("0.0.3", "^0.0.3")
+    assert not parsing_mod.version_satisfies("0.0.4", "^0.0.3")
 
 
 # ---------- parse_event ----------
@@ -151,8 +158,8 @@ def test_search_artifacts_pagination(monkeypatch):
         {"id": "3", "model_name": "c", "version": "1.0.0", "type": "hf"},
     ]
 
-    monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
-    reg.TABLE_NAME = "dummy"
+    monkeypatch.setattr(search_mod, "dynamodb", FakeDynamo(items))
+    search_mod.TABLE_NAME = "dummy"
 
     resp_page1 = reg.search_artifacts([{"name": "*"}], {"offset": "1"})
     status1, body1 = decode_body(resp_page1)
@@ -173,8 +180,8 @@ def test_search_artifacts_type_and_name_regex(monkeypatch):
         {"id": "3", "model_name": "beta-bert", "version": "1.2.0", "type": "hf"},
     ]
 
-    monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
-    reg.TABLE_NAME = "dummy"
+    monkeypatch.setattr(search_mod, "dynamodb", FakeDynamo(items))
+    search_mod.TABLE_NAME = "dummy"
 
     resp = reg.search_artifacts([{"types": ["hf"], "name": "alpha-bert"}], {})
     res_items = _get_items_from_response(resp)
@@ -189,8 +196,8 @@ def test_search_artifacts_bad_regex_falls_back_to_substring(monkeypatch):
         {"id": "2", "model_name": "other", "version": "1.0.0", "type": "hf"},
     ]
 
-    monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
-    reg.TABLE_NAME = "dummy"
+    monkeypatch.setattr(search_mod, "dynamodb", FakeDynamo(items))
+    search_mod.TABLE_NAME = "dummy"
 
     # '(' is invalid regex -> should fallback to substring search
     resp = reg.search_artifacts([{"name": "("}], {})
@@ -207,8 +214,8 @@ def test_search_artifacts_version_filters(monkeypatch):
         {"id": "4", "model_name": "m", "version": "2.0.0", "type": "hf"},
     ]
 
-    monkeypatch.setattr(reg, "dynamodb", FakeDynamo(items))
-    reg.TABLE_NAME = "dummy"
+    monkeypatch.setattr(search_mod, "dynamodb", FakeDynamo(items))
+    search_mod.TABLE_NAME = "dummy"
 
     # bounded
     resp = reg.search_artifacts([{"name": "m", "version": "1.2.0-1.5.0"}], {})
@@ -271,13 +278,15 @@ def test_ingest_artifact_happy_path(monkeypatch, tmp_path):
             return FakeTable2()
 
     # monkeypatch all externals used by ingest_artifact
-    monkeypatch.setattr(reg, "get_repo_id", fake_get_repo_id)
-    monkeypatch.setattr(reg, "get_base_model_from_card", fake_get_base_model_from_card)
-    monkeypatch.setattr(reg, "snapshot_download", fake_snapshot_download)
-    monkeypatch.setattr(reg.shutil, "make_archive", fake_make_archive)
-    monkeypatch.setattr(reg, "upload_model", fake_upload_model)
-    monkeypatch.setattr(reg, "save_model_metadata", fake_save_model_metadata)
-    monkeypatch.setattr(reg, "dynamodb", FakeDynamo2())
+    monkeypatch.setattr(ingest_mod, "get_repo_id", fake_get_repo_id)
+    monkeypatch.setattr(
+        ingest_mod, "get_base_model_from_card", fake_get_base_model_from_card
+    )
+    monkeypatch.setattr(ingest_mod, "snapshot_download", fake_snapshot_download)
+    monkeypatch.setattr(ingest_mod.shutil, "make_archive", fake_make_archive)
+    monkeypatch.setattr(ingest_mod, "upload_model", fake_upload_model)
+    monkeypatch.setattr(ingest_mod, "save_model_metadata", fake_save_model_metadata)
+    monkeypatch.setattr(ingest_mod, "dynamodb", FakeDynamo2())
 
     payload = {"url": "https://huggingface.co/org/my-model"}
     resp = reg.ingest_artifact("hf", payload)
@@ -484,9 +493,11 @@ def test_handler_get_artifact_found_and_not_found(monkeypatch):
         return f"https://s3.signed.url/for/{s3_key}"
 
     monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
-    monkeypatch.setattr(reg, "get_model_by_id", fake_get_model_by_id)
+    monkeypatch.setattr(crud_mod, "get_model_by_id", fake_get_model_by_id)
     monkeypatch.setattr(
-        reg, "generate_presigned_download_url", fake_generate_presigned_download_url
+        crud_mod,
+        "generate_presigned_download_url",
+        fake_generate_presigned_download_url,
     )
 
     # found
@@ -560,3 +571,66 @@ def test_handler_unknown_route():
     status, body = decode_body(resp)
     assert status == 404
     assert "Route not found" in body["error"]
+
+
+def test_handler_get_users_calls_get_all_users(monkeypatch):
+    """Test GET /users endpoint calls get_all_users with correct permissions."""
+
+    def fake_get_validated_user(event):
+        return {"sub": "admin_user", "roles": ["admin"]}
+
+    called = {}
+
+    def fake_get_all_users(requesting_user_roles):
+        called["roles"] = requesting_user_roles
+        return reg.make_response(200, [{"username": "alice"}, {"username": "bob"}])
+
+    monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
+    monkeypatch.setattr(reg, "get_all_users", fake_get_all_users)
+
+    event = {
+        "rawPath": "/users",
+        "requestContext": {"http": {"method": "GET"}},
+        "body": "",
+    }
+
+    resp = reg.handler(event, None)
+    status, body = decode_body(resp)
+
+    assert status == 200
+    assert len(body) == 2
+    assert "admin" in called["roles"]
+
+
+def test_handler_update_user_roles_calls_update_user_roles(monkeypatch):
+    """Test PUT /users/{id} endpoint calls update_user_roles with correct args."""
+
+    def fake_get_validated_user(event):
+        return {"sub": "admin_user", "roles": ["admin"]}
+
+    called = {}
+
+    def fake_update_user_roles(target_id, new_roles, requesting_roles):
+        called["target_id"] = target_id
+        called["new_roles"] = new_roles
+        called["req_roles"] = requesting_roles
+        return reg.make_response(200, {"message": "Roles updated successfully"})
+
+    monkeypatch.setattr(reg, "get_validated_user", fake_get_validated_user)
+    monkeypatch.setattr(reg, "update_user_roles", fake_update_user_roles)
+
+    payload = {"roles": ["search", "download"]}
+    event = {
+        "rawPath": "/users/target-user-123",
+        "requestContext": {"http": {"method": "PUT"}},
+        "body": json.dumps(payload),
+    }
+
+    resp = reg.handler(event, None)
+    status, body = decode_body(resp)
+
+    assert status == 200
+    assert body["message"] == "Roles updated successfully"
+    assert called["target_id"] == "target-user-123"
+    assert called["new_roles"] == ["search", "download"]
+    assert "admin" in called["req_roles"]
